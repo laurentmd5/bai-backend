@@ -1,0 +1,99 @@
+# =============================================================================
+# BARROW.AI POC - Development Docker Compose
+# Hot-reload enabled for faster development
+# =============================================================================
+
+version: '3.8'
+
+networks:
+  barrow-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: barrow-postgres-dev
+    restart: unless-stopped
+    networks:
+      - barrow-net
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: barrowai
+      POSTGRES_PASSWORD: dev_password
+      POSTGRES_DB: barrowai_poc
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U barrowai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: barrow-redis-dev
+    restart: unless-stopped
+    networks:
+      - barrow-net
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --requirepass dev_password
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: barrow-qdrant-dev
+    restart: unless-stopped
+    networks:
+      - barrow-net
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: barrow-backend-dev
+    restart: unless-stopped
+    networks:
+      - barrow-net
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - /app/__pycache__
+      - /app/.pytest_cache
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD: dev_password
+      REDIS_HOST: redis
+      REDIS_PASSWORD: dev_password
+      QDRANT_HOST: qdrant
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      JWT_SECRET: dev_secret_key_for_testing_only
+      JWT_REFRESH_SECRET: dev_refresh_secret_for_testing_only
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dGVzdF9lbmNyeXB0aW9uX2tleV8zMmJ5dGVzIQ==}
+      CSRF_SECRET: dev_csrf_secret
+      WHATSAPP_VERIFY_TOKEN: dev_verify_token
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      CORS_ORIGINS: "http://localhost:5173,http://localhost:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      qdrant:
+        condition: service_started
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app
