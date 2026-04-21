@@ -84,48 +84,108 @@ class CircuitBreakerOpenException(RedisException):
 
 def _reset_circuit_breaker() -> None:
     """Reset circuit breaker after successful operation."""
-    global _circuit_breaker_open, _circuit_breaker_failures, _circuit_breaker_last_failure
-    _circuit_breaker_open = False
-    _circuit_breaker_failures = 0
-    _circuit_breaker_last_failure = None
     logger.info("redis_circuit_breaker_reset")
+
+
+async def _reset_circuit_breaker_redis() -> None:
+    """
+    BUG #3 FIX: Reset circuit breaker in Redis (shared across workers).
+    Called after successful Redis operation.
+    """
+    try:
+        if _redis_client:
+            await _redis_client.delete(f"{CIRCUIT_BREAKER_REDIS_KEY}:open")
+            await _redis_client.delete(f"{CIRCUIT_BREAKER_REDIS_KEY}:failures")
+            await _redis_client.delete(f"{CIRCUIT_BREAKER_REDIS_KEY}:last_failure")
+    except RedisError as e:
+        logger.warning("redis_circuit_breaker_reset_failed", error=str(e))
 
 
 def _record_circuit_breaker_failure() -> None:
     """Record a failure and potentially open circuit breaker."""
-    global _circuit_breaker_open, _circuit_breaker_failures, _circuit_breaker_last_failure
     import time
     
-    _circuit_breaker_failures += 1
-    _circuit_breaker_last_failure = time.time()
+    logger.error("redis_circuit_breaker_failure_recorded")
+
+
+async def _record_circuit_breaker_failure_redis() -> None:
+    """
+    BUG #3 FIX: Record failure in Redis and potentially open circuit breaker.
+    Shared state across all Uvicorn workers.
+    """
+    import time
     
-    if _circuit_breaker_failures >= CIRCUIT_BREAKER_THRESHOLD:
-        _circuit_breaker_open = True
-        logger.error(
-            "redis_circuit_breaker_opened",
-            failures=_circuit_breaker_failures,
-            threshold=CIRCUIT_BREAKER_THRESHOLD
+    try:
+        if not _redis_client:
+            logger.error("redis_client_not_available")
+            return
+        
+        # Increment failure count
+        failures = await _redis_client.incr(f"{CIRCUIT_BREAKER_REDIS_KEY}:failures")
+        await _redis_client.set(
+            f"{CIRCUIT_BREAKER_REDIS_KEY}:last_failure",
+            int(time.time())
         )
+        
+        # Set expiration to auto-cleanup if Redis is healthy later
+        await _redis_client.expire(f"{CIRCUIT_BREAKER_REDIS_KEY}:failures", 300)
+        
+        if failures >= CIRCUIT_BREAKER_THRESHOLD:
+            await _redis_client.set(f"{CIRCUIT_BREAKER_REDIS_KEY}:open", "1")
+            await _redis_client.expire(f"{CIRCUIT_BREAKER_REDIS_KEY}:open", 300)
+            logger.error(
+                "redis_circuit_breaker_opened",
+                failures=failures,
+                threshold=CIRCUIT_BREAKER_THRESHOLD
+            )
+    except RedisError as e:
+        logger.warning("redis_circuit_breaker_recording_failed", error=str(e))
 
 
 def _should_attempt_circuit_breaker() -> bool:
     """Check if circuit breaker allows an attempt."""
-    global _circuit_breaker_open, _circuit_breaker_last_failure
+    # Fallback synchronous check (quick path)
+    return True
+
+
+async def _should_attempt_circuit_breaker_redis() -> bool:
+    """
+    BUG #3 FIX: Check if circuit breaker allows an attempt using Redis state.
+    Shared state across all Uvicorn workers.
+    
+    Returns:
+        bool: True if attempt should proceed, False if circuit breaker is open
+    """
     import time
     
-    if not _circuit_breaker_open:
+    try:
+        if not _redis_client:
+            # If Redis client not ready, allow attempt (fallback)
+            return True
+        
+        # Check if circuit breaker is open
+        is_open = await _redis_client.get(f"{CIRCUIT_BREAKER_REDIS_KEY}:open")
+        if not is_open:
+            return True
+        
+        # Circuit breaker is open - check if timeout has elapsed
+        last_failure = await _redis_client.get(f"{CIRCUIT_BREAKER_REDIS_KEY}:last_failure")
+        if last_failure is None:
+            return True
+        
+        elapsed = int(time.time()) - int(last_failure)
+        if elapsed >= CIRCUIT_BREAKER_TIMEOUT_SECONDS:
+            logger.info("redis_circuit_breaker_half_open")
+            # Attempt to reset (remove open flag for retry)
+            await _redis_client.delete(f"{CIRCUIT_BREAKER_REDIS_KEY}:open")
+            return True
+        
+        return False
+        
+    except RedisError as e:
+        logger.warning("redis_circuit_breaker_check_failed", error=str(e))
+        # On error checking circuit breaker, allow attempt (fail open)
         return True
-    
-    if _circuit_breaker_last_failure is None:
-        return True
-    
-    elapsed = time.time() - _circuit_breaker_last_failure
-    if elapsed >= CIRCUIT_BREAKER_TIMEOUT_SECONDS:
-        logger.info("redis_circuit_breaker_half_open")
-        _circuit_breaker_open = False
-        return True
-    
-    return False
 
 
 async def init_redis() -> None:
@@ -184,7 +244,7 @@ async def init_redis() -> None:
                 )
                 
                 _is_initialized = True
-                _reset_circuit_breaker()
+                await _reset_circuit_breaker_redis()
                 return
                 
             except AuthenticationError as e:
@@ -253,7 +313,7 @@ async def get_redis() -> Redis:
     """
     global _is_initialized, _redis_client
     
-    if not _should_attempt_circuit_breaker():
+    if not await _should_attempt_circuit_breaker_redis():
         raise CircuitBreakerOpenException()
     
     if not _is_initialized or not _redis_client:
@@ -280,7 +340,7 @@ async def execute_redis_operation(
     Returns:
         Result of operation or fallback_value on failure
     """
-    if allow_circuit_breaker and not _should_attempt_circuit_breaker():
+    if allow_circuit_breaker and not await _should_attempt_circuit_breaker_redis():
         logger.warning(
             "redis_operation_skipped_circuit_open",
             operation=operation_name
@@ -290,7 +350,7 @@ async def execute_redis_operation(
     try:
         client = await get_redis()
         result = await operation(client)
-        _reset_circuit_breaker()
+        await _reset_circuit_breaker_redis()
         return result
         
     except CircuitBreakerOpenException:
@@ -301,7 +361,7 @@ async def execute_redis_operation(
         return fallback_value
         
     except (ConnectionError, TimeoutError) as e:
-        _record_circuit_breaker_failure()
+        await _record_circuit_breaker_failure_redis()
         logger.error(
             "redis_operation_connection_error",
             operation=operation_name,
@@ -335,7 +395,7 @@ async def check_redis_health() -> dict:
         dict: Health status with metrics
     """
     try:
-        if not _should_attempt_circuit_breaker():
+        if not await _should_attempt_circuit_breaker_redis():
             return {
                 "status": "degraded",
                 "circuit_breaker": "open",
@@ -363,7 +423,7 @@ async def check_redis_health() -> dict:
         else:
             pool_stats = {"status": "not_initialized"}
         
-        _reset_circuit_breaker()
+        await _reset_circuit_breaker_redis()
         
         return {
             "status": "healthy",
@@ -383,12 +443,12 @@ async def check_redis_health() -> dict:
             "initialized": _is_initialized,
         }
     except Exception as e:
-        _record_circuit_breaker_failure()
+        await _record_circuit_breaker_failure_redis()
         return {
             "status": "unhealthy",
             "error": str(e),
             "initialized": _is_initialized,
-            "circuit_breaker": "closed" if not _circuit_breaker_open else "open",
+            "circuit_breaker": "closed",
         }
 
 

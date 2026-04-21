@@ -3,6 +3,7 @@ RAG (Retrieval-Augmented Generation) Service for BARROW.AI.
 Orchestrates the complete RAG pipeline from embedding to context building.
 """
 
+import uuid
 from typing import List, Dict, Any, Optional, Tuple
 import asyncio
 from datetime import datetime

@@ -4,7 +4,7 @@ Implements repository pattern with common CRUD operations.
 Provides SOLID principles compliance with dependency inversion.
 """
 
-from typing import TypeVar, Generic, Type, Optional, List, Dict, Any, Union
+from typing import TypeVar, Generic, Type, Optional, List, Dict, Any, Union, Protocol
 from uuid import UUID
 from datetime import datetime
 
@@ -19,8 +19,13 @@ from app.core.exceptions import NotFoundException, DatabaseError
 
 logger = get_logger(__name__)
 
-# Type variable for SQLAlchemy model
-ModelType = TypeVar('ModelType', bound=Base)
+# Protocol for SQLAlchemy model constraint
+class SQLAlchemyModel(Protocol):
+    """Protocol for SQLAlchemy ORM model."""
+    pass
+
+# Type variable for SQLAlchemy model (using Protocol instead of Base)
+ModelType = TypeVar('ModelType', bound=SQLAlchemyModel)
 # Type variable for Pydantic create schema
 CreateSchemaType = TypeVar('CreateSchemaType', bound=BaseModel)
 # Type variable for Pydantic update schema

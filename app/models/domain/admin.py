@@ -4,7 +4,7 @@ Manages administrative users, roles, authentication, and audit logging.
 """
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from uuid import uuid4
 from enum import Enum
 
@@ -22,6 +22,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.models.domain.knowledge import KnowledgeDocument
+    from app.models.domain.session import Session
 
 
 class AdminRole(str, Enum):

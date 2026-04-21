@@ -13,6 +13,8 @@ from enum import Enum
 
 from redis.asyncio import Redis
 
+from contextlib import asynccontextmanager
+
 from app.core.config import settings
 from app.core.redis_client import get_redis, execute_redis_operation, RedisException
 from app.core.logging import get_logger
@@ -420,16 +422,16 @@ class RedisCacheService:
     async def hdel(
         self,
         namespace: CacheNamespace,
-        *parts: str,
-        *fields: str
+        parts: tuple[str, ...],
+        fields: tuple[str, ...]
     ) -> int:
         """
         Delete hash fields.
         
         Args:
             namespace: Cache namespace
-            *parts: Key components
-            *fields: Fields to delete
+            parts: Key components tuple
+            fields: Fields to delete tuple
             
         Returns:
             int: Number of fields deleted
@@ -456,16 +458,16 @@ class RedisCacheService:
     async def sadd(
         self,
         namespace: CacheNamespace,
-        *parts: str,
-        *members: str
+        parts: tuple[str, ...],
+        members: tuple[str, ...]
     ) -> int:
         """
         Add members to a set.
         
         Args:
             namespace: Cache namespace
-            *parts: Key components
-            *members: Members to add
+            parts: Key components tuple
+            members: Members to add tuple
             
         Returns:
             int: Number of members added
@@ -517,15 +519,15 @@ class RedisCacheService:
     async def srem(
         self,
         namespace: CacheNamespace,
-        *parts: str,
-        *members: str
+        parts: tuple[str, ...],
+        members: tuple[str, ...]
     ) -> int:
         """
         Remove members from a set.
         
         Args:
             namespace: Cache namespace
-            *parts: Key components
+            parts: Key components tuple
             *members: Members to remove
             
         Returns:

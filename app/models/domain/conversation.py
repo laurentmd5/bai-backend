@@ -4,7 +4,7 @@ Stores chat conversations with full metadata for analytics and auditing.
 """
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -23,6 +23,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.models.domain.session import Session
 
 
 class Conversation(Base):

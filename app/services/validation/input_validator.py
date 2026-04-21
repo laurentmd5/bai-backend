@@ -165,6 +165,96 @@ class InputValidator:
         """
         return unicodedata.normalize('NFC', text)
     
+    def _analyze_sentiment_context(self, text: str) -> Dict[str, Any]:
+        """
+        SECURITY FLAIR #1 FIX: Analyze sentiment and context to distinguish 
+        legitimate inquiries from actual hostile content.
+        
+        Replaces aggressive phrase-based blocking with contextual analysis.
+        Allows legitimate political/critical questions while blocking actual attacks.
+        
+        Args:
+            text: Input text to analyze
+            
+        Returns:
+            Dictionary with:
+            - risk_level: "low", "medium", "high"
+            - is_legitimate_question: bool (allows critical but constructive questions)
+            - action: "allow", "block", "allow_with_logging"
+            - reason: Explanation of assessment
+        """
+        text_lower = text.lower()
+        
+        # Check for actual hostile markers (violence, threats, abuse)
+        hostile_markers = {
+            'violence': [
+                r'\bkill\b.*\b(you|them|us)',
+                r'\bstab\b.*\b(you|them|us)',
+                r'\bshoot\b.*\b(you|them|us)',
+                r'\bharm\b.*\b(you|them|us)',
+            ],
+            'threats': [
+                r'\bi\'?ll\s+(?:beat|kill|hurt)',
+                r'\byou\'?re\s+(?:dead|done)',
+                r'\bwill\s+(?:destroy|eliminate)',
+            ],
+            'profanity': [
+                r'\bf[*u]ck',
+                r'\bsh[*i]t',
+                r'\bd[*a]mn',
+            ],
+        }
+        
+        # Check for actual hostile content
+        for category, patterns in hostile_markers.items():
+            for pattern in patterns:
+                if re.search(pattern, text_lower):
+                    return {
+                        "risk_level": "high",
+                        "is_legitimate_question": False,
+                        "action": "block",
+                        "reason": f"Actual {category} detected in message"
+                    }
+        
+        # Check for legitimate question patterns (political, critical, factual inquiries)
+        legitimate_patterns = [
+            r'\bwhat\s+(?:are|is)\s+.*(?:failures|problems|criticisms)',
+            r'\bwhy\s+(?:did|does|do).*(?:fail|struggle|lose)',
+            r'\btell\s+(?:me|us)\s+about.*(?:weaknesses|challenges|issues)',
+            r'\bhow\s+(?:has|have|do).*(?:failed|struggled)',
+            r'\bwhat\s+(?:mistakes|errors|issues)',
+            r'\bcritique\s+',
+            r'\banalysis\s+(?:of|on)',
+        ]
+        
+        is_likely_question = any(re.search(pattern, text_lower) for pattern in legitimate_patterns)
+        
+        # If it looks like a legitimate question, allow it
+        if is_likely_question:
+            return {
+                "risk_level": "low",
+                "is_legitimate_question": True,
+                "action": "allow",
+                "reason": "Legitimate critical inquiry detected"
+            }
+        
+        # Neutral/informational queries are fine
+        if len(text) < 30 or re.search(r'\?$', text.strip()):
+            return {
+                "risk_level": "low",
+                "is_legitimate_question": True,
+                "action": "allow",
+                "reason": "Appears to be informational query"
+            }
+        
+        # Default to allowing unless we found actual hostile markers
+        return {
+            "risk_level": "low",
+            "is_legitimate_question": True,
+            "action": "allow",
+            "reason": "Content appears non-hostile"
+        }
+    
     def validate_chat_message(
         self,
         message: str,
@@ -290,19 +380,30 @@ class InputValidator:
         
         validation_metadata["validations_performed"].append("prompt_injection_check_passed")
         
-        # Step 9: Check for hostile content (CRITICAL - REJECT)
-        is_hostile, matched = detect_hostile_content(message)
-        if is_hostile:
+        # Step 9: Check for hostile content with contextual analysis (SECURITY FLAIR #1 FIX)
+        sentiment_analysis = self._analyze_sentiment_context(message)
+        
+        if sentiment_analysis["action"] == "block":
             validation_metadata["validations_performed"].append("hostile_content_detected")
             logger.warning(
                 "hostile_content_blocked",
-                matched_pattern=matched,
+                reason=sentiment_analysis["reason"],
                 message_preview=message[:100],
                 channel=channel
             )
             raise HostileContentException()
-        
-        validation_metadata["validations_performed"].append("hostile_check_passed")
+        elif sentiment_analysis["action"] == "allow_with_logging":
+            validation_metadata["validations_performed"].append("suspicious_content_logged")
+            logger.info(
+                "suspicious_content_allowed",
+                reason=sentiment_analysis["reason"],
+                risk_level=sentiment_analysis["risk_level"],
+                message_preview=message[:100],
+                channel=channel
+            )
+        else:
+            # Allow
+            validation_metadata["validations_performed"].append("hostile_check_passed")
         
         # Step 10: Check for spam (WARNING ONLY)
         is_spam, spam_pattern = self._check_spam_patterns(message)

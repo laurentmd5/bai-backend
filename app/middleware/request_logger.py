@@ -10,7 +10,7 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
-from app.core.logging import get_logger
+from app.core.logging import get_logger, set_request_id
 
 logger = get_logger(__name__)
 
@@ -96,6 +96,8 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
         # Generate request ID
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
+        # BUG #2 FIX: Set request_id in module-level ContextVar for correlation across logs
+        set_request_id(request_id)
         
         # Skip logging for excluded paths
         if not self._should_log(request.url.path):

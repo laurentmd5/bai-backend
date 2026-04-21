@@ -2,6 +2,7 @@
 Service dependencies for BARROW.AI FastAPI endpoints.
 """
 
+from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 

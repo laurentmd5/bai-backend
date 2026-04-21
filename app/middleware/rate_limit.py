@@ -4,7 +4,8 @@ Provides IP-based and endpoint-based rate limiting.
 """
 
 import time
-from typing import Callable, Optional, Tuple
+import ipaddress
+from typing import Callable, Optional, Tuple, List
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -63,12 +64,30 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         "/openapi.json",
     ]
     
+    # SECURITY FLAIR #2 FIX: Trusted proxies list
+    # Only these proxies can set X-Forwarded-For (prevents rate limit bypass)
+    TRUSTED_PROXIES: List[str] = [
+        "127.0.0.1",     # Localhost
+        "::1",           # IPv6 localhost
+        "10.0.0.0/8",    # Private network
+        "172.16.0.0/12", # Private network
+        "192.168.0.0/16", # Private network
+    ]
+    
     def __init__(self, app: ASGIApp):
         super().__init__(app)
+        # Precompile trusted proxy networks
+        self._trusted_networks = [
+            ipaddress.ip_network(cidr, strict=False)
+            for cidr in self.TRUSTED_PROXIES
+        ]
     
     def _get_client_ip(self, request: Request) -> str:
         """
-        Extract client IP from request headers.
+        SECURITY FLAIR #2 FIX: Extract client IP with proxy validation.
+        
+        Validates X-Forwarded-For header against trusted proxies list
+        to prevent rate limit bypass via header spoofing.
         
         Args:
             request: FastAPI request
@@ -76,21 +95,62 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         Returns:
             Client IP address
         """
-        # Check X-Forwarded-For header (behind proxy)
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
+        # Get immediate peer IP
+        immediate_peer_ip = request.client.host if request.client else "unknown"
         
-        # Check X-Real-IP header
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip.strip()
+        # Check if immediate peer is a trusted proxy
+        try:
+            immediate_peer = ipaddress.ip_address(immediate_peer_ip)
+            is_trusted_proxy = any(
+                immediate_peer in network for network in self._trusted_networks
+            )
+        except ValueError:
+            is_trusted_proxy = False
         
-        # Fallback to direct client
-        if request.client:
-            return request.client.host
+        # Only trust X-Forwarded-For if immediate peer is a trusted proxy
+        if is_trusted_proxy:
+            forwarded = request.headers.get("X-Forwarded-For")
+            if forwarded:
+                # Parse from right-to-left through proxy chain
+                # E.g., "client_ip, proxy1, proxy2" -> take leftmost untrusted
+                ips = [ip.strip() for ip in forwarded.split(",")]
+                
+                # Skip rightmost trusted proxies and return first untrusted IP
+                for ip_str in reversed(ips):
+                    try:
+                        ip = ipaddress.ip_address(ip_str)
+                        # If this IP is NOT in trusted list, use it
+                        if not any(ip in network for network in self._trusted_networks):
+                            logger.info(
+                                "rate_limit_client_ip_extracted",
+                                ip=ip_str,
+                                forwarded_chain=forwarded,
+                                trusted_proxy=True
+                            )
+                            return ip_str
+                    except ValueError:
+                        continue
         
-        return "unknown"
+        # Check X-Real-IP header (but only if from trusted proxy)
+        if is_trusted_proxy:
+            real_ip = request.headers.get("X-Real-IP")
+            if real_ip:
+                logger.info(
+                    "rate_limit_client_ip_extracted",
+                    ip=real_ip,
+                    source="X-Real-IP",
+                    trusted_proxy=True
+                )
+                return real_ip.strip()
+        
+        # Fallback to direct client or immediate peer
+        logger.info(
+            "rate_limit_client_ip_extracted",
+            ip=immediate_peer_ip,
+            source="direct_connection",
+            trusted_proxy=is_trusted_proxy
+        )
+        return immediate_peer_ip
     
     def _get_limit_for_path(self, path: str) -> Tuple[int, int]:
         """
