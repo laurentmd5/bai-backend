@@ -1,0 +1,27 @@
+# =============================================================================
+# BARROW.AI POC - Traefik Configuration (DEVELOPMENT)
+# =============================================================================
+
+api:
+  dashboard: true
+  debug: true
+
+entryPoints:
+  web:
+    address: ":80"
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: barrow-net
+  file:
+    filename: /config.yml
+    watch: true
+
+log:
+  level: DEBUG
+  filePath: /var/log/traefik/traefik.log
+
+accessLog:
+  filePath: /var/log/traefik/access.log

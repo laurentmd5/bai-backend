@@ -12,7 +12,7 @@ import re
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime, timedelta, timezone
 
-import jwt
+from jose import jwt
 import pyotp
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, InvalidHashError
@@ -212,7 +212,7 @@ def decode_jwt_token(token: str, token_type: str = "access") -> Dict[str, Any]:
         
     except jwt.ExpiredSignatureError:
         raise AuthenticationException("Token has expired")
-    except jwt.InvalidTokenError as e:
+    except jwt.JWTError as e:
         raise AuthenticationException(f"Invalid token: {str(e)}")
 
 
@@ -554,7 +554,7 @@ _HOSTILE_KEYWORDS = [
 ]
 
 _HOSTILE_PATTERNS = [
-    re.compile(rf"(?i)(barrow|president|npp)\s+is\s+({kw})".format(kw="|".join(_HOSTILE_KEYWORDS))),
+    re.compile(r"(?i)(barrow|president|npp)\s+is\s+({})".format("|".join(_HOSTILE_KEYWORDS))),
     re.compile(r"(?i)(why is barrow|why does barrow)\s+(so bad|a failure|corrupt)"),
     re.compile(r"(?i)(opposition|udp|pdois|gdc)\s+(is better|will win|should win)"),
 ]

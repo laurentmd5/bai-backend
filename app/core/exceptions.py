@@ -210,3 +210,15 @@ class TwoFactorRequiredException(AuthenticationException):
             code=ErrorCode.TWO_FACTOR_REQUIRED
         )
         self.session_token = session_token
+
+
+class DatabaseError(BarrowAIException):
+    """Raised when a database operation fails."""
+    
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(
+            message=message,
+            code=ErrorCode.INTERNAL_ERROR,
+            status_code=500,
+            details=details
+        )

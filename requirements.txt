@@ -6,7 +6,7 @@
 fastapi==0.115.11
 uvicorn[standard]==0.34.0
 httptools==0.6.4
-#uvloop==0.21.0
+uvloop==0.21.0
 
 # Database
 sqlalchemy==2.0.36

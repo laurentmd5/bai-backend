@@ -1,0 +1,347 @@
+# =============================================================================
+# BARROW.AI POC - .gitignore
+# Fichiers et dossiers à exclure du repository GitHub
+# =============================================================================
+
+# =============================================================================
+# ENVIRONNEMENT & SECRETS (CRITIQUE)
+# =============================================================================
+
+# Fichier .env contenant les secrets (même en repo privé, bonne pratique)
+.env
+.env.*
+!.env.example
+
+# Certificats SSL
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+
+# Fichiers de configuration avec secrets
+acme.json
+credentials.json
+service-account.json
+*.secret
+
+# =============================================================================
+# PYTHON
+# =============================================================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# =============================================================================
+# IDE & EDITEURS
+# =============================================================================
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# IntelliJ / PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+.bak
+.swp
+.swo
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# NetBeans
+nbproject/
+nbbuild/
+dist/
+nbdist/
+
+# =============================================================================
+# DOCKER
+# =============================================================================
+
+# Docker volumes
+docker-volumes/
+data/
+*.tar.gz
+
+# Docker compose override (local)
+docker-compose.override.yml
+
+# =============================================================================
+# LOGS & DONNÉES
+# =============================================================================
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# Base de données locale
+*.db
+*.sqlite
+*.sqlite3
+
+# Backups
+backups/
+*.dump
+*.rdb
+*.aof
+
+# Uploads
+uploads/*
+!uploads/.gitkeep
+
+# Données temporaires
+tmp/
+temp/
+*.tmp
+*.temp
+
+# =============================================================================
+# SYSTÈME D'EXPLOITATION
+# =============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# =============================================================================
+# DIVERS
+# =============================================================================
+
+# Fichiers de test
+test_results.txt
+test_results.xml
+.pytest_cache/
+
+# Coverage
+.coverage
+coverage.xml
+htmlcov/
+
+# Profiling
+*.prof
+*.lprof
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# Fichiers volumineux (> 50MB)
+*.large
+
+# =============================================================================
+# SPÉCIFIQUE BARROW.AI - NE PAS COMMITTER
+# =============================================================================
+
+# Tokens d'accès temporaires
+*.token
+tokens/
+
+# Données de session
+sessions/
+
+# Configuration locale de Traefik (peut contenir des IPs)
+traefik/acme.json
+
+# Fichiers de configuration locaux
+docker-compose.local.yml
+docker-compose.prod.yml
+
+# Scripts de déploiement locaux
+deploy.sh
+deploy.*

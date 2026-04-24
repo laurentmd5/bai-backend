@@ -1,0 +1,32 @@
+# =============================================================================
+# BARROW.AI POC - Traefik Middleware (DEVELOPMENT)
+# =============================================================================
+
+http:
+  middlewares:
+    sec-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+
+    rate-limit:
+      rateLimit:
+        average: 1000
+        burst: 500
+        period: 1m
+
+    rate-limit-strict:
+      rateLimit:
+        average: 500
+        burst: 200
+        period: 1m
+
+    admin-ipwhitelist:
+      ipWhiteList:
+        sourceRange:
+          - "127.0.0.1/32"
+          - "172.20.0.0/16"
+          - "192.168.0.0/16"
+          - "10.0.0.0/8"
