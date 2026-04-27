@@ -52,7 +52,7 @@ python-dotenv==1.0.1
 pyyaml==6.0.2
 ujson==5.10.0
 orjson==3.10.12
-greenlet==3.0.3
+greenlet==3.5.0
 
 # Development
 ipython==8.29.0
