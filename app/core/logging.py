@@ -83,10 +83,8 @@ def mask_sensitive_data(_, __, event_dict: EventDict) -> EventDict:
 def add_request_id(_, __, event_dict: EventDict) -> EventDict:
     """Extract request ID from context if available."""
     request_id = request_id_context.get()
-
     if request_id:
         event_dict["request_id"] = request_id
-
     return event_dict
 
 
@@ -96,7 +94,6 @@ def configure_structlog() -> None:
 
     shared_processors: list[Processor] = [
         structlog.stdlib.add_log_level,
-        structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         add_service_name,
         add_environment,
@@ -115,7 +112,7 @@ def configure_structlog() -> None:
             ],
             wrapper_class=structlog.make_filtering_bound_logger(log_level),
             context_class=dict,
-            logger_factory=structlog.PrintLoggerFactory(),
+            logger_factory=structlog.stdlib.LoggerFactory(),
             cache_logger_on_first_use=True,
         )
     else:
@@ -125,7 +122,7 @@ def configure_structlog() -> None:
             ],
             wrapper_class=structlog.make_filtering_bound_logger(log_level),
             context_class=dict,
-            logger_factory=structlog.PrintLoggerFactory(),
+            logger_factory=structlog.stdlib.LoggerFactory(),
             cache_logger_on_first_use=True,
         )
 
