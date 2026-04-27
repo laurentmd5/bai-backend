@@ -5,7 +5,7 @@ pipeline {
     
     environment {
         DOCKER_IMAGE_NAME = 'barrow-ai-backend'
-        DOCKER_IMAGE_TAG = "${BUILD_NUMBER}-${GIT_COMMIT.take(8)}"
+        DOCKER_IMAGE_TAG = "${BUILD_NUMBER}_${GIT_COMMIT.take(8)}"
         DEPLOY_PATH = '/home/devops/barrow-ai-poc'
         COMPOSE_FILE = 'docker-compose.dev.yml'
     }
