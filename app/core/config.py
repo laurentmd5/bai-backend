@@ -333,8 +333,7 @@ class Settings(BaseSettings):
     )
     
     GEMINI_MODEL: str = Field(
-        default="tunedModels/askbarrow-npp-v3",
-        description="Gemini model name (fine-tuned)"
+        default="gemini-2.0-flash",
     )
     
     GEMINI_EMBED_MODEL: str = Field(
