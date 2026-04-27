@@ -799,3 +799,65 @@ def constant_time_compare(a: str, b: str) -> bool:
         bool: True if strings are equal
     """
     return hmac.compare_digest(a.encode(), b.encode())
+
+
+def validate_password_strength(password: str) -> Tuple[bool, List[str]]:
+    """
+    Validate password strength against security requirements.
+    
+    Requirements:
+    - At least 12 characters
+    - At least one uppercase letter
+    - At least one lowercase letter
+    - At least one digit
+    - At least one special character
+    - Not a common password
+    - No excessive repeated characters
+    - No sequential character patterns
+    
+    Args:
+        password: Password to validate
+        
+    Returns:
+        Tuple of (is_valid, list_of_issues)
+    """
+    issues = []
+    
+    if len(password) < 12:
+        issues.append("Password must be at least 12 characters long")
+    
+    if not re.search(r"[A-Z]", password):
+        issues.append("Password must contain at least one uppercase letter")
+    
+    if not re.search(r"[a-z]", password):
+        issues.append("Password must contain at least one lowercase letter")
+    
+    if not re.search(r"\d", password):
+        issues.append("Password must contain at least one digit")
+    
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        issues.append("Password must contain at least one special character")
+    
+    # Check common passwords
+    common_passwords = [
+        "password", "password123", "admin123", "barrow2024", "npp2024",
+        "12345678", "qwerty123", "gambia2024", "president2024"
+    ]
+    
+    if password.lower() in common_passwords:
+        issues.append("Password is too common or easily guessable")
+    
+    # Check for repeated characters
+    if re.search(r"(.)\1{3,}", password):
+        issues.append("Password contains too many repeated characters")
+    
+    # Check for sequential characters
+    sequential_patterns = [
+        "abcdefgh", "12345678", "qwertyui", "asdfghjk"
+    ]
+    for pattern in sequential_patterns:
+        if pattern in password.lower():
+            issues.append("Password contains sequential characters")
+            break
+    
+    return len(issues) == 0, issues
