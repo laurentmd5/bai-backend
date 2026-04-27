@@ -54,7 +54,7 @@ class GeminiEmbeddingProvider(IEmbeddingProvider):
         """Get or create HTTP client."""
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(connect=10.0, read=15.0, write=10.0),
+                timeout=httpx.Timeout(10.0, connect=10.0, read=15.0, write=10.0),
                 limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
                 headers={
                     "Content-Type": "application/json",
