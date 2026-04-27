@@ -222,3 +222,38 @@ class DatabaseError(BarrowAIException):
             status_code=500,
             details=details
         )
+
+class RedisException(BarrowAIException):
+    """Raised when a Redis operation fails."""
+
+    def __init__(self, message: str, code: Optional[str] = None, original_error: Optional[Exception] = None):
+        super().__init__(
+            message=message,
+            code=ErrorCode.INTERNAL_ERROR,
+            status_code=503,
+            details={"redis_code": code, "original_error": str(original_error)} if original_error else None
+        )
+
+
+class QdrantException(BarrowAIException):
+    """Raised when a Qdrant operation fails."""
+
+    def __init__(self, message: str, original_error: Optional[Exception] = None):
+        super().__init__(
+            message=message,
+            code=ErrorCode.VECTOR_SEARCH_FAILED,
+            status_code=503,
+            details={"original_error": str(original_error)} if original_error else None
+        )
+
+
+class WhatsAppException(BarrowAIException):
+    """Raised when a WhatsApp operation fails."""
+
+    def __init__(self, message: str, code: Optional[int] = None, original_error: Optional[Exception] = None):
+        super().__init__(
+            message=message,
+            code=ErrorCode.WHATSAPP_SEND_FAILED,
+            status_code=503,
+            details={"whatsapp_code": code, "original_error": str(original_error)} if original_error else None
+        )
