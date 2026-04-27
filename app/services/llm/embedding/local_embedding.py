@@ -1,10 +1,5 @@
-"""
-Local embedding provider using sentence-transformers.
-No API key required, runs entirely on CPU of the server.
-"""
-
 from typing import List, Optional
-from sentence_transformers import SentenceTransformer
+from fastembed import TextEmbedding
 
 from app.services.interfaces.embedding_provider import IEmbeddingProvider
 from app.core.logging import get_logger
@@ -13,33 +8,30 @@ logger = get_logger(__name__)
 
 
 class LocalEmbeddingProvider(IEmbeddingProvider):
-    """
-    Local embedding provider using sentence-transformers.
-    Uses all-MiniLM-L6-v2 model (384 dimensions, lightweight).
-    """
+    """Local embedding using fastembed (lightweight)."""
 
-    MODEL_NAME = "all-MiniLM-L6-v2"
+    MODEL_NAME = "BAAI/bge-small-en-v1.5"
     EMBEDDING_DIMENSION = 384
 
     def __init__(self):
-        self._model: Optional[SentenceTransformer] = None
+        self._model: Optional[TextEmbedding] = None
 
-    def _get_model(self) -> SentenceTransformer:
+    def _get_model(self) -> TextEmbedding:
         if self._model is None:
             logger.info("loading_local_embedding_model", model=self.MODEL_NAME)
-            self._model = SentenceTransformer(self.MODEL_NAME)
+            self._model = TextEmbedding(model_name=self.MODEL_NAME)
             logger.info("local_embedding_model_loaded")
         return self._model
 
     async def embed(self, text: str) -> List[float]:
         model = self._get_model()
-        embedding = model.encode(text, normalize_embeddings=True)
-        return embedding.tolist()
+        embeddings = list(model.embed([text]))
+        return embeddings[0].tolist()
 
     async def embed_batch(self, texts: List[str]) -> List[List[float]]:
         model = self._get_model()
-        embeddings = model.encode(texts, normalize_embeddings=True)
-        return embeddings.tolist()
+        embeddings = list(model.embed(texts))
+        return [e.tolist() for e in embeddings]
 
     async def is_available(self) -> bool:
         return True
