@@ -9,7 +9,7 @@ from app.services.interfaces.llm_provider import ILLMProvider
 from app.services.interfaces.embedding_provider import IEmbeddingProvider
 from app.services.llm.gemini_provider import GeminiProvider
 from app.services.llm.ollama_provider import OllamaProvider
-from app.services.llm.embedding.gemini_embedding import GeminiEmbeddingProvider
+from app.services.llm.embedding.local_embedding import LocalEmbeddingProvider
 from app.core.config import settings, LLMProvider
 from app.core.logging import get_logger
 
@@ -55,6 +55,7 @@ def get_embedding_provider() -> IEmbeddingProvider:
     Get the configured embedding provider instance.
     
     Uses singleton pattern.
+    Uses local sentence-transformers model for offline embedding.
     
     Returns:
         IEmbeddingProvider implementation
@@ -64,10 +65,8 @@ def get_embedding_provider() -> IEmbeddingProvider:
     if _embedding_provider is not None:
         return _embedding_provider
     
-    # Currently only Gemini embedding is supported
-    # Phase 2 will add local embedding support
-    logger.info("using_gemini_embedding_provider")
-    _embedding_provider = GeminiEmbeddingProvider()
+    logger.info("using_local_embedding_provider")
+    _embedding_provider = LocalEmbeddingProvider()
     
     return _embedding_provider
 
