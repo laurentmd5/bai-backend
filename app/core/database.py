@@ -267,7 +267,7 @@ async def check_database_health() -> dict:
         async with get_session_context() as session:
             start_time = datetime.utcnow()
             result = await session.execute(text("SELECT 1"))
-            await result.scalar()
+            result.scalar()
             latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
             
             if _engine:
