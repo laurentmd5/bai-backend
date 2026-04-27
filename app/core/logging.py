@@ -14,12 +14,16 @@ from structlog.types import Processor, EventDict
 
 from app.core.config import settings, LogLevel
 
-# BUG #2 FIX: Declare ContextVar at MODULE LEVEL, not inside functions
-# This ensures it's created once and shared across all logging calls
+# Declared at MODULE LEVEL - shared across all logging calls
 request_id_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    "request_id", 
+    "request_id",
     default=None
 )
+
+
+def setup_logging() -> None:
+    """Initialize logging configuration. Called once at application startup."""
+    configure_structlog()
 
 
 def set_request_id(request_id: str) -> None:
@@ -63,7 +67,7 @@ def mask_sensitive_data(_, __, event_dict: EventDict) -> EventDict:
         "access_token", "refresh_token", "csrf_token", "phone_number",
         "email", "message"
     }
-    
+
     for key in list(event_dict.keys()):
         key_lower = key.lower()
         if any(sensitive in key_lower for sensitive in sensitive_fields):
@@ -72,28 +76,24 @@ def mask_sensitive_data(_, __, event_dict: EventDict) -> EventDict:
                 event_dict[key] = f"{value[:4]}...{value[-4:]}"
             else:
                 event_dict[key] = "***REDACTED***"
-    
+
     return event_dict
 
 
 def add_request_id(_, __, event_dict: EventDict) -> EventDict:
-    """Extract request ID from context if available (BUG #2 FIX: use module-level ContextVar)."""
-    # ✅ Use the globally declared ContextVar
+    """Extract request ID from context if available."""
     request_id = request_id_context.get()
-    
+
     if request_id:
         event_dict["request_id"] = request_id
-    
+
     return event_dict
 
 
 def configure_structlog() -> None:
     """Configure structlog for structured JSON logging."""
-    
-    # Determine log level
     log_level = getattr(logging, settings.LOG_LEVEL.value)
-    
-    # Shared processors for all loggers
+
     shared_processors: list[Processor] = [
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
@@ -106,9 +106,8 @@ def configure_structlog() -> None:
         structlog.processors.format_exc_info,
         structlog.processors.UnicodeDecoder(),
     ]
-    
+
     if settings.LOG_FORMAT == "json":
-        # JSON formatter for production
         structlog.configure(
             processors=shared_processors + [
                 mask_sensitive_data,
@@ -120,7 +119,6 @@ def configure_structlog() -> None:
             cache_logger_on_first_use=True,
         )
     else:
-        # Console formatter for development
         structlog.configure(
             processors=shared_processors + [
                 structlog.dev.ConsoleRenderer(colors=True)
@@ -130,8 +128,7 @@ def configure_structlog() -> None:
             logger_factory=structlog.PrintLoggerFactory(),
             cache_logger_on_first_use=True,
         )
-    
-    # Configure standard logging to use structlog
+
     logging.basicConfig(
         format="%(message)s",
         stream=sys.stdout,
@@ -140,15 +137,7 @@ def configure_structlog() -> None:
 
 
 def get_logger(name: Optional[str] = None) -> structlog.BoundLogger:
-    """
-    Get a structured logger instance.
-    
-    Args:
-        name: Logger name (defaults to root logger)
-        
-    Returns:
-        BoundLogger: Structured logger instance
-    """
+    """Get a structured logger instance."""
     return structlog.get_logger(name)
 
 
@@ -161,7 +150,7 @@ logger = get_logger(__name__)
 
 class RequestLogger:
     """Context manager for logging request lifecycle."""
-    
+
     def __init__(self, request_id: str, method: str, path: str, client_ip: str):
         self.request_id = request_id
         self.method = method
@@ -169,7 +158,7 @@ class RequestLogger:
         self.client_ip = client_ip
         self.start_time: Optional[datetime] = None
         self.logger = get_logger("api.request")
-    
+
     def __enter__(self):
         self.start_time = datetime.now(timezone.utc)
         self.logger.info(
@@ -180,10 +169,10 @@ class RequestLogger:
             client_ip=self.client_ip,
         )
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         duration_ms = (datetime.now(timezone.utc) - self.start_time).total_seconds() * 1000
-        
+
         log_data = {
             "request_id": self.request_id,
             "method": self.method,
@@ -191,7 +180,7 @@ class RequestLogger:
             "client_ip": self.client_ip,
             "duration_ms": round(duration_ms, 2),
         }
-        
+
         if exc_type:
             log_data["error"] = str(exc_val)
             log_data["error_type"] = exc_type.__name__
