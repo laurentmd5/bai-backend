@@ -41,7 +41,7 @@ services:
     networks:
       - barrow-net
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes --requirepass redis_dev_2024
