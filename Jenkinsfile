@@ -4,8 +4,8 @@ pipeline {
     agent any
     
     environment {
-        DOCKER_IMAGE_NAME = 'barrowai_backend'
-        DOCKER_IMAGE_TAG = "${BUILD_NUMBER}_${GIT_COMMIT.take(8)}"
+        DOCKER_IMAGE_NAME = 'barrow'
+        DOCKER_IMAGE_TAG = "${BUILD_NUMBER}"
         DEPLOY_PATH = '/home/devops/barrow-ai-poc'
         COMPOSE_FILE = 'docker-compose.dev.yml'
     }
@@ -22,9 +22,9 @@ pipeline {
         // =====================================================================
         // STAGE 1 : CLONE
         // =====================================================================
-        stage('📦 Clone') {
+        stage('Clone') {
             steps {
-                echo 'Clonage du dépôt GitHub...'
+                echo 'Clonage du depot GitHub...'
                 checkout scm
                 script {
                     currentBuild.displayName = "#${BUILD_NUMBER} - ${GIT_COMMIT.take(8)}"
@@ -35,22 +35,19 @@ pipeline {
         // =====================================================================
         // STAGE 2 : BUILD
         // =====================================================================
-        stage('🐳 Build') {
+        stage('Build') {
             steps {
                 script {
-                    docker.build(
-                        "${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}",
-                        "-f Dockerfile ."
-                    )
-                    docker.image("${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}").tag("${DOCKER_IMAGE_NAME}:latest")
+                    echo "Construction : ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
+                    docker.build("${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}", "-f Dockerfile .")
                 }
             }
         }
         
         // =====================================================================
-        // STAGE 3 : PRÉPARER
+        // STAGE 3 : PREPARER
         // =====================================================================
-        stage('📁 Préparer') {
+        stage('Preparer') {
             steps {
                 script {
                     sh """
@@ -65,26 +62,25 @@ pipeline {
                         cp ${WORKSPACE}/traefik/config.yml ${DEPLOY_PATH}/traefik/
                     """
                     
-                    // .env : ne pas écraser
                     def envExists = sh(
                         script: "test -f ${DEPLOY_PATH}/.env && echo yes || echo no",
                         returnStdout: true
                     ).trim()
                     
                     if (envExists == 'no') {
-                        echo '⚠️  .env manquant - Créez-le sur la VM : nano /home/devops/barrow-ai-poc/.env'
+                        echo 'ATTENTION : .env manquant - Creez-le sur la VM : nano /home/devops/barrow-ai-poc/.env'
                         sh "cp ${WORKSPACE}/.env.example ${DEPLOY_PATH}/.env"
                     } else {
-                        echo '✅ .env conservé'
+                        echo '.env conserve'
                     }
                 }
             }
         }
         
         // =====================================================================
-        // STAGE 4 : REDÉMARRER
+        // STAGE 4 : REDEMARRER
         // =====================================================================
-        stage('⏸️ Redémarrer') {
+        stage('Redemarrer') {
             steps {
                 sh """
                     cd ${DEPLOY_PATH}
@@ -96,26 +92,26 @@ pipeline {
         }
         
         // =====================================================================
-        // STAGE 5 : VÉRIFIER
+        // STAGE 5 : VERIFIER
         // =====================================================================
-        stage('🏥 Vérifier') {
+        stage('Verifier') {
             steps {
                 script {
                     def ok = false
                     for (int i = 0; i < 15; i++) {
                         def status = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health || echo 000", returnStdout: true).trim()
-                        if (status == '200') { ok = true; echo "✅ Healthy (${i + 1})"; break }
+                        if (status == '200') { ok = true; echo "Healthy (tentative ${i + 1})"; break }
                         sleep(time: 3, unit: 'SECONDS')
                     }
-                    if (!ok) error("❌ Service non healthy")
+                    if (!ok) error("Service non healthy apres 15 tentatives")
                 }
             }
         }
         
         // =====================================================================
-        // STAGE 6 : INIT (premier déploiement)
+        // STAGE 6 : INIT DB (premier deploiement)
         // =====================================================================
-        stage('🆕 Init DB') {
+        stage('Init DB') {
             when {
                 expression {
                     def r = sh(script: "cd ${DEPLOY_PATH} && docker compose -f ${COMPOSE_FILE} exec -T postgres psql -U barrowai -d barrowai_poc -t -c \"SELECT COUNT(*) FROM admin_users;\" 2>/dev/null || echo 0", returnStdout: true).trim()
@@ -135,7 +131,7 @@ pipeline {
         // =====================================================================
         // STAGE 7 : NETTOYER
         // =====================================================================
-        stage('🧹 Nettoyer') {
+        stage('Nettoyer') {
             steps {
                 sh 'docker image prune -f || true'
             }
@@ -147,13 +143,13 @@ pipeline {
             script {
                 def ip = sh(script: "hostname -I | awk '{print \$1}'", returnStdout: true).trim()
                 echo """
-╔══════════════════════════════════════════════╗
-║        🎉  DÉPLOIEMENT RÉUSSI              ║
-╠══════════════════════════════════════════════╣
-║  API     : http://${ip}:8000/health
-║  Docs    : http://${ip}:8000/docs
-║  Admin   : admin@pace.gm / Admin123!
-╚══════════════════════════════════════════════╝"""
+========================================
+     DEPLOIEMENT REUSSI !
+========================================
+  API     : http://${ip}:8000/health
+  Docs    : http://${ip}:8000/docs
+  Admin   : admin@pace.gm / Admin123!
+========================================"""
             }
         }
         failure {
