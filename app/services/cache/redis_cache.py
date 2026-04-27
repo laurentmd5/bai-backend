@@ -629,7 +629,7 @@ class RedisCacheService:
         return await self.set(
             CacheNamespace.RAG_RESPONSE,
             question_hash,
-            response,
+            value=response,
             ttl=ttl
         )
     
@@ -668,7 +668,7 @@ class RedisCacheService:
         return await self.set(
             CacheNamespace.RAG_EMBEDDING,
             text_hash,
-            embedding,
+            value=embedding,
             ttl=ttl
         )
     

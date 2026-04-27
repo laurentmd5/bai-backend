@@ -258,7 +258,7 @@ ANSWER:"""
         
         full_prompt = self._build_full_prompt(prompt, context, system_prompt)
         
-        url = f"{self._base_url}/tunedModels/{self._model}:generateContent"
+        url = f"{self._base_url}/models/{self._model}:generateContent"
         
         payload = {
             "contents": [{
