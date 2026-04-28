@@ -724,7 +724,6 @@ class ChatService:
                     confidence=confidence if confidence else 0.0,
                     cache_hit=False,
                     fallback_triggered=True,
-                    additional_data={"irrelevant_sources": True},
                 )
                 
                 return {
