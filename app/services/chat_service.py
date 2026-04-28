@@ -195,6 +195,18 @@ class ChatService:
         ),
     }
     
+    # Relevance keywords for filtering
+    RELEVANCE_KEYWORDS = {
+        "internet": ["internet", "connectivity", "broadband", "wifi", "4g", "5g", "mobile data", "online", "digital service", "gamcel", "gamtel"],
+        "digital": ["digital", "digitization", "e-service", "online platform", "mygov", "portal", "e-government", "digital address", "smart"],
+        "infrastructure": ["road", "bridge", "highway", "infrastructure", "construction", "development", "port", "airport"],
+        "youth": ["youth", "young", "employment", "job", "entrepreneurship", "startup", "training", "skill", "empowerment"],
+        "economy": ["economy", "gdp", "growth", "investment", "business", "trade", "economic", "job creation"],
+        "health": ["health", "hospital", "clinic", "healthcare", "medical", "disease", "treatment", "vaccine"],
+        "education": ["education", "school", "university", "college", "student", "teacher", "learning", "scholarship"],
+        "agriculture": ["agriculture", "farm", "farming", "crop", "food security", "irrigation", "rice", "vegetable"],
+    }
+    
     def __init__(
         self,
         session_repository: SessionRepository,
@@ -312,6 +324,97 @@ class ChatService:
         import hashlib
         normalized = f"{message.lower().strip()}:{language}"
         return hashlib.sha256(normalized.encode()).hexdigest()
+    
+    def _is_response_relevant(
+        self, 
+        sources: List[Dict], 
+        query: str, 
+        language: str = "en"
+    ) -> bool:
+        """
+        Check if retrieved sources are actually relevant to the user's question.
+        
+        This prevents the system from answering with completely irrelevant documents.
+        
+        Args:
+            sources: List of sources returned by Qdrant
+            query: User's original question
+            language: User's language
+            
+        Returns:
+            True if response is relevant, False otherwise
+        """
+        if not sources:
+            logger.debug("no_sources_for_relevance_check")
+            return False
+        
+        # 1. Duplicate detection (same document, same chunk = forced match)
+        unique_chunks = set()
+        for s in sources:
+            doc_name = s.get("document", s.get("doc_id", ""))
+            chunk_idx = s.get("chunk_index", s.get("index", 0))
+            unique_chunks.add((doc_name, chunk_idx))
+        
+        if len(unique_chunks) == 1:
+            logger.warning(
+                "all_sources_identical",
+                chunks=len(sources),
+                document=next(iter(unique_chunks))[0],
+            )
+            return False
+        
+        # 2. Detect the theme of the query
+        query_lower = query.lower()
+        detected_theme = None
+        theme_keywords = []
+        
+        for theme, keywords in self.RELEVANCE_KEYWORDS.items():
+            for kw in keywords:
+                if kw in query_lower:
+                    detected_theme = theme
+                    theme_keywords = keywords
+                    break
+            if detected_theme:
+                break
+        
+        # If no theme detected, accept response (avoid false negatives)
+        if not detected_theme:
+            logger.debug("no_theme_detected_in_query", query=query_lower[:50])
+            return True
+        
+        # 3. Check if sources contain relevant keywords
+        source_text = ""
+        for s in sources[:3]:  # Limit to first 3 sources
+            text = s.get("text_preview", "") or s.get("content", "") or ""
+            section = s.get("section", "")
+            source_text += f" {text} {section}"
+        
+        source_lower = source_text.lower()
+        
+        has_relevant_term = any(kw in source_lower for kw in theme_keywords[:5])
+        
+        if not has_relevant_term:
+            logger.warning(
+                "no_relevant_terms_in_sources",
+                theme=detected_theme,
+                query_preview=query_lower[:100],
+                source_preview=source_text[:200],
+            )
+            return False
+        
+        # 4. Check minimum similarity score
+        min_score = min((s.get("relevance", s.get("score", 0)) for s in sources), default=0)
+        threshold = getattr(settings, 'QDRANT_SIMILARITY_THRESHOLD', 0.70)
+        
+        if min_score < threshold:
+            logger.debug(
+                "scores_below_threshold",
+                min_score=min_score,
+                threshold=threshold,
+            )
+            return False
+        
+        return True
     
     async def process_message(
         self,
@@ -596,6 +699,46 @@ class ChatService:
                 }
             
             # ===============================================================
+            # STEP 6.5: Relevance Filtering
+            # ===============================================================
+            # Check if sources are actually relevant to the question
+            if sources and not self._is_response_relevant(sources, sanitized_message, language):
+                logger.info(
+                    "irrelevant_sources_filtered",
+                    session_id=actual_session_id,
+                    sources_count=len(sources),
+                    query=sanitized_message[:100],
+                )
+                response_metadata["fallback_triggered"] = True
+                response_metadata["irrelevant_sources"] = True
+                
+                fallback_message = self.FALLBACK_RESPONSES.get(language, self.FALLBACK_RESPONSES["en"])
+                
+                await self._session_repo.touch_session(session.id)
+                
+                await self._conversation_repo.create_conversation(
+                    session_id=session.id,
+                    user_message=sanitized_message,
+                    bot_response=fallback_message,
+                    channel=channel,
+                    confidence=confidence if confidence else 0.0,
+                    cache_hit=False,
+                    fallback_triggered=True,
+                    additional_data={"irrelevant_sources": True},
+                )
+                
+                return {
+                    "message": fallback_message,
+                    "session_id": actual_session_id,
+                    "sources": [],
+                    "confidence": confidence if confidence else 0.0,
+                    "cache_hit": False,
+                    "fallback_triggered": True,
+                    "irrelevant_sources": True,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            
+            # ===============================================================
             # STEP 7: LLM Generation
             # ===============================================================
             try:
@@ -624,7 +767,7 @@ class ChatService:
                     user_message=sanitized_message,
                     bot_response=fallback_message,
                     channel=channel,
-                    confidence=confidence,
+                    confidence=confidence if confidence else 0.0,
                     cache_hit=False,
                     fallback_triggered=True,
                     llm_model=self._llm_provider.get_model_name(),
@@ -634,7 +777,7 @@ class ChatService:
                     "message": fallback_message,
                     "session_id": actual_session_id,
                     "sources": sources,
-                    "confidence": confidence,
+                    "confidence": confidence if confidence else 0.0,
                     "cache_hit": False,
                     "fallback_triggered": True,
                     "timestamp": datetime.utcnow().isoformat(),
@@ -668,7 +811,7 @@ class ChatService:
             response_to_cache = {
                 "message": final_response,
                 "sources": sources,
-                "confidence": confidence,
+                "confidence": confidence if confidence else 0.0,
             }
             await cache_service.set_rag_response(
                 question=sanitized_message,
@@ -689,7 +832,7 @@ class ChatService:
                 bot_response=final_response,
                 channel=channel,
                 sources=sources,
-                confidence=confidence,
+                confidence=confidence if confidence else 0.0,
                 latency_ms=int(total_latency_ms),
                 cache_hit=False,
                 llm_model=self._llm_provider.get_model_name(),
@@ -704,7 +847,7 @@ class ChatService:
                 "message_processed",
                 session_id=actual_session_id,
                 channel=channel,
-                confidence=confidence,
+                confidence=confidence if confidence else 0.0,
                 latency_ms=total_latency_ms,
                 cache_hit=False,
             )
@@ -714,7 +857,7 @@ class ChatService:
                 "session_id": actual_session_id,
                 "conversation_id": None,  # Could return the created conversation ID
                 "sources": sources,
-                "confidence": confidence,
+                "confidence": confidence if confidence else 0.0,
                 "cache_hit": False,
                 "fallback_triggered": response_metadata.get("fallback_triggered", False),
                 "latency_ms": int(total_latency_ms),

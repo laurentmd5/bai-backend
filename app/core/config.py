@@ -301,7 +301,7 @@ class Settings(BaseSettings):
     )
     
     QDRANT_SIMILARITY_THRESHOLD: float = Field(
-        default=0.55,
+        default=0.70,
         ge=0.0,
         le=1.0,
         description="Minimum similarity score for RAG retrieval"
@@ -333,7 +333,7 @@ class Settings(BaseSettings):
     )
     
     GEMINI_MODEL: str = Field(
-        default="gemini-2.0-flash",
+        default="gemini-2.5-flash-lite",
     )
     
     GEMINI_EMBED_MODEL: str = Field(

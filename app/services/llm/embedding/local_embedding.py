@@ -10,8 +10,8 @@ logger = get_logger(__name__)
 class LocalEmbeddingProvider(IEmbeddingProvider):
     """Local embedding using fastembed (lightweight)."""
 
-    MODEL_NAME = "BAAI/bge-small-en-v1.5"
-    EMBEDDING_DIMENSION = 384
+    MODEL_NAME = "BAAI/bge-base-en-v1.5"
+    EMBEDDING_DIMENSION = 768
 
     def __init__(self):
         self._model: Optional[TextEmbedding] = None
