@@ -65,6 +65,8 @@ services:
       - barrow-net
     ports:
       - "8000:8000"
+    volumes:
+      - ./data:/app/data
     env_file:
       - .env
     depends_on:
