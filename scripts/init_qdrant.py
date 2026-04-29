@@ -11,6 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.services.rag_service import RAGService
+from app.services.document_processor import DocumentProcessor
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -60,7 +61,7 @@ def read_txt(filepath: Path) -> str:
 
 
 async def index_all_documents():
-    """Index all documents in the /app/data directory."""
+    """Index all documents in the /app/data directory using DocumentProcessor."""
     logger.info("Starting Qdrant initialization...")
     
     rag = RAGService()
@@ -70,6 +71,13 @@ async def index_all_documents():
     if not data_dir.exists():
         logger.error("data_directory_not_found", path=str(data_dir))
         return
+    
+    # Initialize document processor for intelligent chunking
+    processor = DocumentProcessor(
+        chunk_size=500,
+        chunk_overlap=100,
+        supported_extensions=[".docx", ".pdf", ".txt", ".md"]
+    )
     
     # Find all document files
     extensions = [".docx", ".pdf", ".txt", ".md"]
@@ -104,19 +112,22 @@ async def index_all_documents():
                 logger.warning("empty_or_too_short", name=doc_path.name, length=len(content))
                 continue
             
-            # Split into chunks by paragraphs
-            chunks = [c.strip() for c in content.split("\n\n") if c.strip() and len(c.strip()) > 50]
+            # Create document and split into chunks using DocumentProcessor
+            logger.info("processing_document", name=doc_path.name, content_length=len(content))
             
-            if not chunks:
-                # Fallback: split by sentences
-                chunks = [content[i:i+1000] for i in range(0, len(content), 1000)]
+            # Create a simple document object that DocumentProcessor can handle
+            doc = processor._create_document(content, str(doc_path))
+            chunks = processor.chunk_document(doc)
             
-            logger.info("indexing_document", name=doc_path.name, chunks=len(chunks))
+            # Extract chunk texts
+            chunk_texts = [chunk.page_content for chunk in chunks]
+            
+            logger.info("indexing_document", name=doc_path.name, chunks=len(chunk_texts))
             
             indexed = await rag.index_document_chunks(
-                chunks=chunks,
+                chunks=chunk_texts,
                 document_name=doc_path.name,
-                section=doc_path.stem,
+                section=doc_path.stem[:50],
                 language="en",
             )
             total_chunks += indexed
@@ -125,7 +136,7 @@ async def index_all_documents():
         except Exception as e:
             logger.error("document_index_failed", name=doc_path.name, error=str(e))
     
-    # Show collection stats using the correct method
+    # Show collection stats
     try:
         stats = await rag._vector_store.get_collection_info()
         logger.info("indexing_complete", total_chunks=total_chunks, points_count=stats.get("points_count", 0))
