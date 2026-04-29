@@ -7,22 +7,23 @@ from fastapi import APIRouter, Request, Query, HTTPException, status, Background
 from fastapi.responses import PlainTextResponse, JSONResponse
 
 from app.services.whatsapp_service import WhatsAppService
-from app.core.database import get_session
+from app.core.database import get_session_context
 from app.repositories.session_repository import SessionRepository
 from app.services.chat_service import ChatService
 from app.repositories.conversation_repository import ConversationRepository
+from app.core.config import settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/whatsapp", tags=["WhatsApp"])
+router = APIRouter(tags=["WhatsApp"])
 
 
 async def get_whatsapp_service() -> WhatsAppService:
     """
     Dependency to get WhatsApp service instance.
     """
-    async with get_session() as session:
+    async with get_session_context() as session:
         session_repo = SessionRepository(session)
         conversation_repo = ConversationRepository(session)
         chat_service = ChatService(session_repo, conversation_repo)
@@ -41,22 +42,16 @@ async def verify_webhook(
     This endpoint is called by Meta when configuring the webhook URL.
     It must return the hub.challenge value to confirm ownership.
     """
-    service = await get_whatsapp_service()
+    # Simple verification without database dependency for faster response
+    if hub_mode == "subscribe" and hub_verify_token == settings.WHATSAPP_VERIFY_TOKEN:
+        logger.info("webhook_verified", challenge=hub_challenge)
+        return PlainTextResponse(content=hub_challenge)
     
-    verified, challenge = service.verify_webhook(
-        mode=hub_mode,
-        challenge=hub_challenge,
-        verify_token=hub_verify_token,
+    logger.warning("webhook_verification_failed", token_provided=hub_verify_token[:10] if hub_verify_token else None)
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Verification failed",
     )
-    
-    if not verified:
-        logger.warning("whatsapp_webhook_verification_failed")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Verification failed",
-        )
-    
-    return PlainTextResponse(content=challenge)
 
 
 @router.post("/webhook")
