@@ -19,6 +19,7 @@ from app.services.validation import InputValidator, OutputValidator, SecurityVal
 from app.services.whatsapp_service import WhatsAppService
 from app.services.analytics_service import AnalyticsService
 from app.services.admin_service import AdminService
+from app.services.processing.document_processor import DocumentProcessor
 
 __all__ = [
     # LLM
@@ -53,4 +54,7 @@ __all__ = [
     
     # Admin
     "AdminService",
+    
+    # Processing
+    "DocumentProcessor",
 ]
