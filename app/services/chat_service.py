@@ -344,9 +344,9 @@ class ChatService:
         Returns:
             True if response is relevant, False otherwise
         """
-        if not sources:
-            logger.debug("no_sources_for_relevance_check")
-            return False
+        
+        logger.debug("relevance_filter_disabled_for_poc", sources_count=len(sources))
+        return True
         
         # 1. Duplicate detection (same document, same chunk = forced match)
         unique_chunks = set()
