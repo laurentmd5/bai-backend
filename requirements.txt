@@ -54,6 +54,8 @@ pyyaml==6.0.2
 ujson==5.10.0
 orjson==3.10.12
 greenlet==3.5.0
+python-docx==1.2.0
+pypdf==6.10.2
 
 # Development
 ipython==8.29.0

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Initialize Qdrant collection with NPP documents.
+Initialize Qdrant collection with all NPP documents from the data directory.
 Run once during first deployment.
 """
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -16,78 +17,127 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
-async def main():
+def read_docx(filepath: Path) -> str:
+    """Extract text from DOCX file."""
+    try:
+        import docx
+        doc = docx.Document(filepath)
+        return "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
+    except ImportError:
+        logger.error("python-docx not installed")
+        return ""
+    except Exception as e:
+        logger.error("docx_read_error", file=str(filepath), error=str(e))
+        return ""
+
+
+def read_pdf(filepath: Path) -> str:
+    """Extract text from PDF file."""
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(filepath)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() or ""
+        return text
+    except ImportError:
+        logger.error("pypdf not installed")
+        return ""
+    except Exception as e:
+        logger.error("pdf_read_error", file=str(filepath), error=str(e))
+        return ""
+
+
+def read_txt(filepath: Path) -> str:
+    """Read text file."""
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return f.read()
+    except Exception as e:
+        logger.error("txt_read_error", file=str(filepath), error=str(e))
+        return ""
+
+
+async def index_all_documents():
+    """Index all documents in the /app/data directory."""
     logger.info("Starting Qdrant initialization...")
     
     rag = RAGService()
     await rag.initialize()
     
-    # Document : Digital Transformation
-    digital_content = """
-ICT & DIGITAL TRANSFORMATION
-Connecting Every Gambian to the Future
-
-ACHIEVEMENTS (2022-2026)
-Digital transformation became a central tool for better government, stronger business, and wider opportunity.
-
-1. Modern Digital Governance and National ICT Policy Reform
-The NPP administration delivered the most comprehensive digital policy transformation in national history - introducing more than 25 major ICT strategies, policies and legal frameworks.
-
-2. Expanding Connectivity, Infrastructure & Sector Restructuring
-- Increased mobile penetration to 113%, one of the highest in the region.
-- Initiation of the GAMTEL PPP Backbone Upgrade from 40G to 800G - capable of serving 400,000 additional users.
-- Launch of the US$25 million Second Submarine Cable Project under WARDIP to enhance redundancy and reliability.
-- Completion of 100% digital addressing in Banjul and Kanifing, with more than 194,000 properties mapped in West Coast Region.
-- Full nationalization of the National Switch, strengthening financial inclusion and lowering transaction costs.
-
-3. E-Government & Citizen-Centered Service Delivery
-- Digitization of tax administration through the new Integrated Tax Administration System (ITAS).
-- Integration of the MYGOV platform (births, ID, passport, licensing, business registration) ready for launch.
-- Deployment of the Government Information Portal and App (gambia.gov.gm) integrating information from 20 ministries.
-- Digital systems transforming revenue administration, customs, and tax compliance through ASYCUDA World, National Single Window, digital tax stamps, and e-invoicing.
-
-4. A Growing Digital Economy
-- Establishment of the Ministry of Communication and Digital Economy (MoCDE).
-- Licensing of new ISPs and fixed-line operators including NU Voice, YCELL, B-SAT, and DK Telecom.
-
-THE WAY FORWARD (2027-2031)
-1. Digital Nation Infrastructure
-- Expand the national fibre backbone to all regions.
-- Secure a second international submarine cable for redundancy.
-- Introduce phased 5G rollout in high-demand urban zones.
-- Reduce data costs and expand rural mobile broadband.
-- Provide public Wi-Fi in schools, hospitals, government offices and community centres.
-- Complete 50% national digital addressing rollout by 2031.
-
-2. Digitalizing Government Services (MYGOV+)
-- Fully digitalize 80% of high-volume government services by 2031.
-- Launch the National Digital ID as the main identity verification platform.
-- Digitize Health (national health information system, digital medical records, telemedicine).
-- Digitize Education (nationwide e-learning and digital school management systems).
-
-3. Innovation, Entrepreneurship & Youth Empowerment
-- Establish a National ICT Tech Park and three Regional Innovation Hubs.
-- Integrate coding, robotics and digital literacy across the national curriculum.
-- Expand large-scale digital skills programmes for youth, civil servants and citizens.
-"""
-
-    # Split into chunks by paragraphs
-    chunks = [c.strip() for c in digital_content.split("\n\n") if c.strip() and len(c.strip()) > 30]
+    # Delete existing collection to start fresh
+    try:
+        await rag._vector_store.delete_collection()
+        logger.info("deleted_existing_collection")
+    except Exception:
+        pass
     
-    indexed = await rag.index_document_chunks(
-        chunks=chunks,
-        document_name="Digital.docx",
-        section="ICT & Digital Transformation",
-        language="en",
-    )
+    await rag._vector_store.create_collection()
+    logger.info("created_new_collection")
     
-    logger.info(f"Indexed {indexed} chunks from Digital.docx")
+    data_dir = Path("/app/data")
+    if not data_dir.exists():
+        logger.error("data_directory_not_found", path=str(data_dir))
+        return
     
-    # Verify collection
+    # Find all document files
+    extensions = [".docx", ".pdf", ".txt", ".md"]
+    documents = []
+    for ext in extensions:
+        documents.extend(data_dir.glob(f"*{ext}"))
+    
+    if not documents:
+        logger.warning("no_documents_found", directory=str(data_dir))
+        return
+    
+    logger.info("indexing_start", count=len(documents), directory=str(data_dir))
+    
+    total_chunks = 0
+    
+    for doc_path in documents:
+        try:
+            logger.info("reading_document", name=doc_path.name)
+            
+            # Extract text based on extension
+            if doc_path.suffix.lower() == '.docx':
+                content = read_docx(doc_path)
+            elif doc_path.suffix.lower() == '.pdf':
+                content = read_pdf(doc_path)
+            elif doc_path.suffix.lower() in ['.txt', '.md']:
+                content = read_txt(doc_path)
+            else:
+                logger.warning("unsupported_format", name=doc_path.name)
+                continue
+            
+            if not content or len(content) < 100:
+                logger.warning("empty_or_too_short", name=doc_path.name, length=len(content))
+                continue
+            
+            # Split into chunks by paragraphs
+            chunks = [c.strip() for c in content.split("\n\n") if c.strip() and len(c.strip()) > 50]
+            
+            if not chunks:
+                # Fallback: split by sentences
+                chunks = [content[i:i+1000] for i in range(0, len(content), 1000)]
+            
+            logger.info("indexing_document", name=doc_path.name, chunks=len(chunks))
+            
+            indexed = await rag.index_document_chunks(
+                chunks=chunks,
+                document_name=doc_path.name,
+                section=doc_path.stem,
+                language="en",
+            )
+            total_chunks += indexed
+            logger.info("document_indexed", name=doc_path.name, chunks=indexed)
+            
+        except Exception as e:
+            logger.error("document_index_failed", name=doc_path.name, error=str(e))
+    
+    # Show collection stats
     stats = await rag.get_collection_stats()
-    logger.info(f"Collection stats: {stats}")
-    logger.info("Qdrant initialization complete!")
+    logger.info("indexing_complete", total_chunks=total_chunks, collection_stats=stats)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(index_all_documents())
