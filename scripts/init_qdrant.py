@@ -5,7 +5,6 @@ Run once during first deployment.
 """
 
 import asyncio
-import os
 import sys
 from pathlib import Path
 
@@ -38,7 +37,9 @@ def read_pdf(filepath: Path) -> str:
         reader = pypdf.PdfReader(filepath)
         text = ""
         for page in reader.pages:
-            text += page.extract_text() or ""
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text
         return text
     except ImportError:
         logger.error("pypdf not installed")
@@ -64,16 +65,6 @@ async def index_all_documents():
     
     rag = RAGService()
     await rag.initialize()
-    
-    # Delete existing collection to start fresh
-    try:
-        await rag._vector_store.delete_collection()
-        logger.info("deleted_existing_collection")
-    except Exception:
-        pass
-    
-    await rag._vector_store.create_collection()
-    logger.info("created_new_collection")
     
     data_dir = Path("/app/data")
     if not data_dir.exists():
@@ -134,9 +125,12 @@ async def index_all_documents():
         except Exception as e:
             logger.error("document_index_failed", name=doc_path.name, error=str(e))
     
-    # Show collection stats
-    stats = await rag.get_collection_stats()
-    logger.info("indexing_complete", total_chunks=total_chunks, collection_stats=stats)
+    # Show collection stats using the correct method
+    try:
+        stats = await rag._vector_store.get_collection_info()
+        logger.info("indexing_complete", total_chunks=total_chunks, points_count=stats.get("points_count", 0))
+    except Exception as e:
+        logger.info("indexing_complete", total_chunks=total_chunks)
 
 
 if __name__ == "__main__":
