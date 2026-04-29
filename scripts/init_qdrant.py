@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.services.rag_service import RAGService
-from app.services.document_processor import DocumentProcessor
+from app.services.processing.document_processor import DocumentProcessor
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
