@@ -42,8 +42,11 @@ async def verify_webhook(
     This endpoint is called by Meta when configuring the webhook URL.
     It must return the hub.challenge value to confirm ownership.
     """
+    # Extract the actual value from SecretStr
+    expected_token = settings.WHATSAPP_VERIFY_TOKEN.get_secret_value()
+    
     # Simple verification without database dependency for faster response
-    if hub_mode == "subscribe" and hub_verify_token == settings.WHATSAPP_VERIFY_TOKEN:
+    if hub_mode == "subscribe" and hub_verify_token == expected_token:
         logger.info("webhook_verified", challenge=hub_challenge)
         return PlainTextResponse(content=hub_challenge)
     
