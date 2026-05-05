@@ -92,15 +92,37 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.error("llm_initialization_failed", error=str(e))
     
-    # Initialize RAG service
-    try:
-        rag_service = RAGService()
-        await rag_service.initialize()
-        logger.info("rag_service_initialized")
-    except Exception as e:
-        logger.error("rag_initialization_failed", error=str(e))
+    # Initialize RAG service (shared singleton)
+    rag_service = RAGService()
+    await rag_service.initialize()
+    logger.info("rag_service_initialized")
+    
+    # Initialize chat and WhatsApp services (shared)
+    from app.services.chat_service import ChatService
+    from app.services.whatsapp_service import WhatsAppService
+    from app.repositories.session_repository import SessionRepository
+    from app.repositories.conversation_repository import ConversationRepository
+    from app.core.database import get_session_context
+    
+    async with get_session_context() as session:
+        session_repo = SessionRepository(session)
+        conversation_repo = ConversationRepository(session)
+        
+        # SINGLE ChatService instance
+        chat_service = ChatService(session_repo, conversation_repo)
+        chat_service._rag_service = rag_service
+        logger.info("chat_service_initialized")
+        
+        # WhatsApp uses the SAME ChatService
+        whatsapp_service = WhatsAppService(chat_service, session_repo)
+        logger.info("whatsapp_service_initialized")
     
     logger.info("application_startup_complete")
+    
+    # Store singletons in app state for access by endpoints
+    app.state.chat_service = chat_service
+    app.state.whatsapp_service = whatsapp_service
+    app.state.rag_service = rag_service
     
     yield
     
