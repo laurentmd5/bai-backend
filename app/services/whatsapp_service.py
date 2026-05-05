@@ -797,7 +797,7 @@ class WhatsAppService:
         Returns:
             List of phone numbers
         """
-        opt_outs = await cache_service.smembers(CacheNamespace.WHATSAPP_OPTOUT)
+        opt_outs = await cache_service.get_opt_out_list()
         return list(opt_outs)
     
     async def health_check(self) -> Dict[str, Any]:

@@ -824,7 +824,8 @@ class RedisCacheService:
         """
         result = await self.sadd(
             CacheNamespace.WHATSAPP_OPTOUT,
-            phone_number
+            parts=(),
+            members=(phone_number,)
         )
         return result > 0
     
@@ -840,7 +841,7 @@ class RedisCacheService:
         """
         return await self.sismember(
             CacheNamespace.WHATSAPP_OPTOUT,
-            phone_number
+            member=phone_number
         )
     
     async def remove_opt_out(self, phone_number: str) -> bool:
@@ -855,7 +856,8 @@ class RedisCacheService:
         """
         result = await self.srem(
             CacheNamespace.WHATSAPP_OPTOUT,
-            phone_number
+            parts=(),
+            members=(phone_number,)
         )
         return result > 0
     
