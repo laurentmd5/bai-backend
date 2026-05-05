@@ -64,42 +64,44 @@ async def receive_webhook(
 ) -> JSONResponse:
     """
     Receive incoming WhatsApp webhook.
-    
-    Processes messages, status updates, and other events from WhatsApp.
-    Returns 200 OK immediately to acknowledge receipt, then processes asynchronously.
+    Always returns 200 OK — Meta will retry if we return non-200.
     """
-    # Get signature header for validation
     signature = request.headers.get("X-Hub-Signature-256")
-    
-    # Read raw body for signature validation
     raw_body = await request.body()
-    
-    # Parse JSON payload
+
+    # Parse JSON — if this fails it's malformed, not a Meta message
     try:
         payload = await request.json()
     except Exception as e:
-        logger.error("whatsapp_webhook_parse_error", error=str(e))
-        return JSONResponse(
-            content={"status": "error", "reason": "invalid_json"},
-            status_code=status.HTTP_400_BAD_REQUEST,
+        logger.error("whatsapp_webhook_invalid_json", error=str(e))
+        # Still return 200 — malformed payloads should not trigger Meta retries
+        return JSONResponse(content={"status": "ignored"}, status_code=200)
+
+    # Validate payload structure — log but never block with non-200
+    try:
+        from app.models.request.whatsapp import WhatsAppWebhookRequest
+        validated = WhatsAppWebhookRequest(**payload)
+    except Exception as e:
+        logger.warning(
+            "whatsapp_webhook_validation_warning",
+            error=str(e),
+            # Log partial payload for debugging without exposing PII
+            object_type=payload.get("object"),
+            entry_count=len(payload.get("entry", [])),
         )
-    
-    # Initialize service
+        # Return 200 — Meta must receive 200 or it will retry repeatedly
+        return JSONResponse(content={"status": "received"}, status_code=200)
+
     service = await get_whatsapp_service()
-    
-    # Process asynchronously
+
     background_tasks.add_task(
         service.process_webhook,
         payload=payload,
         raw_body=raw_body,
         signature=signature,
     )
-    
-    # Always return 200 OK to acknowledge receipt
-    return JSONResponse(
-        content={"status": "received"},
-        status_code=status.HTTP_200_OK,
-    )
+
+    return JSONResponse(content={"status": "received"}, status_code=200)
 
 
 @router.get("/health")

@@ -4,6 +4,7 @@ Coordinates all components: validation, RAG, LLM, caching, and persistence.
 """
 
 import asyncio
+import re
 import uuid
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
@@ -258,18 +259,21 @@ class ChatService:
         """
         Detect special intent from user message.
         
-        Args:
-            message: User message (lowercase)
-            
-        Returns:
-            Tuple of (intent_type, matched_keyword) or (None, None)
+        Uses word boundaries to avoid false positives like "hi" in "Lahido".
         """
         message_lower = message.lower().strip()
         
+        # Use word boundaries for exact matching first (higher priority)
         for intent, keywords in self.SPECIAL_INTENTS.items():
             for keyword in keywords:
-                if keyword in message_lower:
+                # Word boundary regex to avoid substring false positives
+                pattern = r'\b' + re.escape(keyword) + r'\b'
+                if re.search(pattern, message_lower):
                     return intent, keyword
+        
+        # Ultra-short messages (< 5 chars) trigger help intent (lower priority)
+        if len(message_lower) < 5 and message_lower not in ['npp', 'np']:
+            return "help", "ultra_short"
         
         return None, None
     
@@ -307,6 +311,72 @@ class ChatService:
         
         if intent == "status":
             return "AskBarrow.ai is operational and ready to assist you."
+        
+        return None
+    
+    async def _handle_keyword_query(
+        self,
+        message: str,
+        language: str,
+        session_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Handle very short keyword-only queries.
+        Returns a response directly without RAG if the keyword is recognized.
+        """
+        keyword_map = {
+            "internet": {
+                "en": "NPP increased mobile penetration to 113%, upgraded GAMTEL backbone to 800G, launched a $25M submarine cable project, and completed 100% digital addressing in Banjul and Kanifing. Would you like more details?",
+                "fr": "Le NPP a augmenté la pénétration mobile à 113%, modernisé le réseau GAMTEL, lancé un projet de câble sous-marin de 25M$, et achevé l'adressage numérique à Banjul et Kanifing. Voulez-vous plus de détails?"
+            },
+            "agriculture": {
+                "en": "NPP plans include rice self-sufficiency by 2031, support for farmers, irrigation projects, training for youth, and making Gambia food secure. Ask me for specific details!",
+                "fr": "Les plans du NPP incluent l'autosuffisance en riz d'ici 2031, le soutien aux agriculteurs, des projets d'irrigation, et la formation des jeunes pour une Gambie autosuffisante."
+            },
+            "health": {
+                "en": "NPP is strengthening hospitals, expanding health insurance, building new clinics, and training more doctors and nurses. We want every Gambian to have access to quality healthcare.",
+                "fr": "Le NPP renforce les hôpitaux, élargit l'assurance maladie, construit de nouveaux dispensaires et forme plus de médecins. Chaque Gambien mérite des soins de qualité."
+            },
+            "education": {
+                "en": "NPP is building new schools, training more teachers, providing scholarships, and expanding technical training centers so youth can learn skills for jobs.",
+                "fr": "Le NPP construit des écoles, forme plus d'enseignants, offre des bourses et étend les centres de formation technique pour que les jeunes apprennent des métiers."
+            },
+            "youth": {
+                "en": "NPP creates jobs for youth through skills training, entrepreneurship programs, and support for young farmers and digital workers. We believe empowered youth build a stronger Gambia.",
+                "fr": "Le NPP crée des emplois pour les jeunes par la formation, l'entrepreneuriat et le soutien aux jeunes agriculteurs et travailleurs numériques."
+            },
+            "governance": {
+                "en": "NPP is fighting corruption, strengthening transparency, improving public services, and making government more accountable to citizens. We believe government must serve the people.",
+                "fr": "Le NPP lutte contre la corruption, renforce la transparence, améliore les services publics et rend le gouvernement plus responsable devant les citoyens."
+            },
+            "digital": {
+                "en": "NPP is bringing internet to all regions, digitizing government services, training youth in digital skills, and building a modern digital economy for Gambia.",
+                "fr": "Le NPP apporte l'internet dans toutes les régions, numérise les services gouvernementaux, forme les jeunes au numérique et construit une économie digitale moderne."
+            },
+            "npp": {
+                "en": "NPP is the National People's Party, led by President Adama Barrow. Our 9-point Lahido plan focuses on jobs, digital transformation, agriculture, health, education, youth empowerment, infrastructure, good governance, and environment.",
+                "fr": "Le NPP est le parti dirigé par le Président Adama Barrow. Notre plan Lahido en 9 points couvre l'emploi, le numérique, l'agriculture, la santé, l'éducation, la jeunesse, les infrastructures, la gouvernance et l'environnement."
+            },
+            "barrow": {
+                "en": "President Adama Barrow has led Gambia since 2017, strengthening democracy, building roads, expanding internet, and improving healthcare under the NPP government.",
+                "fr": "Le Président Adama Barrow dirige la Gambie depuis 2017, renforçant la démocratie, construisant des routes, développant internet et améliorant la santé."
+            },
+        }
+        
+        message_lower = message.lower().strip()
+        
+        for keyword, responses in keyword_map.items():
+            # Exact match or starts with keyword
+            if message_lower == keyword or message_lower.startswith(keyword):
+                return {
+                    "message": responses.get(language, responses["en"]),
+                    "session_id": session_id,
+                    "sources": [],
+                    "confidence": 0.95,
+                    "cache_hit": False,
+                    "fallback_triggered": False,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
         
         return None
     
@@ -560,6 +630,13 @@ class ChatService:
             actual_session_id = str(session.id)
             response_metadata["session_id"] = actual_session_id
             
+            # Normalize user input for low-literacy users
+            if self._input_validator:
+                sanitized_message = self._input_validator.normalize_user_input(
+                    sanitized_message, language
+                )
+                logger.debug("input_normalized", original=message[:50], normalized=sanitized_message[:50])
+            
             # Check WhatsApp opt-out
             if channel == "whatsapp" and session.opted_out:
                 logger.info("whatsapp_user_opted_out", session_id=actual_session_id)
@@ -619,6 +696,27 @@ class ChatService:
                         "intent": intent,
                         "timestamp": datetime.utcnow().isoformat(),
                     }
+            
+            # ===============================================================
+            # STEP 4.5: Handle Keyword-Only Queries
+            # ===============================================================
+            keyword_response = await self._handle_keyword_query(
+                sanitized_message, language, actual_session_id
+            )
+            if keyword_response:
+                # Store conversation
+                await self._conversation_repo.create_conversation(
+                    session_id=session.id,
+                    user_message=sanitized_message,
+                    bot_response=keyword_response["message"],
+                    channel=channel,
+                    sources=[],
+                    confidence=0.95,
+                    cache_hit=False,
+                    llm_model=self._llm_provider.get_model_name() if self._llm_provider else None,
+                    fallback_triggered=False,
+                )
+                return keyword_response
             
             # ===============================================================
             # STEP 5: Check Cache

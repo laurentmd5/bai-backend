@@ -5,6 +5,7 @@ Validates all incoming user messages for security, length, and content.
 
 import re
 import unicodedata
+import difflib
 from typing import Tuple, Optional, List, Dict, Any
 from datetime import datetime
 
@@ -74,6 +75,65 @@ class InputValidator:
         re.compile(r'(?i)(work from home|earn money fast|make \$\d+)'),
     ]
     
+    # SMS abbreviations mapping (English & French)
+    SMS_ABBREVIATIONS = {
+        # English
+        "u": "you", "ur": "your", "r": "are", "y": "why",
+        "gr8": "great", "lol": "laughing out loud", "thx": "thanks",
+        "pls": "please", "plz": "please", "ppl": "people",
+        "b4": "before", "2day": "today", "2moro": "tomorrow",
+        "4": "for", "2": "to", "4u": "for you", "c": "see",
+        "b": "be", "n": "and", "w": "with", "w/o": "without",
+        "btw": "by the way", "idk": "i don't know", "lmk": "let me know",
+        "tbh": "to be honest", "imo": "in my opinion", "afaik": "as far as i know",
+        # French
+        "bcp": "beaucoup", "bjr": "bonjour", "bsr": "bonsoir",
+        "cad": "c'est-à-dire", "cc": "courriel", "dsl": "désolé",
+        "env": "envoyer", "qqch": "quelque chose", "qqn": "quelqu'un",
+        "rdv": "rendez-vous", "stp": "s'il te plaît", "svp": "s'il vous plaît",
+        "tt": "tout", "ttt": "tout à fait", "vrmt": "vraiment",
+    }
+    
+    # Local acronyms expansion for low-literacy users
+    LOCAL_ACRONYMS = {
+        "npp": "National People's Party",
+        "pace": "Presidential Agency for Community Empowerment",
+        "gamtel": "Gambia Telecommunications Company",
+        "gamcel": "Gambia Cellular Company",
+        "mygov": "My Government platform",
+        "it": "information technology",
+        "ict": "information and communication technology",
+        "ngs": "National Gambia Scholarship",
+        "gba": "Greater Banjul Area",
+        "nawec": "National Water and Electricity Company",
+        "pura": "Public Utilities Regulatory Authority",
+        "ecowas": "Economic Community of West African States",
+    }
+    
+    # Common spelling corrections (Gambia-specific)
+    SPELL_CORRECTIONS = {
+        "intrnet": "internet", "intrenet": "internet", "net": "internet",
+        "agrikultur": "agriculture", "agri": "agriculture", "farm": "agriculture",
+        "eduka": "education", "skool": "school", "skul": "school",
+        "lasante": "health", "sante": "health", "mezin": "medicine",
+        "gouv": "governance", "govern": "governance", "gov": "governance",
+        "jenes": "youth", "jenn": "youth", "yout": "youth",
+        "barow": "barrow", "barrows": "barrow",
+        "digita": "digital", "digi": "digital",
+        "infrastrukture": "infrastructure", "infra": "infrastructure",
+        "ekonomi": "economy", "ekonomie": "economy",
+        "sikorite": "security", "sekirite": "security",
+    }
+    
+    # Common words list for difflib
+    _COMMON_WORDS = [
+        "internet", "agriculture", "education", "health", "governance",
+        "youth", "digital", "infrastructure", "economy", "security",
+        "npp", "barrow", "gambia", "development", "project", "program",
+        "job", "work", "business", "farmer", "school", "hospital",
+        "road", "bridge", "water", "electricity", "internet",
+    ]
+    
     def __init__(self):
         self._blocked_phrases = self._load_blocked_phrases()
     
@@ -94,6 +154,86 @@ class InputValidator:
             "you are now",
             "new instructions",
         ]
+    
+    def normalize_user_input(self, message: str, language: str = "en") -> str:
+        """
+        Normalize user input for low-literacy users.
+        
+        Handles:
+        - SMS abbreviations (u → you, gr8 → great, etc.)
+        - Local acronyms (NPP → National People's Party)
+        - Common spelling corrections
+        - Multiple punctuation removal
+        - Whitespace normalization
+        """
+        if not message or len(message.strip()) < 2:
+            # Very short messages - return a help prompt
+            help_prompts = {
+                "en": "I'm here to help you learn about President Barrow and NPP achievements. You can ask me about internet, farming, health, schools, or roads.",
+                "fr": "Je suis là pour vous informer sur les réalisations du Président Barrow et du NPP. Vous pouvez me poser des questions sur internet, l'agriculture, la santé, l'éducation ou les routes."
+            }
+            return help_prompts.get(language, help_prompts["en"])
+        
+        # Convert to lowercase and normalize
+        normalized = message.lower().strip()
+        
+        # Remove multiple spaces
+        normalized = re.sub(r'\s+', ' ', normalized)
+        
+        # Expand SMS abbreviations (word boundaries)
+        for abbr, expansion in self.SMS_ABBREVIATIONS.items():
+            normalized = re.sub(r'\b' + re.escape(abbr) + r'\b', expansion, normalized)
+        
+        # Expand local acronyms (word boundaries)
+        for acro, expansion in self.LOCAL_ACRONYMS.items():
+            normalized = re.sub(r'\b' + re.escape(acro) + r'\b', expansion, normalized)
+        
+        # Apply spelling corrections
+        for wrong, correct in self.SPELL_CORRECTIONS.items():
+            if wrong in normalized:
+                normalized = normalized.replace(wrong, correct)
+        
+        # Spell correction using difflib for unknown words
+        words = normalized.split()
+        corrected_words = []
+        for word in words:
+            if word not in self.SPELL_CORRECTIONS and len(word) > 3:
+                matches = difflib.get_close_matches(word, self._COMMON_WORDS, cutoff=0.8)
+                if matches and matches[0] != word:
+                    corrected_words.append(matches[0])
+                    continue
+            corrected_words.append(word)
+        normalized = ' '.join(corrected_words)
+        
+        # Map single keywords to full questions
+        keyword_map = {
+            "internet": "What has NPP done for internet and connectivity?",
+            "agriculture": "What are NPP plans for agriculture and food security?",
+            "health": "What healthcare reforms does NPP propose?",
+            "education": "What is NPP plan for education and skills?",
+            "youth": "What are NPP programs for youth empowerment?",
+            "governance": "What is NPP plan for good governance?",
+            "digital": "What has NPP done for digital transformation?",
+            "infrastructure": "What infrastructure projects has NPP completed?",
+            "economy": "What has NPP done for the economy and jobs?",
+            "security": "What has NPP done for national security?",
+        }
+        
+        # If message is a single word or very short phrase, map to full question
+        if len(normalized.split()) <= 3:
+            for keyword, question in keyword_map.items():
+                if keyword in normalized or normalized == keyword:
+                    return question
+        
+        # Remove multiple punctuation
+        normalized = re.sub(r'([!?.]){2,}', r'\1', normalized)
+        
+        # Ensure message ends with question mark if it looks like a question
+        if any(word in normalized for word in ["what", "how", "why", "when", "where", "who", "tell", "explain"]):
+            if not normalized.endswith('?'):
+                normalized += '?'
+        
+        return normalized.capitalize()
     
     def _check_unicode_homoglyphs(self, text: str) -> Tuple[bool, Optional[str]]:
         """

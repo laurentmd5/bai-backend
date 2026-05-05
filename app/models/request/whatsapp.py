@@ -18,6 +18,11 @@ class WhatsAppContact(BaseModel):
     
     profile: Optional[WhatsAppProfile] = Field(None, description="Profile information")
     wa_id: Optional[str] = Field(None, description="WhatsApp ID")
+    
+    # NEW: Meta sends this in recent API versions
+    user_id: Optional[str] = Field(None, description="Meta user ID")
+    
+    model_config = {"extra": "ignore"}
 
 
 class WhatsAppText(BaseModel):
@@ -148,18 +153,30 @@ class WhatsAppError(BaseModel):
 class WhatsAppMessage(BaseModel):
     """
     WhatsApp message object from webhook.
+
+    NOTE: 'to' is OPTIONAL — Meta does not include it in inbound webhooks.
+    It only appears in messages you send (outbound). Making it required
+    caused a Pydantic validation error on every real Meta webhook.
     """
     
     id: str = Field(..., description="Unique message ID")
     from_: str = Field(..., alias="from", description="Sender's phone number")
-    to: str = Field(..., description="Recipient's phone number (business number)")
+    
+    # FIX: Optional — Meta omits this field in inbound webhooks
+    to: Optional[str] = Field(None, description="Recipient's phone number (not sent by Meta inbound)")
+    
     timestamp: str = Field(..., description="Unix timestamp")
     
     type: str = Field(
         ...,
         description="Message type",
-        examples=["text", "image", "video", "audio", "document", "sticker", "location", "contacts", "interactive", "button", "reaction", "order", "system"]
+        examples=["text", "image", "video", "audio", "document",
+                  "sticker", "location", "contacts", "interactive",
+                  "button", "reaction", "order", "system"]
     )
+    
+    # NEW: Meta sends this in recent API versions (user identifier)
+    from_user_id: Optional[str] = Field(None, description="Meta user ID (recent API versions)")
     
     text: Optional[WhatsAppText] = Field(None, description="Text message content")
     image: Optional[WhatsAppImage] = Field(None, description="Image media")
@@ -177,6 +194,9 @@ class WhatsAppMessage(BaseModel):
     referral: Optional[WhatsAppReferral] = Field(None, description="Referral")
     identity: Optional[WhatsAppIdentity] = Field(None, description="Identity")
     errors: Optional[List[WhatsAppError]] = Field(None, description="Errors")
+    
+    # Pydantic config: accept both 'from' (alias) and extra fields from Meta
+    model_config = {"populate_by_name": True, "extra": "ignore"}
     
     @property
     def phone_number(self) -> str:
