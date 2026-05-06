@@ -358,7 +358,7 @@ class Settings(BaseSettings):
     GEMINI_TIMEOUT: int = Field(
         default=10,
         ge=5,
-        le=30,
+        le=60,
         description="API timeout in seconds"
     )
     
