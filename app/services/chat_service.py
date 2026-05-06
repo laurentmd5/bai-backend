@@ -47,7 +47,20 @@ class ChatService:
     8. Persistence and analytics
     
     Implements SOLID principles with dependency injection for all components.
+    
+    NOTE: Uses CLASS VARIABLES for singleton pattern across all instances.
+    This ensures RAG services (including BGE embedding model) are loaded only ONCE
+    regardless of how many ChatService instances are created.
     """
+    
+    # ⭐ CLASS VARIABLES - shared across ALL instances (Singleton pattern)
+    _class_initialized: bool = False
+    _shared_rag_service: Optional[RAGService] = None
+    _shared_llm_provider = None
+    _shared_input_validator: Optional[InputValidator] = None
+    _shared_output_validator: Optional[OutputValidator] = None
+    _shared_security_validator: Optional[SecurityValidator] = None
+    _class_lock = asyncio.Lock()
     
     # Special intents that bypass RAG+LLM pipeline
     SPECIAL_INTENTS = {
@@ -223,50 +236,112 @@ class ChatService:
         self._session_repo = session_repository
         self._conversation_repo = conversation_repository
         
-        # Lazy-loaded services
+        # Lazy-loaded services (will be populated from class variables)
         self._rag_service: Optional[RAGService] = None
         self._llm_provider = None
         self._input_validator: Optional[InputValidator] = None
         self._output_validator: Optional[OutputValidator] = None
         self._security_validator: Optional[SecurityValidator] = None
         
-        # Service initialization state
+        # Instance initialization state
         self._initialized = False
-        self._init_lock = asyncio.Lock()
+        
+        # Log instance creation for debugging singleton pattern
+        logger.info(f"📌 ChatService instance created: id={id(self)}")
     
     async def _ensure_initialized(self) -> None:
-        """Lazy initialization of all required services."""
-        if self._initialized:
+        """
+        Lazy initialization of all required services.
+        
+        Uses CLASS-LEVEL state to ensure services are loaded only ONCE
+        across ALL ChatService instances. This prevents reloading the
+        BGE embedding model (8 seconds) on every request.
+        """
+        # Log current state for debugging
+        logger.info(f"🔍 _ensure_initialized: instance={id(self)}, class_initialized={ChatService._class_initialized}")
+        
+        # If already initialized at class level, reuse shared services
+        if ChatService._class_initialized:
+            self._rag_service = ChatService._shared_rag_service
+            self._llm_provider = ChatService._shared_llm_provider
+            self._input_validator = ChatService._shared_input_validator
+            self._output_validator = ChatService._shared_output_validator
+            self._security_validator = ChatService._shared_security_validator
+            self._initialized = True
+            logger.info(f"✅ Reusing shared services (instance={id(self)})")
             return
         
-        async with self._init_lock:
-            if self._initialized:
+        async with ChatService._class_lock:
+            # Double-check after acquiring lock
+            if ChatService._class_initialized:
+                self._rag_service = ChatService._shared_rag_service
+                self._llm_provider = ChatService._shared_llm_provider
+                self._input_validator = ChatService._shared_input_validator
+                self._output_validator = ChatService._shared_output_validator
+                self._security_validator = ChatService._shared_security_validator
+                self._initialized = True
+                logger.info(f"✅ Reusing shared services after lock (instance={id(self)})")
                 return
             
-            self._rag_service = RAGService()
-            await self._rag_service.initialize()
+            # FIRST AND ONLY INITIALIZATION - loads BGE model (~8 seconds)
+            logger.warning(f"🔥 FIRST TIME INIT - LOADING EVERYTHING (instance={id(self)})")
             
-            self._llm_provider = get_llm_provider()
-            self._input_validator = InputValidator()
-            self._output_validator = OutputValidator()
-            self._security_validator = SecurityValidator()
+            # Initialize RAG service (loads embedding model)
+            rag = RAGService()
+            await rag.initialize()
             
+            # Initialize LLM provider
+            llm = get_llm_provider()
+            
+            # Initialize validators
+            input_validator = InputValidator()
+            output_validator = OutputValidator()
+            security_validator = SecurityValidator()
+            
+            # Store in class variables for reuse across all instances
+            ChatService._shared_rag_service = rag
+            ChatService._shared_llm_provider = llm
+            ChatService._shared_input_validator = input_validator
+            ChatService._shared_output_validator = output_validator
+            ChatService._shared_security_validator = security_validator
+            ChatService._class_initialized = True
+            
+            # Assign to this instance
+            self._rag_service = rag
+            self._llm_provider = llm
+            self._input_validator = input_validator
+            self._output_validator = output_validator
+            self._security_validator = security_validator
             self._initialized = True
             
-            logger.info("chat_service_initialized")
+            logger.info(f"🚀 ChatService class initialization complete")
     
-    def _detect_intent(self, message: str) -> Tuple[str, Optional[str]]:
+    def _detect_intent(self, message: str) -> Tuple[Optional[str], Optional[str]]:
         """
         Detect special intent from user message.
         
         Uses word boundaries to avoid false positives like "hi" in "Lahido".
+        
+        Returns:
+            Tuple of (intent, matched_keyword) or (None, None)
         """
         message_lower = message.lower().strip()
         
-        # Use word boundaries for exact matching first (higher priority)
+        # Greeting: match only if it's the entire message or starts the message
+        # (avoids "lahido" -> "hi", "achievements" -> "hi", etc.)
+        greeting_patterns = [
+            r'^(hello|hi|hey|bonjour|salut|salaam)[\s,!.?]*$',  # single word
+            r'^(salaam aleikum|nna tang)',                       # start of message
+        ]
+        for pattern in greeting_patterns:
+            if re.match(pattern, message_lower):
+                return "greeting", "greeting"
+        
+        # All other intents: word-boundary matching (whole word, not substring)
         for intent, keywords in self.SPECIAL_INTENTS.items():
+            if intent == "greeting":
+                continue  # already handled above
             for keyword in keywords:
-                # Word boundary regex to avoid substring false positives
                 pattern = r'\b' + re.escape(keyword) + r'\b'
                 if re.search(pattern, message_lower):
                     return intent, keyword
@@ -414,77 +489,62 @@ class ChatService:
         Returns:
             True if response is relevant, False otherwise
         """
-        
+        # For POC, disable relevance filtering to avoid false negatives
         logger.debug("relevance_filter_disabled_for_poc", sources_count=len(sources))
         return True
         
-        # 1. Duplicate detection (same document, same chunk = forced match)
-        unique_chunks = set()
-        for s in sources:
-            doc_name = s.get("document", s.get("doc_id", ""))
-            chunk_idx = s.get("chunk_index", s.get("index", 0))
-            unique_chunks.add((doc_name, chunk_idx))
-        
-        if len(unique_chunks) == 1:
-            logger.warning(
-                "all_sources_identical",
-                chunks=len(sources),
-                document=next(iter(unique_chunks))[0],
-            )
-            return False
-        
-        # 2. Detect the theme of the query
-        query_lower = query.lower()
-        detected_theme = None
-        theme_keywords = []
-        
-        for theme, keywords in self.RELEVANCE_KEYWORDS.items():
-            for kw in keywords:
-                if kw in query_lower:
-                    detected_theme = theme
-                    theme_keywords = keywords
-                    break
-            if detected_theme:
-                break
-        
-        # If no theme detected, accept response (avoid false negatives)
-        if not detected_theme:
-            logger.debug("no_theme_detected_in_query", query=query_lower[:50])
-            return True
-        
-        # 3. Check if sources contain relevant keywords
-        source_text = ""
-        for s in sources[:3]:  # Limit to first 3 sources
-            text = s.get("text_preview", "") or s.get("content", "") or ""
-            section = s.get("section", "")
-            source_text += f" {text} {section}"
-        
-        source_lower = source_text.lower()
-        
-        has_relevant_term = any(kw in source_lower for kw in theme_keywords[:5])
-        
-        if not has_relevant_term:
-            logger.warning(
-                "no_relevant_terms_in_sources",
-                theme=detected_theme,
-                query_preview=query_lower[:100],
-                source_preview=source_text[:200],
-            )
-            return False
-        
-        # 4. Check minimum similarity score
-        min_score = min((s.get("relevance", s.get("score", 0)) for s in sources), default=0)
-        threshold = getattr(settings, 'QDRANT_SIMILARITY_THRESHOLD', 0.70)
-        
-        if min_score < threshold:
-            logger.debug(
-                "scores_below_threshold",
-                min_score=min_score,
-                threshold=threshold,
-            )
-            return False
-        
-        return True
+        # The full implementation is commented out for POC
+        # 
+        # # 1. Duplicate detection (same document, same chunk = forced match)
+        # unique_chunks = set()
+        # for s in sources:
+        #     doc_name = s.get("document", s.get("doc_id", ""))
+        #     chunk_idx = s.get("chunk_index", s.get("index", 0))
+        #     unique_chunks.add((doc_name, chunk_idx))
+        # 
+        # if len(unique_chunks) == 1:
+        #     logger.warning("all_sources_identical", chunks=len(sources))
+        #     return False
+        # 
+        # # 2. Detect the theme of the query
+        # query_lower = query.lower()
+        # detected_theme = None
+        # theme_keywords = []
+        # 
+        # for theme, keywords in self.RELEVANCE_KEYWORDS.items():
+        #     for kw in keywords:
+        #         if kw in query_lower:
+        #             detected_theme = theme
+        #             theme_keywords = keywords
+        #             break
+        #     if detected_theme:
+        #         break
+        # 
+        # if not detected_theme:
+        #     return True
+        # 
+        # # 3. Check if sources contain relevant keywords
+        # source_text = ""
+        # for s in sources[:3]:
+        #     text = s.get("text_preview", "") or s.get("content", "") or ""
+        #     section = s.get("section", "")
+        #     source_text += f" {text} {section}"
+        # 
+        # source_lower = source_text.lower()
+        # has_relevant_term = any(kw in source_lower for kw in theme_keywords[:5])
+        # 
+        # if not has_relevant_term:
+        #     logger.warning("no_relevant_terms_in_sources", theme=detected_theme)
+        #     return False
+        # 
+        # # 4. Check minimum similarity score
+        # min_score = min((s.get("relevance", s.get("score", 0)) for s in sources), default=0)
+        # threshold = getattr(settings, 'QDRANT_SIMILARITY_THRESHOLD', 0.70)
+        # 
+        # if min_score < threshold:
+        #     return False
+        # 
+        # return True
     
     async def process_message(
         self,
@@ -952,7 +1012,7 @@ class ChatService:
             return {
                 "message": final_response,
                 "session_id": actual_session_id,
-                "conversation_id": None,  # Could return the created conversation ID
+                "conversation_id": None,
                 "sources": sources,
                 "confidence": confidence if confidence else 0.0,
                 "cache_hit": False,

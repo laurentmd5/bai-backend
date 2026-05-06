@@ -28,30 +28,75 @@ class RAGService:
     - Context building for LLM
     - Confidence scoring
     - Document retrieval tracking
+    
+    NOTE: Uses CLASS VARIABLES for singleton pattern across all instances.
+    This ensures the BGE embedding model is loaded only ONCE regardless
+    of how many RAGService instances are created.
     """
     
+    # ⭐ CLASS VARIABLES - shared across ALL instances (Singleton pattern)
+    _class_initialized: bool = False
+    _shared_vector_store: Optional[QdrantVectorStore] = None
+    _shared_embedding_provider = None
+    _class_lock = asyncio.Lock()
+    
     def __init__(self):
-        self._vector_store = QdrantVectorStore()
+        self._vector_store = None
         self._embedding_provider = None
         self._similarity_threshold = settings.QDRANT_SIMILARITY_THRESHOLD
         self._top_k = settings.QDRANT_TOP_K
         self._initialized = False
         self._init_lock = asyncio.Lock()
+        
+        # Log instance creation for debugging singleton pattern
+        logger.info(f"📦 RAGService instance created: id={id(self)}")
     
     async def initialize(self) -> None:
         """
         Initialize RAG service.
-        Ensures vector store is ready and embedding provider is loaded.
+        
+        Uses CLASS-LEVEL state to ensure services are loaded only ONCE
+        across ALL RAGService instances. This prevents reloading the
+        BGE embedding model (8 seconds) on every request.
         """
-        async with self._init_lock:
-            if self._initialized:
+        # If already initialized at class level, reuse shared resources
+        if RAGService._class_initialized:
+            self._vector_store = RAGService._shared_vector_store
+            self._embedding_provider = RAGService._shared_embedding_provider
+            self._initialized = True
+            logger.info(f"✅ RAGService reusing shared instance (id={id(self)})")
+            return
+        
+        async with RAGService._class_lock:
+            # Double-check after acquiring lock
+            if RAGService._class_initialized:
+                self._vector_store = RAGService._shared_vector_store
+                self._embedding_provider = RAGService._shared_embedding_provider
+                self._initialized = True
+                logger.info(f"✅ RAGService reusing shared instance after lock (id={id(self)})")
                 return
             
-            await self._vector_store.initialize()
-            self._embedding_provider = get_embedding_provider()
+            # FIRST AND ONLY INITIALIZATION - loads BGE model (~8 seconds)
+            logger.warning(f"🔥 RAGService INITIALIZING - LOADING MODEL")
+            
+            # Initialize vector store (Qdrant connection)
+            vs = QdrantVectorStore()
+            await vs.initialize()
+            
+            # Initialize embedding provider (BGE model - takes ~8 seconds)
+            ep = get_embedding_provider()
+            
+            # Store in class variables for reuse across all instances
+            RAGService._shared_vector_store = vs
+            RAGService._shared_embedding_provider = ep
+            RAGService._class_initialized = True
+            
+            # Assign to this instance
+            self._vector_store = vs
+            self._embedding_provider = ep
             self._initialized = True
             
-            logger.info("rag_service_initialized")
+            logger.info(f"✅ RAGService class initialization complete")
     
     async def _ensure_initialized(self) -> None:
         """Lazy initialization."""
