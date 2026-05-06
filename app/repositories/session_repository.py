@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.domain.session import Session
 from app.repositories.base import BaseRepository
 from app.core.logging import get_logger
+from app.core.database import get_session_context
 
 logger = get_logger(__name__)
 
@@ -20,10 +21,45 @@ logger = get_logger(__name__)
 class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]]):
     """
     Repository for Session model operations.
+    
+    Can be initialized with an existing session or will create one on demand.
     """
     
-    def __init__(self, session: AsyncSession):
-        super().__init__(Session, session)
+    def __init__(self, session: Optional[AsyncSession] = None):
+        """
+        Initialize repository with optional session.
+        
+        Args:
+            session: Optional existing AsyncSession. If not provided,
+                     a new session will be created on first operation.
+        """
+        self._session_context = None
+        self._persistent_session = None
+        
+        if session:
+            super().__init__(Session, session)
+        else:
+            # Initialize without session - will create on demand
+            super().__init__(Session, None)
+    
+    async def _get_session(self) -> AsyncSession:
+        """Get or create a session."""
+        if self.session is not None:
+            return self.session
+        
+        # Create a new session context
+        self._session_context = get_session_context()
+        self._persistent_session = await self._session_context.__aenter__()
+        self.session = self._persistent_session
+        return self.session
+    
+    async def close(self):
+        """Close the session if it was created by this repository."""
+        if self._session_context is not None:
+            await self._session_context.__aexit__(None, None, None)
+            self._session_context = None
+            self._persistent_session = None
+            self.session = None
     
     async def create_session(
         self,
@@ -56,9 +92,10 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
             message_count=0,
         )
         
-        self.session.add(session)
-        await self.session.flush()
-        await self.session.refresh(session)
+        db_session = await self._get_session()
+        db_session.add(session)
+        await db_session.flush()
+        await db_session.refresh(session)
         
         logger.debug(
             "session_created",
@@ -106,6 +143,13 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
             ip_address=ip_address,
         )
     
+    async def get_by_id(self, session_id: UUID) -> Optional[Session]:
+        """Get session by ID."""
+        db_session = await self._get_session()
+        stmt = select(Session).where(Session.id == session_id)
+        result = await db_session.execute(stmt)
+        return result.scalar_one_or_none()
+    
     async def touch_session(self, session_id: UUID) -> Optional[Session]:
         """
         Update session last_active timestamp and increment message count.
@@ -116,6 +160,8 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
         Returns:
             Updated session or None
         """
+        db_session = await self._get_session()
+        
         stmt = (
             update(Session)
             .where(Session.id == session_id)
@@ -126,8 +172,8 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
             .returning(Session)
         )
         
-        result = await self.session.execute(stmt)
-        await self.session.flush()
+        result = await db_session.execute(stmt)
+        await db_session.flush()
         
         return result.scalar_one_or_none()
     
@@ -146,6 +192,8 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
         Returns:
             Session instance or None
         """
+        db_session = await self._get_session()
+        
         stmt = (
             select(Session)
             .where(
@@ -158,7 +206,7 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
             .limit(1)
         )
         
-        result = await self.session.execute(stmt)
+        result = await db_session.execute(stmt)
         return result.scalar_one_or_none()
     
     async def get_active_sessions(
@@ -180,6 +228,8 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
         Returns:
             List of active sessions
         """
+        db_session = await self._get_session()
+        
         stmt = select(Session).where(Session.is_active == True)
         
         if channel:
@@ -190,7 +240,7 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
         
         stmt = stmt.order_by(Session.last_active.desc()).offset(skip).limit(limit)
         
-        result = await self.session.execute(stmt)
+        result = await db_session.execute(stmt)
         return list(result.scalars().all())
     
     async def count_active_sessions(
@@ -208,6 +258,8 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
         Returns:
             Active session count
         """
+        db_session = await self._get_session()
+        
         stmt = (
             select(func.count())
             .select_from(Session)
@@ -220,7 +272,7 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
         if since:
             stmt = stmt.where(Session.last_active >= since)
         
-        result = await self.session.execute(stmt)
+        result = await db_session.execute(stmt)
         return result.scalar() or 0
     
     async def close_session(self, session_id: UUID) -> bool:
@@ -233,6 +285,8 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
         Returns:
             True if updated
         """
+        db_session = await self._get_session()
+        
         stmt = (
             update(Session)
             .where(Session.id == session_id)
@@ -242,8 +296,8 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
             )
         )
         
-        result = await self.session.execute(stmt)
-        await self.session.flush()
+        result = await db_session.execute(stmt)
+        await db_session.flush()
         
         updated = result.rowcount > 0
         if updated:
@@ -261,6 +315,8 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
         Returns:
             True if updated
         """
+        db_session = await self._get_session()
+        
         stmt = (
             update(Session)
             .where(Session.id == session_id)
@@ -271,8 +327,8 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
             )
         )
         
-        result = await self.session.execute(stmt)
-        await self.session.flush()
+        result = await db_session.execute(stmt)
+        await db_session.flush()
         
         updated = result.rowcount > 0
         if updated:
@@ -290,6 +346,8 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
         Returns:
             True if updated
         """
+        db_session = await self._get_session()
+        
         stmt = (
             update(Session)
             .where(Session.id == session_id)
@@ -300,8 +358,8 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
             )
         )
         
-        result = await self.session.execute(stmt)
-        await self.session.flush()
+        result = await db_session.execute(stmt)
+        await db_session.flush()
         
         updated = result.rowcount > 0
         if updated:
@@ -319,6 +377,7 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
         Returns:
             Number of sessions closed
         """
+        db_session = await self._get_session()
         cutoff = datetime.utcnow() - timedelta(days=inactive_days)
         
         stmt = (
@@ -335,8 +394,8 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
             )
         )
         
-        result = await self.session.execute(stmt)
-        await self.session.flush()
+        result = await db_session.execute(stmt)
+        await db_session.flush()
         
         closed = result.rowcount
         if closed > 0:
@@ -351,6 +410,8 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
         Returns:
             Session statistics
         """
+        db_session = await self._get_session()
+        
         # Active sessions by channel
         active_stmt = select(
             Session.channel,
@@ -359,19 +420,19 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
             Session.is_active == True
         ).group_by(Session.channel)
         
-        active_result = await self.session.execute(active_stmt)
+        active_result = await db_session.execute(active_stmt)
         active_by_channel = {row.channel: row.count for row in active_result}
         
         # Total sessions
         total_stmt = select(func.count()).select_from(Session)
-        total_result = await self.session.execute(total_stmt)
+        total_result = await db_session.execute(total_stmt)
         total = total_result.scalar() or 0
         
         # Opted-out count
         opted_out_stmt = select(func.count()).select_from(Session).where(
             Session.opted_out == True
         )
-        opted_out_result = await self.session.execute(opted_out_stmt)
+        opted_out_result = await db_session.execute(opted_out_stmt)
         opted_out = opted_out_result.scalar() or 0
         
         # Sessions created today
@@ -379,7 +440,7 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
         today_stmt = select(func.count()).select_from(Session).where(
             Session.created_at >= today
         )
-        today_result = await self.session.execute(today_stmt)
+        today_result = await db_session.execute(today_stmt)
         today_count = today_result.scalar() or 0
         
         return {

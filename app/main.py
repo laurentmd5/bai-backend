@@ -102,20 +102,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from app.services.whatsapp_service import WhatsAppService
     from app.repositories.session_repository import SessionRepository
     from app.repositories.conversation_repository import ConversationRepository
-    from app.core.database import get_session_context
     
-    async with get_session_context() as session:
-        session_repo = SessionRepository(session)
-        conversation_repo = ConversationRepository(session)
-        
-        # SINGLE ChatService instance
-        chat_service = ChatService(session_repo, conversation_repo)
-        chat_service._rag_service = rag_service
-        logger.info("chat_service_initialized")
-        
-        # WhatsApp uses the SAME ChatService
-        whatsapp_service = WhatsAppService(chat_service, session_repo)
-        logger.info("whatsapp_service_initialized")
+    # Create repositories WITHOUT passing a session - they will create their own persistent sessions
+    session_repo = SessionRepository()
+    conversation_repo = ConversationRepository()
+    
+    # SINGLE ChatService instance
+    chat_service = ChatService(session_repo, conversation_repo)
+    chat_service._rag_service = rag_service
+    logger.info("chat_service_initialized")
+    
+    # WhatsApp uses the SAME ChatService
+    whatsapp_service = WhatsAppService(chat_service, session_repo)
+    logger.info("whatsapp_service_initialized")
     
     logger.info("application_startup_complete")
     
@@ -130,6 +129,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # SHUTDOWN
     # =========================================================================
     logger.info("shutting_down_application")
+    
+    # Close repository sessions
+    try:
+        await session_repo.close()
+        logger.info("session_repository_closed")
+    except Exception as e:
+        logger.error("session_repository_close_error", error=str(e))
+    
+    try:
+        await conversation_repo.close()
+        logger.info("conversation_repository_closed")
+    except Exception as e:
+        logger.error("conversation_repository_close_error", error=str(e))
     
     # Close LLM providers
     try:
@@ -361,14 +373,14 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
-# Run with: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 --loop uvloop
+# Run with: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --loop uvloop
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "app.main:app",
         host=settings.HOST,
         port=settings.PORT,
-        workers=settings.WORKERS,
+        workers=1,  # ⭐ FORCE SINGLE WORKER to avoid multiple instances of BGE model
         loop="uvloop",
         reload=settings.DEBUG,
     )

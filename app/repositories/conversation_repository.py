@@ -11,6 +11,7 @@ from sqlalchemy import select, func, and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
+from app.core.database import get_session_context
 from app.models.domain.conversation import Conversation
 from app.repositories.base import BaseRepository
 from app.models.request.chat import ChatMessageRequest, ChatFeedbackRequest
@@ -24,10 +25,44 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
     """
     Repository for Conversation model operations.
     Extends base repository with conversation-specific queries.
+    
+    Can be initialized with an existing session or will create one on demand.
     """
     
-    def __init__(self, session: AsyncSession):
-        super().__init__(Conversation, session)
+    def __init__(self, session: Optional[AsyncSession] = None):
+        """
+        Initialize repository with optional session.
+        
+        Args:
+            session: Optional existing AsyncSession. If not provided,
+                     a new session will be created on first operation.
+        """
+        self._session_context = None
+        self._persistent_session = None
+        
+        if session:
+            super().__init__(Conversation, session)
+        else:
+            super().__init__(Conversation, None)
+    
+    async def _get_session(self) -> AsyncSession:
+        """Get or create a session."""
+        if self.session is not None:
+            return self.session
+        
+        # Create a new session context
+        self._session_context = get_session_context()
+        self._persistent_session = await self._session_context.__aenter__()
+        self.session = self._persistent_session
+        return self.session
+    
+    async def close(self):
+        """Close the session if it was created by this repository."""
+        if self._session_context is not None:
+            await self._session_context.__aexit__(None, None, None)
+            self._session_context = None
+            self._persistent_session = None
+            self.session = None
     
     async def create_conversation(
         self,
@@ -64,6 +99,8 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
         Returns:
             Created Conversation instance
         """
+        db_session = await self._get_session()
+        
         conversation = Conversation(
             session_id=session_id,
             user_message=user_message,
@@ -79,9 +116,9 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
             validation_failed=validation_failed,
         )
         
-        self.session.add(conversation)
-        await self.session.flush()
-        await self.session.refresh(conversation)
+        db_session.add(conversation)
+        await db_session.flush()
+        await db_session.refresh(conversation)
         
         logger.debug(
             "conversation_created",
@@ -110,6 +147,8 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
         Returns:
             List of conversations ordered by created_at
         """
+        db_session = await self._get_session()
+        
         stmt = (
             select(Conversation)
             .where(Conversation.session_id == session_id)
@@ -118,7 +157,7 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
             .limit(limit)
         )
         
-        result = await self.session.execute(stmt)
+        result = await db_session.execute(stmt)
         return list(result.scalars().all())
     
     async def count_by_session(self, session_id: UUID) -> int:
@@ -131,13 +170,15 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
         Returns:
             Total count
         """
+        db_session = await self._get_session()
+        
         stmt = (
             select(func.count())
             .select_from(Conversation)
             .where(Conversation.session_id == session_id)
         )
         
-        result = await self.session.execute(stmt)
+        result = await db_session.execute(stmt)
         return result.scalar() or 0
     
     async def update_feedback(
@@ -159,6 +200,8 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
         """
         from sqlalchemy import update
         
+        db_session = await self._get_session()
+        
         stmt = (
             update(Conversation)
             .where(Conversation.id == conversation_id)
@@ -168,8 +211,8 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
         if session_id:
             stmt = stmt.where(Conversation.session_id == session_id)
         
-        result = await self.session.execute(stmt)
-        await self.session.flush()
+        result = await db_session.execute(stmt)
+        await db_session.flush()
         
         updated = result.rowcount > 0
         if updated:
@@ -198,6 +241,8 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
         Returns:
             Dict with positive, negative, and total counts
         """
+        db_session = await self._get_session()
+        
         stmt = select(
             func.count().filter(Conversation.feedback == 1).label('positive'),
             func.count().filter(Conversation.feedback == -1).label('negative'),
@@ -213,7 +258,7 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
         if since:
             stmt = stmt.where(Conversation.created_at >= since)
         
-        result = await self.session.execute(stmt)
+        result = await db_session.execute(stmt)
         row = result.one()
         
         return {
@@ -246,6 +291,8 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
         Returns:
             Tuple of (conversations, total_count)
         """
+        db_session = await self._get_session()
+        
         # Build base query
         stmt = select(Conversation)
         count_stmt = select(func.count()).select_from(Conversation)
@@ -293,7 +340,7 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
             count_stmt = count_stmt.where(and_(*filters))
         
         # Get total count
-        count_result = await self.session.execute(count_stmt)
+        count_result = await db_session.execute(count_stmt)
         total = count_result.scalar() or 0
         
         # Apply sorting
@@ -308,7 +355,7 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
         stmt = stmt.offset(skip).limit(limit)
         
         # Execute
-        result = await self.session.execute(stmt)
+        result = await db_session.execute(stmt)
         conversations = list(result.scalars().all())
         
         return conversations, total
@@ -328,6 +375,7 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
         Returns:
             List of daily stats
         """
+        db_session = await self._get_session()
         since = datetime.utcnow() - timedelta(days=days)
         
         stmt = select(
@@ -350,7 +398,7 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
             Conversation.channel
         ).order_by(text('day DESC'))
         
-        result = await self.session.execute(stmt)
+        result = await db_session.execute(stmt)
         
         stats = []
         for row in result:
@@ -385,6 +433,7 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
         Returns:
             List of top questions with stats
         """
+        db_session = await self._get_session()
         since = datetime.utcnow() - timedelta(days=days)
         
         stmt = select(
@@ -402,7 +451,7 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
             func.left(Conversation.user_message, 100)
         ).order_by(text('frequency DESC')).limit(limit)
         
-        result = await self.session.execute(stmt)
+        result = await db_session.execute(stmt)
         
         questions = []
         for row in result:
@@ -434,6 +483,7 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
         Returns:
             Dict with p50, p90, p95, p99 values
         """
+        db_session = await self._get_session()
         since = datetime.utcnow() - timedelta(days=days)
         
         stmt = select(
@@ -454,7 +504,7 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
         if channel:
             stmt = stmt.where(Conversation.channel == channel)
         
-        result = await self.session.execute(stmt)
+        result = await db_session.execute(stmt)
         row = result.one()
         
         return {
@@ -480,6 +530,7 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
         Returns:
             Cache statistics
         """
+        db_session = await self._get_session()
         since = datetime.utcnow() - timedelta(days=days)
         
         stmt = select(
@@ -488,7 +539,7 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
             func.count().filter(Conversation.cache_hit == False).label('misses'),
         ).select_from(Conversation).where(Conversation.created_at >= since)
         
-        result = await self.session.execute(stmt)
+        result = await db_session.execute(stmt)
         row = result.one()
         
         hit_rate = (row.hits / row.total * 100) if row.total > 0 else 0
