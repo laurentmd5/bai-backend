@@ -186,6 +186,27 @@ def get_engine() -> AsyncEngine:
     return _engine
 
 
+async def async_session_factory() -> AsyncSession:
+    """
+    Create a new async session directly.
+    Used for creating persistent sessions that stay open across requests.
+    
+    Returns:
+        AsyncSession: A new database session
+        
+    Example:
+        session = await async_session_factory()
+        try:
+            # use session
+        finally:
+            await session.close()
+    """
+    if not _is_initialized or not _async_session_factory:
+        await init_database()
+    
+    return _async_session_factory()
+
+
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency for obtaining a database session."""
     if not _is_initialized or not _async_session_factory:

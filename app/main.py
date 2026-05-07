@@ -162,9 +162,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.error("database_shutdown_error", error=str(e))
     
-    logger.info("application_shutdown_complete"
-    )
-    
+    logger.info("application_shutdown_complete")
+     
 def create_app() -> FastAPI:
     """
     Create and configure the FastAPI application.
