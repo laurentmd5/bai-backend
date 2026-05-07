@@ -14,7 +14,7 @@ from fastapi.openapi.utils import get_openapi
 
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
-from app.core.database import init_database, close_database, check_database_health
+from app.core.database import init_database, close_database, check_database_health, async_session_factory
 from app.core.redis_client import init_redis, close_redis, check_redis_health
 from app.services.llm.factory import get_llm_provider, get_embedding_provider, close_llm_providers
 from app.services.vector.qdrant_store import QdrantVectorStore
@@ -103,9 +103,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from app.repositories.session_repository import SessionRepository
     from app.repositories.conversation_repository import ConversationRepository
     
-    # Create repositories WITHOUT passing a session - they will create their own persistent sessions
-    session_repo = SessionRepository()
-    conversation_repo = ConversationRepository()
+    # ⭐ CREATE A SINGLE SHARED SESSION for all repositories
+    shared_session = async_session_factory()
+    
+    # Create repositories with the SAME shared session
+    session_repo = SessionRepository(shared_session)
+    conversation_repo = ConversationRepository(shared_session)
     
     # SINGLE ChatService instance
     chat_service = ChatService(session_repo, conversation_repo)
@@ -122,6 +125,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.chat_service = chat_service
     app.state.whatsapp_service = whatsapp_service
     app.state.rag_service = rag_service
+    app.state.db_session = shared_session
     
     yield
     
@@ -130,18 +134,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # =========================================================================
     logger.info("shutting_down_application")
     
-    # Close repository sessions
+    # Close shared database session
     try:
-        await session_repo.close()
-        logger.info("session_repository_closed")
+        await app.state.db_session.close()
+        logger.info("shared_db_session_closed")
     except Exception as e:
-        logger.error("session_repository_close_error", error=str(e))
-    
-    try:
-        await conversation_repo.close()
-        logger.info("conversation_repository_closed")
-    except Exception as e:
-        logger.error("conversation_repository_close_error", error=str(e))
+        logger.error("shared_db_session_close_error", error=str(e))
     
     # Close LLM providers
     try:
@@ -164,9 +162,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.error("database_shutdown_error", error=str(e))
     
-    logger.info("application_shutdown_complete")
-
-
+    logger.info("application_shutdown_complete"
+    )
+    
 def create_app() -> FastAPI:
     """
     Create and configure the FastAPI application.
