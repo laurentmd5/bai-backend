@@ -104,7 +104,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from app.repositories.conversation_repository import ConversationRepository
     
     # ⭐ CREATE A SINGLE SHARED SESSION for all repositories
-    shared_session = async_session_factory()
+    shared_session = await async_session_factory()
     
     # Create repositories with the SAME shared session
     session_repo = SessionRepository(shared_session)
