@@ -614,6 +614,28 @@ class Settings(BaseSettings):
     )
     
     # =========================================================================
+    # AUDIO SETTINGS (voice messages)
+    # =========================================================================
+    WHISPER_MODEL_SIZE: str = Field(
+        default="base",
+        description="Whisper model size: tiny, base, small, medium"
+    )
+    
+    MAX_AUDIO_DURATION_SECONDS: int = Field(
+        default=180,
+        ge=10,
+        le=300,
+        description="Maximum allowed audio duration in seconds"
+    )
+    
+    AUDIO_CACHE_TTL_SECONDS: int = Field(
+        default=86400,
+        ge=3600,
+        le=604800,
+        description="Cache TTL for transcribed audio in seconds"
+    )
+    
+    # =========================================================================
     # COMPUTED PROPERTIES
     # =========================================================================
     @property

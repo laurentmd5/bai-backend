@@ -41,10 +41,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH" \
     APP_HOME=/app
 
-# Install runtime dependencies
+# Install runtime dependencies (including ffmpeg for pydub)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     curl \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 

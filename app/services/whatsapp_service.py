@@ -26,6 +26,10 @@ from app.services.cache.redis_cache import cache_service, CacheNamespace
 from app.services.chat_service import ChatService
 from app.services.validation.input_validator import InputValidator
 from app.services.validation.security_validator import SecurityValidator
+from app.services.audio.audio_validator import AudioValidator
+from app.services.audio.media_utils import download_media, upload_media, send_audio_message
+from app.services.audio.whisper_service import whisper
+from app.services.audio.tts_service import tts
 from app.repositories.session_repository import SessionRepository
 from app.models.request.whatsapp import WhatsAppWebhookRequest, WhatsAppMessage
 
@@ -320,11 +324,16 @@ class WhatsAppService:
                 await self._handle_start_command(phone_number)
                 return
         
+        # Handle voice / audio messages
+        if message.type == "audio" or (hasattr(message, 'audio') and message.audio):
+            await self._handle_voice_message(message, phone_number)
+            return
+        
         # Only process text messages for now (POC)
         if not message.is_text or not message.text_content:
             await self.send_text_message(
                 to_number=phone_number,
-                text="I can only process text messages at the moment. Please type your question.",
+                text="I can only process text or voice messages at the moment. Please send a voice note or type your question.",
             )
             return
         
@@ -427,6 +436,110 @@ class WhatsAppService:
         )
         
         logger.info("whatsapp_user_opted_in", phone=phone_number[-4:])
+    
+    async def _handle_voice_message(self, message: WhatsAppMessage, phone_number: str) -> None:
+        """Process an incoming voice message."""
+        media_id = None
+        if message.audio and message.audio.id:
+            media_id = message.audio.id
+        else:
+            await self.send_text_message(
+                to_number=phone_number,
+                text="I received an audio message but no media ID. Please try again."
+            )
+            return
+        
+        # Send "processing" indicator
+        await self.send_text_message(
+            to_number=phone_number,
+            text="🎤 I'm listening to your voice message. Please wait..."
+        )
+        
+        # Download media
+        client = await self._get_client()
+        audio_bytes = await download_media(
+            media_id=media_id,
+            access_token=self._access_token,
+            api_version=self._api_version,
+            phone_number_id=self._phone_number_id,
+            client=client
+        )
+        
+        if not audio_bytes:
+            await self.send_text_message(
+                to_number=phone_number,
+                text="I couldn't download your voice message. Please try again."
+            )
+            return
+        
+        # Validate audio
+        is_valid, error_msg = AudioValidator.validate(audio_bytes)
+        if not is_valid:
+            await self.send_text_message(
+                to_number=phone_number,
+                text=f"Your voice message could not be processed: {error_msg}. Please try a shorter message or type your question."
+            )
+            return
+        
+        # Transcribe
+        transcribed_text = await whisper.transcribe(audio_bytes, language="en")
+        if not transcribed_text:
+            await self.send_text_message(
+                to_number=phone_number,
+                text="I couldn't understand your voice message. Could you please repeat or type your question?"
+            )
+            return
+        
+        # Send transcribed text to chat service
+        try:
+            is_valid, sanitized_message, _ = self._input_validator.validate_chat_message(
+                message=transcribed_text,
+                language="en",
+                channel="whatsapp",
+            )
+        except Exception as e:
+            logger.warning("voice_input_validation_failed", error=str(e))
+            await self.send_text_message(
+                to_number=phone_number,
+                text="I had trouble understanding your message. Could you try again?"
+            )
+            return
+        
+        response = await self._chat_service.process_message(
+            message=sanitized_message,
+            session_id=None,
+            language="en",
+            channel="whatsapp",
+            ip_address=None,
+            user_agent="WhatsApp",
+            metadata={"phone_number": phone_number, "is_voice": True},
+        )
+        
+        response_text = response.get("message", "")
+        if not response_text:
+            response_text = "I'm not sure how to answer that. Please try again."
+        
+        # Synthesize voice response
+        audio_response = await tts.synthesize(response_text, language="en")
+        if audio_response:
+            media_id = await upload_media(
+                audio_bytes=audio_response,
+                access_token=self._access_token,
+                api_version=self._api_version,
+                phone_number_id=self._phone_number_id,
+                client=client
+            )
+            if media_id:
+                await send_audio_message(
+                    to_number=phone_number,
+                    audio_id=media_id,
+                    send_message_func=self._send_message
+                )
+                logger.info("voice_response_sent", phone=phone_number[-4:])
+                return
+        
+        # Fallback to text response
+        await self.send_text_message(to_number=phone_number, text=response_text)
     
     async def send_text_message(
         self,

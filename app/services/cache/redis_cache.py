@@ -892,6 +892,41 @@ class RedisCacheService:
         return await self.exists(CacheNamespace.WHATSAPP_PROCESSED, message_id)
     
     # =========================================================================
+    # Audio Transcript Caching
+    # =========================================================================
+    
+    async def get_audio_transcript(self, audio_hash: str) -> Optional[str]:
+        """
+        Get cached transcript for an audio hash.
+        
+        Args:
+            audio_hash: Hash of the audio file
+            
+        Returns:
+            Cached transcript or None
+        """
+        return await self.get(CacheNamespace.RAG_RESPONSE, f"audio:transcript:{audio_hash}")
+    
+    async def set_audio_transcript(self, audio_hash: str, transcript: str, ttl: int) -> bool:
+        """
+        Cache a transcribed audio.
+        
+        Args:
+            audio_hash: Hash of the audio file
+            transcript: Transcribed text
+            ttl: Time to live in seconds
+            
+        Returns:
+            bool: True if successful
+        """
+        return await self.set(
+            CacheNamespace.RAG_RESPONSE,
+            f"audio:transcript:{audio_hash}",
+            value=transcript,
+            ttl=ttl
+        )
+    
+    # =========================================================================
     # JWT Blacklist
     # =========================================================================
     
