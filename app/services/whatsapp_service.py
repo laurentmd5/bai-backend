@@ -452,7 +452,7 @@ class WhatsAppService:
         # Send "processing" indicator
         await self.send_text_message(
             to_number=phone_number,
-            text="🎤 I'm listening to your voice message. Please wait..."
+            text="🎤 I'm listening to your voice message / J'écoute votre message vocal. Please wait / Veuillez patienter..."
         )
         
         # Download media

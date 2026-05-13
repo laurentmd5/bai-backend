@@ -5,6 +5,7 @@ Whisper transcription service with Redis caching.
 import asyncio
 import tempfile
 import hashlib
+import functools
 from pathlib import Path
 from typing import Optional
 
@@ -49,9 +50,14 @@ class WhisperTranscriber:
         """Compute SHA‑256 hash of audio for cache key."""
         return hashlib.sha256(audio_bytes).hexdigest()
     
-    async def transcribe(self, audio_bytes: bytes, language: str = "en") -> Optional[str]:
+    async def transcribe(self, audio_bytes: bytes, language: str = "en", beam_size: int = 3) -> Optional[str]:
         """
         Transcribe audio bytes to text, using Redis cache.
+        
+        Args:
+            audio_bytes: Audio data in bytes
+            language: Language code (default: "en")
+            beam_size: Beam search size for better accuracy (default: 3)
         
         Returns:
             Transcribed text or None if failed.
@@ -73,14 +79,17 @@ class WhisperTranscriber:
         
         try:
             loop = asyncio.get_event_loop()
-            segments, info = await loop.run_in_executor(
-                None,
+            # Create a partial function with named arguments
+            transcribe_func = functools.partial(
                 self._model.transcribe,
                 tmp_path,
                 language=language,
-                beam_size=3,
-                vad_filter=True
+                beam_size=beam_size,
+                vad_filter=True,
+                vad_parameters={"min_silence_duration_ms": 500}
             )
+            segments, info = await loop.run_in_executor(None, transcribe_func)
+            
             transcript = " ".join([seg.text for seg in segments]).strip()
             
             if transcript:
