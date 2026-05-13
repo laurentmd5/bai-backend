@@ -79,7 +79,7 @@ async def upload_media(
     Returns:
         Media ID or None
     """
-    url = f"https://graph.facebook.com/{api_version}/{phone_number_id}/media"
+    url = f"https://graph.facebook.com/{api_version}/{phone_number_id}/media?messaging_product=whatsapp"
     headers = {"Authorization": f"Bearer {access_token}"}
     files = {"file": ("response.mp3", audio_bytes, mime_type)}
     
