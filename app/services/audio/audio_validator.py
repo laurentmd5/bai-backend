@@ -1,12 +1,12 @@
 """
-Audio validation using pydub + ffmpeg.
-Checks format, duration, size.
+Audio validation using ffprobe (from ffmpeg).
 """
 
-import io
+import subprocess
+import json
+import tempfile
+import os
 from typing import Tuple, Optional
-
-from pydub import AudioSegment
 
 from app.core.logging import get_logger
 from app.core.config import settings
@@ -16,9 +16,8 @@ logger = get_logger(__name__)
 
 class AudioValidator:
     """
-    Validate audio files from WhatsApp before transcription.
+    Validate audio files using ffprobe.
     """
-    
     MAX_DURATION_SECONDS = getattr(settings, "MAX_AUDIO_DURATION_SECONDS", 180)  # 3 minutes
     MAX_SIZE_BYTES = 16 * 1024 * 1024  # WhatsApp limit 16 MB
     
@@ -30,29 +29,33 @@ class AudioValidator:
         Returns:
             (is_valid, error_message)
         """
-        # Check size
         if len(audio_bytes) > cls.MAX_SIZE_BYTES:
             return False, f"Audio size exceeds {cls.MAX_SIZE_BYTES // (1024*1024)} MB limit"
         
-        # Check format and duration using pydub
+        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
+            tmp.write(audio_bytes)
+            tmp_path = tmp.name
+        
         try:
-            audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
-            duration_seconds = len(audio) / 1000.0
+            cmd = [
+                "ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", tmp_path
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            if result.returncode != 0:
+                logger.error("ffprobe_failed", stderr=result.stderr)
+                return False, "Unable to analyze audio format"
             
-            if duration_seconds > cls.MAX_DURATION_SECONDS:
-                return False, f"Audio duration {duration_seconds:.1f}s exceeds {cls.MAX_DURATION_SECONDS}s limit"
+            data = json.loads(result.stdout)
+            duration = float(data.get("format", {}).get("duration", 0))
             
-            # Log metadata
-            logger.debug(
-                "audio_validated",
-                duration_sec=round(duration_seconds, 2),
-                channels=audio.channels,
-                frame_rate=audio.frame_rate,
-                sample_width=audio.sample_width
-            )
+            if duration > cls.MAX_DURATION_SECONDS:
+                return False, f"Audio duration {duration:.1f}s exceeds {cls.MAX_DURATION_SECONDS}s limit"
             
+            logger.debug("audio_validated", duration=round(duration, 2))
             return True, None
             
         except Exception as e:
-            logger.error("audio_validation_failed", error=str(e))
-            return False, "Audio format not supported or corrupted"
+            logger.error("audio_validation_exception", error=str(e))
+            return False, "Audio validation failed"
+        finally:
+            os.unlink(tmp_path)
