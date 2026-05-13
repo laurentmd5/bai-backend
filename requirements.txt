@@ -40,7 +40,6 @@ fastembed==0.8.0
 faster-whisper==1.2.1
 edge-tts==7.2.8
 aiofiles==25.1.0
-pydub==0.25.1
 
 # Validation
 pydantic==2.10.4
