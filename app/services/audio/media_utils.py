@@ -14,6 +14,36 @@ class WhatsAppMediaError(Exception):
     pass
 
 
+async def _get_multipart_client(access_token: str) -> httpx.AsyncClient:
+    """
+    Create a dedicated HTTP client for multipart uploads.
+    This client has NO default Content-Type header to avoid conflicts with multipart/form-data.
+    
+    Args:
+        access_token: WhatsApp access token
+        
+    Returns:
+        Configured httpx AsyncClient for uploads
+    """
+    return httpx.AsyncClient(
+        timeout=httpx.Timeout(
+            connect=10.0,
+            read=30.0,
+            write=30.0,  # Longer write timeout for file uploads
+            pool=10.0,
+        ),
+        limits=httpx.Limits(
+            max_keepalive_connections=5,
+            max_connections=10,
+            keepalive_expiry=60.0,
+        ),
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            # Intentionally NO Content-Type header - let httpx auto-generate it for multipart
+        },
+    )
+
+
 async def download_media(
     media_id: str,
     access_token: str,
@@ -74,29 +104,53 @@ async def upload_media(
     mime_type: str = "audio/mpeg"
 ) -> Optional[str]:
     """
-    Upload audio media to WhatsApp.
+    Upload audio media to WhatsApp using a dedicated multipart-safe client.
+    
+    Args:
+        audio_bytes: Audio file bytes
+        access_token: WhatsApp access token
+        api_version: API version (e.g. "v25.0")
+        phone_number_id: Business phone number ID
+        client: HTTP client (not used - we create a dedicated one for multipart)
+        mime_type: MIME type of the audio file (default: audio/mpeg)
     
     Returns:
         Media ID or None
     """
     url = f"https://graph.facebook.com/{api_version}/{phone_number_id}/media?messaging_product=whatsapp"
-    headers = {"Authorization": f"Bearer {access_token}"}
     files = {"file": ("response.mp3", audio_bytes, mime_type)}
     
+    # Create a dedicated client for multipart uploads (no Content-Type: application/json conflict)
+    upload_client = await _get_multipart_client(access_token)
+    
     try:
-        resp = await client.post(url, headers=headers, files=files)
+        # This request will use the dedicated client with proper multipart handling
+        # httpx will auto-generate: Content-Type: multipart/form-data; boundary=...
+        resp = await upload_client.post(url, files=files)
+        
         if resp.status_code != 200:
-            logger.error("media_upload_failed", status=resp.status_code, text=resp.text)
+            logger.error(
+                "media_upload_failed",
+                status=resp.status_code,
+                text=resp.text,
+                url=url
+            )
             return None
         
         data = resp.json()
         media_id = data.get("id")
-        logger.info("media_uploaded", media_id=media_id)
+        if media_id:
+            logger.info("media_uploaded", media_id=media_id, size=len(audio_bytes))
+        else:
+            logger.warning("media_upload_no_id", response=data)
         return media_id
         
     except Exception as e:
-        logger.error("media_upload_exception", error=str(e))
+        logger.error("media_upload_exception", error=str(e), error_type=type(e).__name__)
         return None
+    finally:
+        # Always close the dedicated client
+        await upload_client.aclose()
 
 
 async def send_audio_message(
