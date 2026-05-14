@@ -19,6 +19,7 @@ from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.session_repository import SessionRepository
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.metrics import llm_generation_duration_ms
 from app.core.exceptions import (
     BarrowAIException,
     LowConfidenceException,
@@ -922,6 +923,11 @@ class ChatService:
                     
                     llm_latency_ms = (datetime.utcnow() - llm_start).total_seconds() * 1000
                     response_metadata["llm_latency_ms"] = llm_latency_ms
+                    
+                    # Record LLM metrics
+                    llm_generation_duration_ms.labels(
+                        provider=self._llm_provider.get_provider_name()
+                    ).observe(llm_latency_ms)
                     
                 except (LLMTimeoutException, LLMUnavailableException) as e:
                     logger.error("llm_generation_failed", error=str(e), session_id=actual_session_id)

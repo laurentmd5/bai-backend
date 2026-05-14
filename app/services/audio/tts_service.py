@@ -3,11 +3,13 @@ Edge TTS service – free, no API key required.
 """
 
 import os
+import time
 from typing import Optional, Dict
 import edge_tts
 
 from app.core.logging import get_logger
 from app.core.config import settings
+from app.core.metrics import tts_synthesis_duration_seconds
 
 logger = get_logger(__name__)
 
@@ -82,6 +84,8 @@ class EdgeTTSService:
             return self._cache[cache_key]
         
         try:
+            start_time = time.time()
+            
             communicate = edge_tts.Communicate(
                 text,
                 selected_voice,
@@ -92,6 +96,9 @@ class EdgeTTSService:
             async for chunk in communicate.stream():
                 if chunk["type"] == "audio":
                     audio_chunks.append(chunk["data"])
+            
+            duration = time.time() - start_time
+            tts_synthesis_duration_seconds.observe(duration)
             
             if not audio_chunks:
                 logger.error("tts_no_audio_chunks")
@@ -109,7 +116,8 @@ class EdgeTTSService:
                 text_len=len(text),
                 audio_size=len(audio_bytes),
                 voice=selected_voice,
-                rate=selected_rate
+                rate=selected_rate,
+                synthesis_time_sec=round(duration, 2)
             )
             return audio_bytes
             

@@ -6,6 +6,7 @@ import asyncio
 import tempfile
 import hashlib
 import functools
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -13,6 +14,7 @@ from faster_whisper import WhisperModel
 
 from app.core.logging import get_logger
 from app.core.config import settings
+from app.core.metrics import whisper_transcription_duration_seconds
 from app.services.cache.redis_cache import cache_service, CacheNamespace
 
 logger = get_logger(__name__)
@@ -88,7 +90,12 @@ class WhisperTranscriber:
                 vad_filter=True,
                 vad_parameters={"min_silence_duration_ms": 500}
             )
+            
+            # Measure transcription time
+            start_time = time.time()
             segments, info = await loop.run_in_executor(None, transcribe_func)
+            duration = time.time() - start_time
+            whisper_transcription_duration_seconds.observe(duration)
             
             transcript = " ".join([seg.text for seg in segments]).strip()
             
@@ -104,7 +111,8 @@ class WhisperTranscriber:
                     "voice_transcribed",
                     duration=info.duration,
                     language=info.language,
-                    length=len(transcript)
+                    length=len(transcript),
+                    processing_time_sec=round(duration, 2)
                 )
                 return transcript
             else:

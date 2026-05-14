@@ -20,12 +20,14 @@ from app.services.llm.factory import get_llm_provider, get_embedding_provider, c
 from app.services.vector.qdrant_store import QdrantVectorStore
 from app.services.rag_service import RAGService
 from app.services.cache.redis_cache import cache_service
+from app.core.metrics import metrics_endpoint
 
 from app.middleware import (
     RateLimitMiddleware,
     SecurityHeadersMiddleware,
     RequestLoggerMiddleware,
     ErrorHandlerMiddleware,
+    MetricsMiddleware,
     setup_cors,
 )
 
@@ -185,11 +187,12 @@ def create_app() -> FastAPI:
     # Setup CORS
     setup_cors(app)
     
-    # Add middleware (order matters!)
+    # Add middleware (order matters - added in reverse execution order!)
     app.add_middleware(ErrorHandlerMiddleware)
     app.add_middleware(RequestLoggerMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(MetricsMiddleware)  # Collect HTTP metrics for Prometheus
     
     # Include API router
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
@@ -341,11 +344,10 @@ def create_app() -> FastAPI:
     
     # Metrics endpoint (Prometheus)
     if settings.PROMETHEUS_ENABLED:
-        @app.get("/metrics", tags=["Health"])
-        async def metrics() -> JSONResponse:
-            """Prometheus metrics endpoint."""
-            from app.core.metrics import get_metrics
-            return JSONResponse(content=get_metrics())
+        @app.get("/metrics", tags=["Monitoring"])
+        async def metrics():
+            """Prometheus metrics endpoint for scraping."""
+            return metrics_endpoint()
     
     # Protected docs in production
     if settings.ENVIRONMENT == "production":

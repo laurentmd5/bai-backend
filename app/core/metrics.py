@@ -1,14 +1,17 @@
 # app/core/metrics.py
 """
 Prometheus metrics module for BARROW.AI.
+Comprehensive observability with structured metrics for all components.
 """
 
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, REGISTRY
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
 from typing import Dict, Any
 import time
 
 
-# Chat metrics
+# =========================================================================
+# Existing chat metrics (preserved for compatibility)
+# =========================================================================
 chat_messages_total = Counter(
     'barrow_chat_messages_total',
     'Total number of chat messages',
@@ -80,6 +83,67 @@ admin_logins_total = Counter(
     ['result']
 )
 
+# =========================================================================
+# New HTTP metrics for comprehensive observability
+# =========================================================================
+http_requests_total = Counter(
+    'barrow_http_requests_total',
+    'Total HTTP requests by method, endpoint, and status',
+    ['method', 'endpoint', 'status']
+)
+
+http_request_duration_seconds = Histogram(
+    'barrow_http_request_duration_seconds',
+    'HTTP request latency in seconds',
+    ['method', 'endpoint'],
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
+)
+
+# =========================================================================
+# New WhatsApp audio/voice metrics
+# =========================================================================
+whatsapp_messages_received_total = Counter(
+    'barrow_whatsapp_messages_received_total',
+    'Total WhatsApp messages received by type',
+    ['type']  # text, voice, image, etc.
+)
+
+voice_message_processed_total = Counter(
+    'barrow_voice_message_processed_total',
+    'Voice message processing outcome',
+    ['status']  # success, transcription_failed, tts_failed, upload_failed
+)
+
+# =========================================================================
+# New audio processing metrics
+# =========================================================================
+whisper_transcription_duration_seconds = Histogram(
+    'barrow_whisper_transcription_duration_seconds',
+    'Whisper transcription latency in seconds',
+    buckets=(0.5, 1, 2, 3, 5, 8, 10, 15, 20)
+)
+
+tts_synthesis_duration_seconds = Histogram(
+    'barrow_tts_synthesis_duration_seconds',
+    'Edge TTS synthesis latency in seconds',
+    buckets=(0.5, 1, 2, 3, 5, 8, 10)
+)
+
+rag_retrieval_duration_seconds = Histogram(
+    'barrow_rag_retrieval_duration_seconds',
+    'RAG retrieval latency in seconds (Qdrant search)',
+    buckets=(0.1, 0.25, 0.5, 1, 2, 5)
+)
+
+# =========================================================================
+# Error tracking
+# =========================================================================
+error_total = Counter(
+    'barrow_error_total',
+    'Total errors by type and endpoint',
+    ['error_type', 'endpoint']
+)
+
 
 def get_metrics() -> Dict[str, Any]:
     """Get current metrics in Prometheus format."""
@@ -146,6 +210,15 @@ def record_whatsapp_optout():
 def record_admin_login(result: str):
     """Record admin login attempt."""
     admin_logins_total.labels(result=result).inc()
+
+
+# =========================================================================
+# Metrics endpoint for Prometheus scraping
+# =========================================================================
+def metrics_endpoint():
+    """FastAPI endpoint to expose Prometheus metrics."""
+    from fastapi import Response
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 class MetricsContext:

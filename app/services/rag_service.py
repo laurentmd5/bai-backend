@@ -4,6 +4,7 @@ Orchestrates the complete RAG pipeline from embedding to context building.
 """
 
 import uuid
+import time
 from typing import List, Dict, Any, Optional, Tuple
 import asyncio
 from datetime import datetime
@@ -14,6 +15,7 @@ from app.services.cache.redis_cache import cache_service, CacheNamespace
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.exceptions import LowConfidenceException
+from app.core.metrics import rag_retrieval_duration_seconds
 
 logger = get_logger(__name__)
 
@@ -135,13 +137,16 @@ class RAGService:
         # Generate embedding (with cache)
         query_vector = await self._embedding_provider.embed(query)
         
-        # Search in Qdrant
+        # Search in Qdrant with timing
+        start_time = time.time()
         results = await self._vector_store.search(
             query_vector=query_vector,
             limit=k,
             score_threshold=threshold,
             filters=filters,
         )
+        duration = time.time() - start_time
+        rag_retrieval_duration_seconds.observe(duration)
         
         if not results:
             logger.info(
@@ -158,6 +163,7 @@ class RAGService:
             query_preview=query[:100],
             chunks_found=len(results),
             top_score=top_score,
+            retrieval_time_sec=round(duration, 3),
         )
         
         return results, top_score

@@ -22,6 +22,7 @@ from tenacity import (
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.exceptions import BarrowAIException, ErrorCode
+from app.core.metrics import whatsapp_messages_received_total, voice_message_processed_total
 from app.services.cache.redis_cache import cache_service, CacheNamespace
 from app.services.chat_service import ChatService
 from app.services.validation.input_validator import InputValidator
@@ -326,16 +327,21 @@ class WhatsAppService:
         
         # Handle voice / audio messages
         if message.type == "audio" or (hasattr(message, 'audio') and message.audio):
+            whatsapp_messages_received_total.labels(type="voice").inc()
             await self._handle_voice_message(message, phone_number)
             return
         
         # Only process text messages for now (POC)
         if not message.is_text or not message.text_content:
+            whatsapp_messages_received_total.labels(type="other").inc()
             await self.send_text_message(
                 to_number=phone_number,
                 text="I can only process text or voice messages at the moment. Please send a voice note or type your question.",
             )
             return
+        
+        # Record text message
+        whatsapp_messages_received_total.labels(type="text").inc()
         
         user_message = message.text_content
         
@@ -484,6 +490,7 @@ class WhatsAppService:
         # Transcribe
         transcribed_text = await whisper.transcribe(audio_bytes, language="en")
         if not transcribed_text:
+            voice_message_processed_total.labels(status="transcription_failed").inc()
             await self.send_text_message(
                 to_number=phone_number,
                 text="I couldn't understand your voice message. Could you please repeat or type your question?"
@@ -536,7 +543,15 @@ class WhatsAppService:
                     send_message_func=self._send_message
                 )
                 logger.info("voice_response_sent", phone=phone_number[-4:])
+                # Record successful voice message processing
+                voice_message_processed_total.labels(status="success").inc()
                 return
+            else:
+                # Media upload failed
+                voice_message_processed_total.labels(status="upload_failed").inc()
+        else:
+            # TTS synthesis failed
+            voice_message_processed_total.labels(status="tts_failed").inc()
         
         # Fallback to text response
         await self.send_text_message(to_number=phone_number, text=response_text)
