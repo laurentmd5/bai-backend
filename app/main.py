@@ -20,6 +20,7 @@ from app.services.llm.factory import get_llm_provider, get_embedding_provider, c
 from app.services.vector.qdrant_store import QdrantVectorStore
 from app.services.rag_service import RAGService
 from app.services.cache.redis_cache import cache_service
+import app.core.metrics
 from app.core.metrics import metrics_endpoint
 
 from app.middleware import (
