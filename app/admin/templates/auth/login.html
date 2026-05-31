@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Connexion - BARROW.AI Admin{% endblock %}
+{% block page_title %}Connexion{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto mt-20 bg-white rounded-lg shadow p-8">
+    <h2 class="text-2xl font-bold text-center mb-6">Administration BARROW.AI</h2>
+    <form id="loginForm">
+        <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-bold mb-2" for="email">Email</label>
+            <input type="email" id="email" name="email" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
+        </div>
+        <div class="mb-6">
+            <label class="block text-gray-700 text-sm font-bold mb-2" for="password">Mot de passe</label>
+            <input type="password" id="password" name="password" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
+        </div>
+        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg transition">Se connecter</button>
+    </form>
+    <div id="errorMessage" class="mt-4 text-red-600 text-sm text-center hidden"></div>
+</div>
+
+<script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const errorDiv = document.getElementById('errorMessage');
+        
+        try {
+            const response = await fetch('/api/v1/admin/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+            const data = await response.json();
+            if (response.ok) {
+                if (data.requires_2fa) {
+                    sessionStorage.setItem('temp_session', data.session_token);
+                    window.location.href = '/admin/verify-2fa';
+                } else {
+                    localStorage.setItem('access_token', data.access_token);
+                    localStorage.setItem('refresh_token', data.refresh_token);
+                    document.cookie = `access_token=${data.access_token}; path=/; max-age=900; SameSite=Strict`;
+                    window.location.href = '/admin/dashboard';
+                }
+            } else {
+                errorDiv.textContent = data.detail || 'Échec de la connexion';
+                errorDiv.classList.remove('hidden');
+            }
+        } catch (err) {
+            errorDiv.textContent = 'Erreur réseau';
+            errorDiv.classList.remove('hidden');
+        }
+    });
+</script>
+{% endblock %}

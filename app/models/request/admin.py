@@ -339,3 +339,138 @@ class AdminDisable2FARequest(BaseModel):
             }
         }
     }
+
+
+class AdminCreateUserRequest(BaseModel):
+    """
+    Request model for creating a new admin user.
+    """
+    
+    email: EmailStr = Field(
+        ...,
+        description="Admin email address (unique)",
+        examples=["newadmin@pace.gm"]
+    )
+    
+    full_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Full name of the admin",
+        examples=["John Doe"]
+    )
+    
+    password: str = Field(
+        ...,
+        min_length=12,
+        max_length=128,
+        description="Initial password (min 12 chars, must include upper, lower, number, special)"
+    )
+    
+    role: str = Field(
+        default="viewer",
+        pattern="^(superadmin|admin|auditor|viewer)$",
+        description="Admin role (superadmin, admin, auditor, viewer)"
+    )
+    
+    @field_validator('email', mode='after')
+    @classmethod
+    def validate_email_format(cls, value: str) -> str:
+        """Validate email format."""
+        if not validate_email(value):
+            raise ValidationException(
+                "Invalid email format",
+                details={"email": value}
+            )
+        return value.lower()
+    
+    @field_validator('password', mode='after')
+    @classmethod
+    def validate_password_strength(cls, value: str) -> str:
+        """
+        Validate password strength.
+        Requirements:
+        - At least 12 characters
+        - At least one uppercase letter
+        - At least one lowercase letter
+        - At least one digit
+        - At least one special character
+        """
+        if len(value) < 12:
+            raise ValidationException(
+                "Password must be at least 12 characters long"
+            )
+        
+        if not re.search(r"[A-Z]", value):
+            raise ValidationException(
+                "Password must contain at least one uppercase letter"
+            )
+        
+        if not re.search(r"[a-z]", value):
+            raise ValidationException(
+                "Password must contain at least one lowercase letter"
+            )
+        
+        if not re.search(r"\d", value):
+            raise ValidationException(
+                "Password must contain at least one digit"
+            )
+        
+        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", value):
+            raise ValidationException(
+                "Password must contain at least one special character"
+            )
+        
+        common_passwords = ["password", "admin123", "barrow2024", "npp2024", "12345678"]
+        if value.lower() in common_passwords:
+            raise ValidationException(
+                "Password is too common or easily guessable"
+            )
+        
+        return value
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "email": "newadmin@pace.gm",
+                "full_name": "John Doe",
+                "password": "SecureP@ssw0rd123!",
+                "role": "admin"
+            }
+        }
+    }
+
+
+class AdminUpdateUserRequest(BaseModel):
+    """
+    Request model for updating an admin user.
+    """
+    
+    full_name: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=100,
+        description="New full name",
+        examples=["Jane Doe"]
+    )
+    
+    role: Optional[str] = Field(
+        None,
+        pattern="^(superadmin|admin|auditor|viewer)$",
+        description="New admin role"
+    )
+    
+    is_active: Optional[bool] = Field(
+        None,
+        description="Account active status (true/false)"
+    )
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "full_name": "Jane Doe",
+                "role": "admin",
+                "is_active": True
+            }
+        }
+    }

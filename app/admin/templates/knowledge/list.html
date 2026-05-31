@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Base de connaissances{% endblock %}
+{% block page_title %}Documents indexés{% endblock %}
+{% block content %}
+<div class="bg-white rounded-xl shadow-sm p-6">
+    <div class="flex justify-between items-center mb-6">
+        <h3 class="text-lg font-semibold">Documents</h3>
+        <button onclick="window.location.href='/admin/knowledge/upload'" class="btn btn-primary"><i class="fas fa-upload mr-2"></i>Upload</button>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead class="bg-gray-100">
+                <tr><th class="px-4 py-2">Titre</th><th class="px-4 py-2">Statut</th><th class="px-4 py-2">Langue</th><th class="px-4 py-2">Uploadé par</th><th class="px-4 py-2">Actions</th></tr>
+            </thead>
+            <tbody id="docs-tbody">
+                <tr><td colspan="5" class="text-center py-4">Chargement...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div id="doc-pagination" class="mt-4 flex justify-between"></div>
+</div>
+
+<script>
+    let docsPage = 0;
+    const docsLimit = 20;
+    
+    async function loadDocuments(page = 0) {
+        const token = localStorage.getItem('access_token');
+        const offset = page * docsLimit;
+        const res = await fetch(`/api/v1/admin/knowledge?limit=${docsLimit}&offset=${offset}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            renderDocs(data.documents);
+            renderDocPagination(data.total, page);
+            docsPage = page;
+        } else if (res.status === 401) window.location.href = '/admin/login';
+    }
+    
+    function renderDocs(docs) {
+        const tbody = document.getElementById('docs-tbody');
+        if (!docs.length) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center">Aucun document</td></tr>';
+            return;
+        }
+        tbody.innerHTML = docs.map(d => `
+            <tr>
+                <td class="border-b px-4 py-2">${escapeHtml(d.title)}</td>
+                <td class="border-b px-4 py-2"><span class="badge ${d.is_active ? 'badge-success' : 'badge-warning'}">${d.is_active ? 'Actif' : 'Inactif'}</span></td>
+                <td class="border-b px-4 py-2">${d.language || 'en'}</td>
+                <td class="border-b px-4 py-2">${d.uploaded_by || '-'}</td>
+                <td class="border-b px-4 py-2">
+                    <button onclick="viewDoc('${d.id}')" class="text-blue-600 mr-2"><i class="fas fa-eye"></i></button>
+                    <button onclick="deleteDoc('${d.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button>
+                </td>
+            </tr>
+        `).join('');
+    }
+    
+    function renderDocPagination(total, current) {
+        const totalPages = Math.ceil(total / docsLimit);
+        const container = document.getElementById('doc-pagination');
+        if (totalPages <= 1) { container.innerHTML = ''; return; }
+        let html = '<div class="flex gap-2">';
+        if (current > 0) html += `<button onclick="loadDocuments(${current-1})" class="px-3 py-1 border rounded">Précédent</button>`;
+        html += `<span class="px-3 py-1">Page ${current+1} / ${totalPages}</span>`;
+        if (current < totalPages-1) html += `<button onclick="loadDocuments(${current+1})" class="px-3 py-1 border rounded">Suivant</button>`;
+        html += '</div>';
+        container.innerHTML = html;
+    }
+    
+    function viewDoc(id) { window.location.href = `/admin/knowledge/detail/${id}`; }
+    async function deleteDoc(id) {
+        if (!confirm('Supprimer ce document ?')) return;
+        const token = localStorage.getItem('access_token');
+        await fetch(`/api/v1/admin/knowledge/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+        loadDocuments(docsPage);
+    }
+    
+    function escapeHtml(str) { return str.replace(/[&<>]/g, function(m){ return m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;'; }); }
+    loadDocuments();
+</script>
+{% endblock %}

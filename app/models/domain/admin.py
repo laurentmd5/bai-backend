@@ -19,7 +19,7 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from app.core.database import Base
 
@@ -155,7 +155,7 @@ class AdminUser(Base):
     )
     
     last_ip: Mapped[Optional[str]] = mapped_column(
-        INET,
+        String(45),  # Supports both IPv4 and IPv6
         nullable=True,
         comment="IP address of last login"
     )
@@ -349,7 +349,7 @@ class AuditLog(Base):
     
     # Request context
     ip_address: Mapped[Optional[str]] = mapped_column(
-        INET,
+        String(45),  # Supports both IPv4 and IPv6
         nullable=True,
         comment="IP address of the request"
     )

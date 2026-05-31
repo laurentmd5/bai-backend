@@ -18,11 +18,34 @@ from app.models.response.admin import (
 )
 from app.services.admin_service import AdminService
 from app.api.dependencies.auth import get_current_admin, get_admin_service
+from app.middleware.csrf import generate_csrf_token, add_csrf_cookie
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Admin Authentication"])
+
+
+@router.get("/csrf-token")
+async def get_csrf_token(request: Request):
+    """
+    Get a CSRF token for form submissions.
+    
+    Returns a new CSRF token that must be included in the X-CSRF-Token header
+    for all state-changing requests (POST, PUT, DELETE, PATCH).
+    
+    The token is also set as a cookie and must match the header value.
+    
+    Security:
+    - Token expires after 1 hour
+    - Token is validated on all protected endpoints
+    - Uses double-submit cookie pattern (header + cookie must match)
+    """
+    token = await generate_csrf_token()
+    response = JSONResponse({"csrf_token": token})
+    add_csrf_cookie(response, token)
+    logger.debug("csrf_token_issued", client_ip=request.client.host if request.client else None)
+    return response
 
 
 @router.post("/login", response_model=AdminLoginResponse)

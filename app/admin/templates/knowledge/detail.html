@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Détail document{% endblock %}
+{% block page_title %}Détail du document{% endblock %}
+{% block content %}
+<div class="bg-white rounded-xl shadow-sm p-6">
+    <div id="doc-detail">
+        <div class="text-center py-8">Chargement...</div>
+    </div>
+</div>
+
+<script>
+    const docId = '{{ doc_id }}';
+    async function loadDetail() {
+        const token = localStorage.getItem('access_token');
+        const res = await fetch(`/api/v1/admin/knowledge/${docId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            const doc = await res.json();
+            renderDetail(doc);
+        } else if (res.status === 404) {
+            document.getElementById('doc-detail').innerHTML = '<div class="text-center py-8 text-red-600">Document non trouvé</div>';
+        } else if (res.status === 401) {
+            window.location.href = '/admin/login';
+        }
+    }
+    
+    function renderDetail(doc) {
+        const html = `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><span class="font-bold">ID:</span> ${doc.id}</div>
+                <div><span class="font-bold">Titre:</span> ${escapeHtml(doc.title)}</div>
+                <div><span class="font-bold">Fichier:</span> ${escapeHtml(doc.filename)}</div>
+                <div><span class="font-bold">Statut:</span> <span class="badge ${doc.is_active ? 'badge-success' : 'badge-warning'}">${doc.is_active ? 'Actif' : 'Inactif'}</span></div>
+                <div><span class="font-bold">Langue:</span> ${doc.language || 'en'}</div>
+                <div><span class="font-bold">Uploadé par:</span> ${doc.uploaded_by || '-'}</div>
+                <div><span class="font-bold">Créé le:</span> ${formatDate(doc.created_at)}</div>
+                <div><span class="font-bold">Nombre de chunks:</span> ${doc.chunk_count || 0}</div>
+                ${doc.description ? `<div class="col-span-2"><span class="font-bold">Description:</span> ${escapeHtml(doc.description)}</div>` : ''}
+            </div>
+            <div class="mt-6 flex gap-2">
+                <button onclick="window.location.href='/admin/knowledge/upload'" class="btn btn-primary">Uploader un nouveau document</button>
+                <button onclick="window.location.href='/admin/knowledge'" class="btn btn-secondary">Retour à la liste</button>
+            </div>
+        `;
+        document.getElementById('doc-detail').innerHTML = html;
+    }
+    
+    function escapeHtml(str) { return str ? str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;') : ''; }
+    loadDetail();
+</script>
+{% endblock %}

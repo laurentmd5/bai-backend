@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - BARROW.AI Admin{% endblock %}
+{% block page_title %}Tableau de bord{% endblock %}
+{% block content %}
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div class="bg-white rounded-xl shadow-sm p-6 border-l-4 border-emerald-500">
+        <div><p class="text-gray-500 text-sm">Messages aujourd'hui</p><p id="messages-today" class="text-3xl font-bold">--</p></div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm p-6 border-l-4 border-blue-500">
+        <div><p class="text-gray-500 text-sm">Taux de succès vocal</p><p id="voice-success" class="text-3xl font-bold">--%</p></div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm p-6 border-l-4 border-amber-500">
+        <div><p class="text-gray-500 text-sm">Documents indexés</p><p id="docs-count" class="text-3xl font-bold">--</p></div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm p-6 border-l-4 border-purple-500">
+        <div><p class="text-gray-500 text-sm">Temps de réponse (p95)</p><p id="latency-p95" class="text-3xl font-bold">--s</p></div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+    <div class="bg-white rounded-xl shadow-sm p-6">
+        <h3 class="text-lg font-semibold mb-4">Latence des composants (moyenne)</h3>
+        <canvas id="latencyChart" height="200"></canvas>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm p-6">
+        <h3 class="text-lg font-semibold mb-4">Messages par type (7 derniers jours)</h3>
+        <canvas id="messagesChart" height="200"></canvas>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    async function fetchDashboardData() {
+        const token = localStorage.getItem('access_token');
+        const headers = { 'Authorization': `Bearer ${token}` };
+        
+        // Overview
+        const overviewRes = await fetch('/api/v1/admin/analytics/overview?period=7d', { headers });
+        if (overviewRes.ok) {
+            const data = await overviewRes.json();
+            document.getElementById('messages-today').innerText = data.total_conversations || 0;
+            document.getElementById('voice-success').innerText = (data.voice_success_rate || 0).toFixed(1) + '%';
+            document.getElementById('latency-p95').innerText = (data.avg_response_time_ms / 1000 || 0).toFixed(1);
+        }
+        
+        // Documents count
+        const docsRes = await fetch('/api/v1/admin/knowledge?limit=1', { headers });
+        if (docsRes.ok) {
+            const docs = await docsRes.json();
+            document.getElementById('docs-count').innerText = docs.total || 0;
+        }
+        
+        // Latency chart
+        const ctx1 = document.getElementById('latencyChart').getContext('2d');
+        new Chart(ctx1, {
+            type: 'bar',
+            data: {
+                labels: ['Whisper', 'TTS', 'RAG', 'LLM'],
+                datasets: [{ label: 'Latence (s)', data: [0.93, 1.83, 0.92, 1.47], backgroundColor: '#0b3b2f' }]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+        
+        // Messages chart
+        const ctx2 = document.getElementById('messagesChart').getContext('2d');
+        new Chart(ctx2, {
+            type: 'line',
+            data: {
+                labels: ['08/05','09/05','10/05','11/05','12/05','13/05','14/05'],
+                datasets: [
+                    { label: 'Texte', data: [120,135,148,170,210,245,300], borderColor: '#0b3b2f', fill: false },
+                    { label: 'Vocal', data: [45,52,68,85,110,142,186], borderColor: '#f4b942', fill: false }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+    fetchDashboardData();
+</script>
+{% endblock %}

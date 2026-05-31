@@ -31,79 +31,60 @@ class RAGService:
     - Confidence scoring
     - Document retrieval tracking
     
-    NOTE: Uses CLASS VARIABLES for singleton pattern across all instances.
-    This ensures the BGE embedding model is loaded only ONCE regardless
-    of how many RAGService instances are created.
+    NOTE: This service is instantiated once at application startup
+    and stored in app.state.rag_service. All endpoints access the same
+    singleton instance, ensuring the BGE embedding model is loaded only ONCE.
     """
     
-    # ⭐ CLASS VARIABLES - shared across ALL instances (Singleton pattern)
-    _class_initialized: bool = False
-    _shared_vector_store: Optional[QdrantVectorStore] = None
-    _shared_embedding_provider = None
-    _class_lock = asyncio.Lock()
-    
     def __init__(self):
-        self._vector_store = None
+        """Initialize RAGService instance."""
+        self._vector_store: Optional[QdrantVectorStore] = None
         self._embedding_provider = None
         self._similarity_threshold = settings.QDRANT_SIMILARITY_THRESHOLD
         self._top_k = settings.QDRANT_TOP_K
         self._initialized = False
-        self._init_lock = asyncio.Lock()
         
-        # Log instance creation for debugging singleton pattern
         logger.info(f"📦 RAGService instance created: id={id(self)}")
     
     async def initialize(self) -> None:
         """
-        Initialize RAG service.
+        Initialize RAG service components.
         
-        Uses CLASS-LEVEL state to ensure services are loaded only ONCE
-        across ALL RAGService instances. This prevents reloading the
-        BGE embedding model (8 seconds) on every request.
+        Called once at application startup to:
+        - Connect to Qdrant vector database
+        - Load embedding model (BGE, ~8 seconds)
+        
+        After initialization, this instance is stored in app.state.rag_service
+        and reused for all requests, preventing redundant model loads.
         """
-        # If already initialized at class level, reuse shared resources
-        if RAGService._class_initialized:
-            self._vector_store = RAGService._shared_vector_store
-            self._embedding_provider = RAGService._shared_embedding_provider
-            self._initialized = True
-            logger.info(f"✅ RAGService reusing shared instance (id={id(self)})")
+        if self._initialized:
+            logger.info(f"✅ RAGService already initialized, skipping")
             return
         
-        async with RAGService._class_lock:
-            # Double-check after acquiring lock
-            if RAGService._class_initialized:
-                self._vector_store = RAGService._shared_vector_store
-                self._embedding_provider = RAGService._shared_embedding_provider
-                self._initialized = True
-                logger.info(f"✅ RAGService reusing shared instance after lock (id={id(self)})")
-                return
-            
-            # FIRST AND ONLY INITIALIZATION - loads BGE model (~8 seconds)
-            logger.warning(f"🔥 RAGService INITIALIZING - LOADING MODEL")
-            
+        logger.warning(f"🔥 RAGService INITIALIZING - LOADING MODEL")
+        
+        try:
             # Initialize vector store (Qdrant connection)
-            vs = QdrantVectorStore()
-            await vs.initialize()
+            self._vector_store = QdrantVectorStore()
+            await self._vector_store.initialize()
             
             # Initialize embedding provider (BGE model - takes ~8 seconds)
-            ep = get_embedding_provider()
+            self._embedding_provider = get_embedding_provider()
             
-            # Store in class variables for reuse across all instances
-            RAGService._shared_vector_store = vs
-            RAGService._shared_embedding_provider = ep
-            RAGService._class_initialized = True
-            
-            # Assign to this instance
-            self._vector_store = vs
-            self._embedding_provider = ep
             self._initialized = True
+            logger.info(f"✅ RAGService initialization complete")
             
-            logger.info(f"✅ RAGService class initialization complete")
+        except Exception as e:
+            logger.error(f"❌ RAGService initialization failed: {str(e)}")
+            raise
     
-    async def _ensure_initialized(self) -> None:
-        """Lazy initialization."""
+    def _ensure_initialized(self) -> None:
+        """Verify that service is initialized."""
         if not self._initialized:
-            await self.initialize()
+            raise RuntimeError(
+                "RAGService not initialized. "
+                "Ensure app.state.rag_service is set at startup."
+            )
     
     async def retrieve(
         self,
@@ -129,7 +110,7 @@ class RAGService:
         Raises:
             LowConfidenceException: If no chunks meet threshold
         """
-        await self._ensure_initialized()
+        self._ensure_initialized()
         
         k = top_k if top_k is not None else self._top_k
         threshold = score_threshold if score_threshold is not None else self._similarity_threshold
@@ -276,7 +257,7 @@ class RAGService:
         Returns:
             Number of chunks indexed
         """
-        await self._ensure_initialized()
+        self._ensure_initialized()
         
         if not chunks:
             return 0
@@ -343,7 +324,7 @@ class RAGService:
         Returns:
             Number of chunks deleted
         """
-        await self._ensure_initialized()
+        self._ensure_initialized()
         
         deleted = await self._vector_store.delete_by_filter({
             "document_name": document_name
@@ -364,7 +345,7 @@ class RAGService:
         Returns:
             Collection information and stats
         """
-        await self._ensure_initialized()
+        self._ensure_initialized()
         
         info = await self._vector_store.get_collection_info()
         
@@ -396,7 +377,7 @@ class RAGService:
             Health status
         """
         try:
-            await self._ensure_initialized()
+            self._ensure_initialized()
             
             vector_store_available = await self._vector_store.is_available()
             embedding_available = await self._embedding_provider.is_available()

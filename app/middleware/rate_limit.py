@@ -25,34 +25,99 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     
     Limits are configurable per endpoint pattern:
     - /api/v1/chat/* : 30 requests per minute
-    - /api/v1/admin/* : 60 requests per minute
+    - /api/v1/admin/auth/login : 5 requests per minute (login attempts)
+    - /api/v1/admin/knowledge : 30 requests per minute (document management)
+    - /api/v1/admin/users : 40 requests per minute (user management)
+    - /api/v1/admin/conversations : 50 requests per minute (conversation access)
+    - /api/v1/admin/audit : 60 requests per minute (audit log access)
+    - /api/v1/admin/health : 100 requests per minute (health checks)
+    - /api/v1/admin/* : 60 requests per minute (general admin)
     - /api/v1/whatsapp/* : 10 requests per minute
     """
     
-    # Endpoint-specific rate limits
+    # Endpoint-specific rate limits (more specific patterns take precedence)
     ENDPOINT_LIMITS = {
-        "/api/v1/chat": {
-            "max_requests": 30,
-            "window_seconds": 60,
-        },
+        # Authentication (strictest)
         "/api/v1/admin/auth/login": {
             "max_requests": 5,
             "window_seconds": 60,
+            "description": "Login attempts - 5 per minute"
         },
+        "/api/v1/admin/auth": {
+            "max_requests": 10,
+            "window_seconds": 60,
+            "description": "Auth operations - 10 per minute"
+        },
+        
+        # Health checks (lenient)
+        "/api/v1/admin/health": {
+            "max_requests": 100,
+            "window_seconds": 60,
+            "description": "Health checks - 100 per minute"
+        },
+        
+        # Knowledge management
+        "/api/v1/admin/knowledge": {
+            "max_requests": 30,
+            "window_seconds": 60,
+            "description": "Document management - 30 per minute"
+        },
+        
+        # User management
+        "/api/v1/admin/users": {
+            "max_requests": 40,
+            "window_seconds": 60,
+            "description": "User management - 40 per minute"
+        },
+        
+        # Conversation management
+        "/api/v1/admin/conversations": {
+            "max_requests": 50,
+            "window_seconds": 60,
+            "description": "Conversation access - 50 per minute"
+        },
+        
+        # Audit log access
+        "/api/v1/admin/audit": {
+            "max_requests": 60,
+            "window_seconds": 60,
+            "description": "Audit log access - 60 per minute"
+        },
+        
+        # User analytics
+        "/api/v1/admin/analytics": {
+            "max_requests": 20,
+            "window_seconds": 60,
+            "description": "Analytics - 20 per minute"
+        },
+        
+        # General admin (catch-all)
         "/api/v1/admin": {
             "max_requests": 60,
             "window_seconds": 60,
+            "description": "General admin - 60 per minute"
         },
+        
+        # Chat endpoints
+        "/api/v1/chat": {
+            "max_requests": 30,
+            "window_seconds": 60,
+            "description": "Chat operations - 30 per minute"
+        },
+        
+        # WhatsApp webhook
         "/api/v1/whatsapp/webhook": {
             "max_requests": 50,
             "window_seconds": 60,
+            "description": "WhatsApp webhook - 50 per minute"
         },
     }
     
-    # Default rate limit
+    # Default rate limit (for paths without specific configuration)
     DEFAULT_LIMIT = {
         "max_requests": 100,
         "window_seconds": 60,
+        "description": "Default - 100 per minute"
     }
     
     # Paths exempt from rate limiting

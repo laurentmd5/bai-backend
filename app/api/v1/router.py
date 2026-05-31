@@ -18,6 +18,7 @@ from app.api.v1.endpoints.admin import (
     knowledge as admin_knowledge,
     users as admin_users,
     audit as admin_audit,
+    health as admin_health,
 )
 
 # Main API router
@@ -31,6 +32,7 @@ api_router.include_router(health.router, prefix="/health", tags=["Health"])
 # Admin endpoints
 api_router.include_router(admin_auth.router, prefix="/admin", tags=["Admin Authentication"])
 api_router.include_router(admin_2fa.router, prefix="/admin", tags=["Admin 2FA"])
+api_router.include_router(admin_health.router, prefix="/admin", tags=["Admin Health"])
 api_router.include_router(admin_analytics.router, prefix="/admin", tags=["Admin Analytics"])
 api_router.include_router(admin_conversations.router, prefix="/admin", tags=["Admin Conversations"])
 api_router.include_router(admin_knowledge.router, prefix="/admin", tags=["Admin Knowledge"])

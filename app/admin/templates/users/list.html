@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Utilisateurs admin - BARROW.AI{% endblock %}
+{% block page_title %}Administrateurs{% endblock %}
+{% block content %}
+<div class="bg-white rounded-xl shadow-sm p-6">
+    <div class="flex justify-between items-center mb-6">
+        <h3 class="text-lg font-semibold">Liste des administrateurs</h3>
+        <button onclick="window.location.href='/admin/users/create'" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Ajouter</button>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead class="bg-gray-100">
+                <tr><th class="px-4 py-2 text-left">Email</th><th class="px-4 py-2 text-left">Nom</th><th class="px-4 py-2 text-left">Rôle</th><th class="px-4 py-2 text-left">2FA</th><th class="px-4 py-2 text-left">Actif</th><th class="px-4 py-2">Actions</th></tr>
+            </thead>
+            <tbody id="users-table-body">
+                <tr><td colspan="6" class="text-center py-4">Chargement...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div id="pagination" class="mt-4 flex justify-between items-center"></div>
+</div>
+
+<script>
+    let currentPage = 0;
+    const limit = 10;
+    
+    async function loadUsers(page = 0) {
+        const token = localStorage.getItem('access_token');
+        const offset = page * limit;
+        const res = await fetch(`/api/v1/admin/users?limit=${limit}&offset=${offset}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            renderUsers(data.users);
+            renderPagination(data.total, page);
+            currentPage = page;
+        } else if (res.status === 401) {
+            window.location.href = '/admin/login';
+        }
+    }
+    
+    function renderUsers(users) {
+        const tbody = document.getElementById('users-table-body');
+        if (!users.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4">Aucun utilisateur</td></tr>';
+            return;
+        }
+        tbody.innerHTML = users.map(u => `
+            <tr>
+                <td class="border-b px-4 py-2">${escapeHtml(u.email)}</td>
+                <td class="border-b px-4 py-2">${escapeHtml(u.full_name || '-')}</td>
+                <td class="border-b px-4 py-2">${u.role}</td>
+                <td class="border-b px-4 py-2">${u.two_factor_enabled ? '<i class="fas fa-check-circle text-green-600"></i>' : '<i class="fas fa-times-circle text-red-500"></i>'}</td>
+                <td class="border-b px-4 py-2">${u.is_active ? '<span class="badge badge-success">Actif</span>' : '<span class="badge badge-danger">Inactif</span>'}</td>
+                <td class="border-b px-4 py-2 text-center">
+                    <button onclick="editUser('${u.id}')" class="text-blue-600 hover:text-blue-800 mr-2"><i class="fas fa-edit"></i></button>
+                    <button onclick="deleteUser('${u.id}')" class="text-red-600 hover:text-red-800"><i class="fas fa-trash-alt"></i></button>
+                </td>
+            </tr>
+        `).join('');
+    }
+    
+    function renderPagination(total, current) {
+        const totalPages = Math.ceil(total / limit);
+        const container = document.getElementById('pagination');
+        if (totalPages <= 1) { container.innerHTML = ''; return; }
+        let html = '<div class="flex gap-2">';
+        if (current > 0) html += `<button onclick="loadUsers(${current-1})" class="px-3 py-1 border rounded">Précédent</button>`;
+        html += `<span class="px-3 py-1">Page ${current+1} / ${totalPages}</span>`;
+        if (current < totalPages-1) html += `<button onclick="loadUsers(${current+1})" class="px-3 py-1 border rounded">Suivant</button>`;
+        html += '</div>';
+        container.innerHTML = html;
+    }
+    
+    function editUser(id) {
+        window.location.href = `/admin/users/edit/${id}`;
+    }
+    
+    async function deleteUser(id) {
+        if (!confirm('Supprimer définitivement cet administrateur ?')) return;
+        const token = localStorage.getItem('access_token');
+        const res = await fetch(`/api/v1/admin/users/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+        if (res.ok) loadUsers(currentPage);
+        else alert('Erreur lors de la suppression');
+    }
+    
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) { return m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;'; });
+    }
+    
+    loadUsers();
+</script>
+{% endblock %}

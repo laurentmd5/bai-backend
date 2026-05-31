@@ -9,6 +9,7 @@ from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
 
@@ -29,10 +30,12 @@ from app.middleware import (
     RequestLoggerMiddleware,
     ErrorHandlerMiddleware,
     MetricsMiddleware,
+    CSRFMiddleware,
     setup_cors,
 )
 
 from app.api.v1.router import api_router
+from app.admin.router import router as admin_router
 
 logger = get_logger(__name__)
 
@@ -113,9 +116,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     session_repo = SessionRepository(shared_session)
     conversation_repo = ConversationRepository(shared_session)
     
-    # SINGLE ChatService instance
-    chat_service = ChatService(session_repo, conversation_repo)
-    chat_service._rag_service = rag_service
+    # Create ChatService with all dependencies injected
+    # This ensures services are initialized once and reused
+    chat_service = ChatService(
+        session_repo,
+        conversation_repo,
+        rag_service=rag_service,
+        llm_provider=get_llm_provider(),
+    )
     logger.info("chat_service_initialized")
     
     # WhatsApp uses the SAME ChatService
@@ -190,6 +198,7 @@ def create_app() -> FastAPI:
     
     # Add middleware (order matters - added in reverse execution order!)
     app.add_middleware(ErrorHandlerMiddleware)
+    app.add_middleware(CSRFMiddleware)  # CSRF protection for state-changing requests
     app.add_middleware(RequestLoggerMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RateLimitMiddleware)
@@ -197,6 +206,12 @@ def create_app() -> FastAPI:
     
     # Include API router
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+    
+    # Mount admin static files (CSS, JS)
+    app.mount("/admin/static", StaticFiles(directory="app/admin/static"), name="admin_static")
+    
+    # Include admin UI router
+    app.include_router(admin_router, prefix="/admin", tags=["Admin UI"])
     
     # Custom OpenAPI schema
     def custom_openapi():

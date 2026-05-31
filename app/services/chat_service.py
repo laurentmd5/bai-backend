@@ -49,19 +49,10 @@ class ChatService:
     
     Implements SOLID principles with dependency injection for all components.
     
-    NOTE: Uses CLASS VARIABLES for singleton pattern across all instances.
-    This ensures RAG services (including BGE embedding model) are loaded only ONCE
-    regardless of how many ChatService instances are created.
+    NOTE: This service is instantiated once at application startup
+    and stored in app.state.chat_service. All endpoints access the same
+    singleton instance via FastAPI dependency injection.
     """
-    
-    # ⭐ CLASS VARIABLES - shared across ALL instances (Singleton pattern)
-    _class_initialized: bool = False
-    _shared_rag_service: Optional[RAGService] = None
-    _shared_llm_provider = None
-    _shared_input_validator: Optional[InputValidator] = None
-    _shared_output_validator: Optional[OutputValidator] = None
-    _shared_security_validator: Optional[SecurityValidator] = None
-    _class_lock = asyncio.Lock()
     
     # Special intents that bypass RAG+LLM pipeline
     SPECIAL_INTENTS = {
@@ -226,96 +217,43 @@ class ChatService:
         self,
         session_repository: SessionRepository,
         conversation_repository: ConversationRepository,
+        rag_service: RAGService,
+        llm_provider=None,
     ):
         """
         Initialize ChatService with required dependencies.
         
+        All dependencies are provided at initialization time (dependency injection).
+        This ensures the service is fully configured and ready to use without
+        lazy initialization or lazy loading of components.
+        
         Args:
             session_repository: Repository for session management
             conversation_repository: Repository for conversation persistence
+            rag_service: RAGService singleton instance
+            llm_provider: LLM provider instance (defaults to get_llm_provider())
         """
         self._session_repo = session_repository
         self._conversation_repo = conversation_repository
         
-        # Lazy-loaded services (will be populated from class variables)
-        self._rag_service: Optional[RAGService] = None
-        self._llm_provider = None
-        self._input_validator: Optional[InputValidator] = None
-        self._output_validator: Optional[OutputValidator] = None
-        self._security_validator: Optional[SecurityValidator] = None
+        # Services injected at initialization
+        self._rag_service = rag_service
+        self._llm_provider = llm_provider or get_llm_provider()
         
-        # Instance initialization state
-        self._initialized = False
+        # Initialize validators
+        self._input_validator = InputValidator()
+        self._output_validator = OutputValidator()
+        self._security_validator = SecurityValidator()
         
-        # Log instance creation for debugging singleton pattern
         logger.info(f"📌 ChatService instance created: id={id(self)}")
     
-    async def _ensure_initialized(self) -> None:
-        """
-        Lazy initialization of all required services.
-        
-        Uses CLASS-LEVEL state to ensure services are loaded only ONCE
-        across ALL ChatService instances. This prevents reloading the
-        BGE embedding model (8 seconds) on every request.
-        """
-        # Log current state for debugging
-        logger.info(f"🔍 _ensure_initialized: instance={id(self)}, class_initialized={ChatService._class_initialized}")
-        
-        # If already initialized at class level, reuse shared services
-        if ChatService._class_initialized:
-            self._rag_service = ChatService._shared_rag_service
-            self._llm_provider = ChatService._shared_llm_provider
-            self._input_validator = ChatService._shared_input_validator
-            self._output_validator = ChatService._shared_output_validator
-            self._security_validator = ChatService._shared_security_validator
-            self._initialized = True
-            logger.info(f"✅ Reusing shared services (instance={id(self)})")
-            return
-        
-        async with ChatService._class_lock:
-            # Double-check after acquiring lock
-            if ChatService._class_initialized:
-                self._rag_service = ChatService._shared_rag_service
-                self._llm_provider = ChatService._shared_llm_provider
-                self._input_validator = ChatService._shared_input_validator
-                self._output_validator = ChatService._shared_output_validator
-                self._security_validator = ChatService._shared_security_validator
-                self._initialized = True
-                logger.info(f"✅ Reusing shared services after lock (instance={id(self)})")
-                return
-            
-            # FIRST AND ONLY INITIALIZATION - loads BGE model (~8 seconds)
-            logger.warning(f"🔥 FIRST TIME INIT - LOADING EVERYTHING (instance={id(self)})")
-            
-            # Initialize RAG service (loads embedding model)
-            rag = RAGService()
-            await rag.initialize()
-            
-            # Initialize LLM provider
-            llm = get_llm_provider()
-            
-            # Initialize validators
-            input_validator = InputValidator()
-            output_validator = OutputValidator()
-            security_validator = SecurityValidator()
-            
-            # Store in class variables for reuse across all instances
-            ChatService._shared_rag_service = rag
-            ChatService._shared_llm_provider = llm
-            ChatService._shared_input_validator = input_validator
-            ChatService._shared_output_validator = output_validator
-            ChatService._shared_security_validator = security_validator
-            ChatService._class_initialized = True
-            
-            # Assign to this instance
-            self._rag_service = rag
-            self._llm_provider = llm
-            self._input_validator = input_validator
-            self._output_validator = output_validator
-            self._security_validator = security_validator
-            self._initialized = True
-            
-            logger.info(f"🚀 ChatService class initialization complete")
+    def _verify_initialized(self) -> None:
+        """Verify that all required services are initialized."""
+        if not self._rag_service:
+            raise RuntimeError(
+                "ChatService not properly initialized. "
+                "rag_service is missing."
+            )
     
     def _detect_intent(self, message: str) -> Tuple[Optional[str], Optional[str]]:
         """
@@ -576,7 +514,7 @@ class ChatService:
         """
         start_time = datetime.utcnow()
         
-        await self._ensure_initialized()
+        self._verify_initialized()
         
         # Initialize response metadata
         response_metadata = {
@@ -1153,7 +1091,7 @@ class ChatService:
         }
         
         try:
-            await self._ensure_initialized()
+            self._verify_initialized()
             
             # Check LLM provider
             llm_available = await self._llm_provider.is_available()

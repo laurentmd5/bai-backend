@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Audit logs{% endblock %}
+{% block page_title %}Audit logs{% endblock %}
+{% block content %}
+<div class="bg-white rounded-xl shadow-sm p-6">
+    <div class="mb-6">
+        <h3 class="text-lg font-semibold">Journaux d'audit</h3>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead class="bg-gray-100">
+                <tr><th class="px-4 py-2">Admin</th><th class="px-4 py-2">Action</th><th class="px-4 py-2">Resource</th><th class="px-4 py-2">Sévérité</th><th class="px-4 py-2">Date</th><th class="px-4 py-2">IP</th></tr>
+            </thead>
+            <tbody id="audit-tbody">
+                <tr><td colspan="6" class="text-center py-4">Chargement...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div id="audit-pagination" class="mt-4 flex justify-between"></div>
+</div>
+
+<script>
+    let auditPage = 0;
+    const auditLimit = 20;
+    
+    async function loadAudit(page = 0) {
+        const token = localStorage.getItem('access_token');
+        const offset = page * auditLimit;
+        const res = await fetch(`/api/v1/admin/audit?limit=${auditLimit}&offset=${offset}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            renderAudit(data.logs);
+            renderAuditPagination(data.total, page);
+            auditPage = page;
+        } else if (res.status === 401) window.location.href = '/admin/login';
+    }
+    
+    function renderAudit(logs) {
+        const tbody = document.getElementById('audit-tbody');
+        if (!logs.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Aucun log</td></tr>';
+            return;
+        }
+        tbody.innerHTML = logs.map(l => {
+            const severityClass = l.severity === 'CRITICAL' ? 'badge-danger' : l.severity === 'WARNING' ? 'badge-warning' : 'badge-info';
+            return `
+            <tr>
+                <td class="border-b px-4 py-2">${escapeHtml(l.admin_email)}</td>
+                <td class="border-b px-4 py-2">${l.action}</td>
+                <td class="border-b px-4 py-2">${l.resource_type}: ${l.resource_id}</td>
+                <td class="border-b px-4 py-2"><span class="badge ${severityClass}">${l.severity}</span></td>
+                <td class="border-b px-4 py-2">${formatDate(l.created_at)}</td>
+                <td class="border-b px-4 py-2">${l.ip_address}</td>
+            </tr>
+        `}).join('');
+    }
+    
+    function renderAuditPagination(total, current) {
+        const totalPages = Math.ceil(total / auditLimit);
+        const container = document.getElementById('audit-pagination');
+        if (totalPages <= 1) { container.innerHTML = ''; return; }
+        let html = '<div class="flex gap-2">';
+        if (current > 0) html += `<button onclick="loadAudit(${current-1})" class="px-3 py-1 border rounded">Précédent</button>`;
+        html += `<span class="px-3 py-1">Page ${current+1} / ${totalPages}</span>`;
+        if (current < totalPages-1) html += `<button onclick="loadAudit(${current+1})" class="px-3 py-1 border rounded">Suivant</button>`;
+        html += '</div>';
+        container.innerHTML = html;
+    }
+    
+    function escapeHtml(str) { return str ? str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;') : ''; }
+    loadAudit();
+</script>
+{% endblock %}

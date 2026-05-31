@@ -17,7 +17,7 @@ from sqlalchemy import (
     CheckConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, INET
+from sqlalchemy.dialects.postgresql import UUID
 
 from app.core.database import Base
 
@@ -73,7 +73,7 @@ class Session(Base):
     )
     
     ip_address: Mapped[Optional[str]] = mapped_column(
-        INET,
+        String(45),  # Supports both IPv4 and IPv6
         nullable=True,
         comment="Client IP address"
     )
