@@ -1,75 +1,142 @@
 {% extends "base.html" %}
-{% block title %}Audit logs{% endblock %}
+{% block title %}Audit logs — BARROW.AI{% endblock %}
 {% block page_title %}Audit logs{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">/</span><span>Sécurité</span>
+  <span class="sep">/</span><span>Audit</span>
+{% endblock %}
+
 {% block content %}
-<div class="bg-white rounded-xl shadow-sm p-6">
-    <div class="mb-6">
-        <h3 class="text-lg font-semibold">Journaux d'audit</h3>
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Journaux d'audit</div>
+      <div class="card-subtitle" id="audit-count">Chargement…</div>
     </div>
-    <div class="overflow-x-auto">
-        <table class="min-w-full text-sm">
-            <thead class="bg-gray-100">
-                <tr><th class="px-4 py-2">Admin</th><th class="px-4 py-2">Action</th><th class="px-4 py-2">Resource</th><th class="px-4 py-2">Sévérité</th><th class="px-4 py-2">Date</th><th class="px-4 py-2">IP</th></tr>
-            </thead>
-            <tbody id="audit-tbody">
-                <tr><td colspan="6" class="text-center py-4">Chargement...</td></tr>
-            </tbody>
-        </table>
+    <div class="search-bar">
+      <div class="search-input-wrap">
+        <i class="fas fa-search"></i>
+        <input type="text" id="search-input" placeholder="Rechercher action, ressource, admin…" autocomplete="off">
+      </div>
+      <select id="severity-filter" class="form-control" style="width:auto;min-width:130px">
+        <option value="">Toutes sévérités</option>
+        <option value="INFO">Info</option>
+        <option value="WARNING">Warning</option>
+        <option value="CRITICAL">Critical</option>
+      </select>
+      <select id="period-filter" class="form-control" style="width:auto;min-width:110px">
+        <option value="7d">7 derniers jours</option>
+        <option value="30d">30 jours</option>
+        <option value="90d">90 jours</option>
+        <option value="">Tout</option>
+      </select>
     </div>
-    <div id="audit-pagination" class="mt-4 flex justify-between"></div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Admin</th>
+          <th>Action</th>
+          <th>Ressource</th>
+          <th>Sévérité</th>
+          <th>IP</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody id="audit-tbody"></tbody>
+    </table>
+  </div>
+  <div id="audit-pagination"></div>
 </div>
 
 <script>
-    let auditPage = 0;
-    const auditLimit = 20;
-    
-    async function loadAudit(page = 0) {
-        const token = localStorage.getItem('access_token');
-        const offset = page * auditLimit;
-        const res = await fetch(`/api/v1/admin/audit?limit=${auditLimit}&offset=${offset}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (res.ok) {
-            const data = await res.json();
-            renderAudit(data.logs);
-            renderAuditPagination(data.total, page);
-            auditPage = page;
-        } else if (res.status === 401) window.location.href = '/admin/login';
-    }
-    
-    function renderAudit(logs) {
-        const tbody = document.getElementById('audit-tbody');
-        if (!logs.length) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Aucun log</td></tr>';
-            return;
-        }
-        tbody.innerHTML = logs.map(l => {
-            const severityClass = l.severity === 'CRITICAL' ? 'badge-danger' : l.severity === 'WARNING' ? 'badge-warning' : 'badge-info';
-            return `
-            <tr>
-                <td class="border-b px-4 py-2">${escapeHtml(l.admin_email)}</td>
-                <td class="border-b px-4 py-2">${l.action}</td>
-                <td class="border-b px-4 py-2">${l.resource_type}: ${l.resource_id}</td>
-                <td class="border-b px-4 py-2"><span class="badge ${severityClass}">${l.severity}</span></td>
-                <td class="border-b px-4 py-2">${formatDate(l.created_at)}</td>
-                <td class="border-b px-4 py-2">${l.ip_address}</td>
-            </tr>
-        `}).join('');
-    }
-    
-    function renderAuditPagination(total, current) {
-        const totalPages = Math.ceil(total / auditLimit);
-        const container = document.getElementById('audit-pagination');
-        if (totalPages <= 1) { container.innerHTML = ''; return; }
-        let html = '<div class="flex gap-2">';
-        if (current > 0) html += `<button onclick="loadAudit(${current-1})" class="px-3 py-1 border rounded">Précédent</button>`;
-        html += `<span class="px-3 py-1">Page ${current+1} / ${totalPages}</span>`;
-        if (current < totalPages-1) html += `<button onclick="loadAudit(${current+1})" class="px-3 py-1 border rounded">Suivant</button>`;
-        html += '</div>';
-        container.innerHTML = html;
-    }
-    
-    function escapeHtml(str) { return str ? str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;') : ''; }
-    loadAudit();
+let currentPage  = 0;
+const PAGE_LIMIT = 20;
+let searchQuery  = '';
+let severityFilter = '';
+let periodFilter = '7d';
+
+const actionIcons = {
+  LOGIN: 'fa-sign-in-alt', LOGOUT: 'fa-sign-out-alt',
+  CREATE: 'fa-plus', UPDATE: 'fa-pencil', DELETE: 'fa-trash',
+  UPLOAD: 'fa-upload', EXPORT: 'fa-download',
+  PASSWORD_CHANGE: 'fa-key', '2FA_SETUP': 'fa-shield-alt',
+};
+
+function severityBadge(s) {
+  const map = {
+    CRITICAL: 'badge-danger',
+    WARNING:  'badge-warning',
+    INFO:     'badge-info',
+  };
+  return `<span class="badge ${map[s]||'badge-neutral'}">${s}</span>`;
+}
+
+async function loadAudit(page = 0) {
+  const tbody = document.getElementById('audit-tbody');
+  tbody.innerHTML = skeletonRows(6, 7);
+  currentPage = page;
+
+  const params = new URLSearchParams({ limit: PAGE_LIMIT, offset: page * PAGE_LIMIT });
+  if (searchQuery)    params.set('search', searchQuery);
+  if (severityFilter) params.set('severity', severityFilter);
+  if (periodFilter)   params.set('period', periodFilter);
+
+  const data = await apiJSON(`/audit?${params}`);
+  if (!data) return;
+
+  document.getElementById('audit-count').textContent =
+    `${data.total} entrée${data.total !== 1 ? 's' : ''}`;
+
+  if (!data.logs || !data.logs.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">
+      <i class="fas fa-shield-alt"></i>
+      <p>Aucun log d'audit trouvé</p>
+    </div></td></tr>`;
+    document.getElementById('audit-pagination').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = data.logs.map(l => {
+    const icon = actionIcons[l.action] || 'fa-circle';
+    return `<tr>
+      <td>
+        <div style="font-weight:600;font-size:.85rem">${escapeHtml(l.admin_email||'—')}</div>
+      </td>
+      <td>
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <i class="fas ${icon}" style="color:var(--text-muted);font-size:.8rem;width:1rem;text-align:center"></i>
+          <span style="font-size:.875rem;font-weight:500">${escapeHtml(l.action)}</span>
+        </div>
+      </td>
+      <td>
+        <div style="font-size:.8rem">
+          <span style="font-weight:600;color:var(--text-secondary)">${escapeHtml(l.resource_type||'—')}</span>
+          ${l.resource_id ? `<span class="text-muted"> · <code style="font-size:.75rem">${escapeHtml(String(l.resource_id).substring(0,12))}…</code></span>` : ''}
+        </div>
+      </td>
+      <td>${severityBadge(l.severity)}</td>
+      <td>
+        <code style="font-size:.75rem;background:var(--surface-3);padding:.15rem .35rem;border-radius:.25rem">${escapeHtml(l.ip_address||'—')}</code>
+      </td>
+      <td class="text-sm text-muted">${formatDate(l.created_at)}</td>
+    </tr>`;
+  }).join('');
+
+  renderPagination(
+    document.getElementById('audit-pagination'),
+    data.total, page, PAGE_LIMIT,
+    p => loadAudit(p)
+  );
+}
+
+const debouncedSearch = debounce(val => { searchQuery = val; loadAudit(0); });
+document.getElementById('search-input').addEventListener('input', e => debouncedSearch(e.target.value.trim()));
+document.getElementById('severity-filter').addEventListener('change', e => { severityFilter = e.target.value; loadAudit(0); });
+document.getElementById('period-filter').addEventListener('change', e => { periodFilter = e.target.value; loadAudit(0); });
+
+loadAudit();
 </script>
 {% endblock %}

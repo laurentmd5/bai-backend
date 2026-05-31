@@ -1,80 +1,285 @@
 {% extends "base.html" %}
-{% block title %}Dashboard - BARROW.AI Admin{% endblock %}
+{% block title %}Tableau de bord — BARROW.AI{% endblock %}
 {% block page_title %}Tableau de bord{% endblock %}
+
 {% block content %}
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-    <div class="bg-white rounded-xl shadow-sm p-6 border-l-4 border-emerald-500">
-        <div><p class="text-gray-500 text-sm">Messages aujourd'hui</p><p id="messages-today" class="text-3xl font-bold">--</p></div>
+<!-- KPIs -->
+<div class="grid-4" style="margin-bottom:1.5rem">
+  <div class="stat-card">
+    <div class="stat-icon green"><i class="fas fa-comments"></i></div>
+    <div>
+      <div class="stat-label">Conversations (7j)</div>
+      <div class="stat-value" id="kpi-messages">—</div>
     </div>
-    <div class="bg-white rounded-xl shadow-sm p-6 border-l-4 border-blue-500">
-        <div><p class="text-gray-500 text-sm">Taux de succès vocal</p><p id="voice-success" class="text-3xl font-bold">--%</p></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon blue"><i class="fas fa-microphone"></i></div>
+    <div>
+      <div class="stat-label">Taux vocal réussi</div>
+      <div class="stat-value" id="kpi-voice">—%</div>
     </div>
-    <div class="bg-white rounded-xl shadow-sm p-6 border-l-4 border-amber-500">
-        <div><p class="text-gray-500 text-sm">Documents indexés</p><p id="docs-count" class="text-3xl font-bold">--</p></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon amber"><i class="fas fa-database"></i></div>
+    <div>
+      <div class="stat-label">Documents indexés</div>
+      <div class="stat-value" id="kpi-docs">—</div>
     </div>
-    <div class="bg-white rounded-xl shadow-sm p-6 border-l-4 border-purple-500">
-        <div><p class="text-gray-500 text-sm">Temps de réponse (p95)</p><p id="latency-p95" class="text-3xl font-bold">--s</p></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon purple"><i class="fas fa-tachometer-alt"></i></div>
+    <div>
+      <div class="stat-label">Latence p95</div>
+      <div class="stat-value" id="kpi-latency">—s</div>
     </div>
+  </div>
 </div>
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-    <div class="bg-white rounded-xl shadow-sm p-6">
-        <h3 class="text-lg font-semibold mb-4">Latence des composants (moyenne)</h3>
-        <canvas id="latencyChart" height="200"></canvas>
+<!-- Charts row -->
+<div class="grid-2" style="margin-bottom:1.5rem">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Messages par jour</div>
+      <select id="trend-period" class="form-control" style="width:auto;font-size:.8rem;padding:.3rem .6rem">
+        <option value="7d">7 jours</option>
+        <option value="30d">30 jours</option>
+      </select>
     </div>
-    <div class="bg-white rounded-xl shadow-sm p-6">
-        <h3 class="text-lg font-semibold mb-4">Messages par type (7 derniers jours)</h3>
-        <canvas id="messagesChart" height="200"></canvas>
+    <div class="card-body" style="padding-top:.5rem">
+      <canvas id="trend-chart" height="180"></canvas>
     </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Latence par composant</div>
+    </div>
+    <div class="card-body" style="padding-top:.5rem">
+      <canvas id="latency-chart" height="180"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Bottom row: recent conversations + quick links -->
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Conversations récentes</div>
+      <a href="/admin/conversations" class="btn btn-ghost btn-sm" style="font-size:.8rem">Voir tout</a>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Message</th>
+            <th>Confiance</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody id="recent-convs">
+          <tr><td colspan="3"><div style="text-align:center;padding:1rem;color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Accès rapide</div>
+    </div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+        <a href="/admin/knowledge/upload" class="btn btn-outline" style="flex-direction:column;gap:.35rem;padding:1rem;height:auto">
+          <i class="fas fa-upload" style="font-size:1.2rem"></i>
+          <span>Importer document</span>
+        </a>
+        <a href="/admin/users/create" class="btn btn-outline" style="flex-direction:column;gap:.35rem;padding:1rem;height:auto">
+          <i class="fas fa-user-plus" style="font-size:1.2rem"></i>
+          <span>Ajouter admin</span>
+        </a>
+        <a href="/admin/audit" class="btn btn-outline" style="flex-direction:column;gap:.35rem;padding:1rem;height:auto">
+          <i class="fas fa-shield-alt" style="font-size:1.2rem"></i>
+          <span>Audit logs</span>
+        </a>
+        <a href="/admin/conversations" class="btn btn-outline" style="flex-direction:column;gap:.35rem;padding:1rem;height:auto">
+          <i class="fas fa-comments" style="font-size:1.2rem"></i>
+          <span>Conversations</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="card-header" style="margin-top:.5rem">
+      <div class="card-title">Santé du système</div>
+      <span id="health-badge" class="badge badge-neutral">Vérification…</span>
+    </div>
+    <div class="card-body" id="health-details" style="font-size:.8125rem;color:var(--text-secondary)">
+      —
+    </div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-    async function fetchDashboardData() {
-        const token = localStorage.getItem('access_token');
-        const headers = { 'Authorization': `Bearer ${token}` };
-        
-        // Overview
-        const overviewRes = await fetch('/api/v1/admin/analytics/overview?period=7d', { headers });
-        if (overviewRes.ok) {
-            const data = await overviewRes.json();
-            document.getElementById('messages-today').innerText = data.total_conversations || 0;
-            document.getElementById('voice-success').innerText = (data.voice_success_rate || 0).toFixed(1) + '%';
-            document.getElementById('latency-p95').innerText = (data.avg_response_time_ms / 1000 || 0).toFixed(1);
-        }
-        
-        // Documents count
-        const docsRes = await fetch('/api/v1/admin/knowledge?limit=1', { headers });
-        if (docsRes.ok) {
-            const docs = await docsRes.json();
-            document.getElementById('docs-count').innerText = docs.total || 0;
-        }
-        
-        // Latency chart
-        const ctx1 = document.getElementById('latencyChart').getContext('2d');
-        new Chart(ctx1, {
-            type: 'bar',
-            data: {
-                labels: ['Whisper', 'TTS', 'RAG', 'LLM'],
-                datasets: [{ label: 'Latence (s)', data: [0.93, 1.83, 0.92, 1.47], backgroundColor: '#0b3b2f' }]
-            },
-            options: { responsive: true, maintainAspectRatio: false }
-        });
-        
-        // Messages chart
-        const ctx2 = document.getElementById('messagesChart').getContext('2d');
-        new Chart(ctx2, {
-            type: 'line',
-            data: {
-                labels: ['08/05','09/05','10/05','11/05','12/05','13/05','14/05'],
-                datasets: [
-                    { label: 'Texte', data: [120,135,148,170,210,245,300], borderColor: '#0b3b2f', fill: false },
-                    { label: 'Vocal', data: [45,52,68,85,110,142,186], borderColor: '#f4b942', fill: false }
-                ]
-            },
-            options: { responsive: true, maintainAspectRatio: false }
-        });
+let trendChart = null;
+let latencyChart = null;
+const token = localStorage.getItem('access_token');
+const headers = { 'Authorization': `Bearer ${token}` };
+
+// ── KPIs ──────────────────────────────────────────────────────────
+async function loadKPIs() {
+  const r = await fetch('/api/v1/admin/analytics/overview?period=7d', { headers });
+  if (!r.ok) return;
+  const d = await r.json();
+  document.getElementById('kpi-messages').textContent = d.total_conversations ?? '—';
+  document.getElementById('kpi-voice').textContent =
+    d.voice_success_rate != null ? d.voice_success_rate.toFixed(1) + '%' : '—%';
+  document.getElementById('kpi-latency').textContent =
+    d.avg_response_time_ms != null ? (d.avg_response_time_ms / 1000).toFixed(2) + 's' : '—s';
+}
+
+async function loadDocCount() {
+  const r = await fetch('/api/v1/admin/knowledge?limit=1', { headers });
+  if (!r.ok) return;
+  const d = await r.json();
+  document.getElementById('kpi-docs').textContent = d.total ?? '—';
+}
+
+// ── Trend chart ───────────────────────────────────────────────────
+async function loadTrendChart(period = '7d') {
+  const r = await fetch(`/api/v1/admin/analytics/trends?period=${period}&granularity=day`, { headers });
+  const labels = [];
+  const values = [];
+  if (r.ok) {
+    const d = await r.json();
+    (d.data_points || []).forEach(p => {
+      labels.push(p.date ? p.date.substring(5) : p.label);
+      values.push(p.total_messages || p.count || 0);
+    });
+  }
+  const ctx = document.getElementById('trend-chart').getContext('2d');
+  if (trendChart) trendChart.destroy();
+  trendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Messages',
+        data: values,
+        borderColor: '#0b3b2f',
+        backgroundColor: 'rgba(11,59,47,.08)',
+        borderWidth: 2,
+        pointRadius: 3,
+        fill: true,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        y: { beginAtZero: true, ticks: { font: { size: 11 } } }
+      }
     }
-    fetchDashboardData();
+  });
+}
+
+// ── Latency chart ─────────────────────────────────────────────────
+async function loadLatencyChart() {
+  const r = await fetch('/api/v1/admin/analytics/latency?period=7d', { headers });
+  let data = { whisper: 0.93, tts: 1.83, rag: 0.92, llm: 1.47 };
+  if (r.ok) {
+    const d = await r.json();
+    if (d.components) {
+      data = { ...data, ...d.components };
+    }
+  }
+  const labels = Object.keys(data).map(k => k.toUpperCase());
+  const values = Object.values(data);
+  const colors = ['#0b3b2f', '#f4b942', '#2563eb', '#7c3aed'];
+  const ctx = document.getElementById('latency-chart').getContext('2d');
+  if (latencyChart) latencyChart.destroy();
+  latencyChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: colors,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        y: { beginAtZero: true, ticks: { callback: v => v + 's', font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+// ── Recent conversations ──────────────────────────────────────────
+async function loadRecentConvs() {
+  const tbody = document.getElementById('recent-convs');
+  const r = await fetch('/api/v1/admin/conversations?limit=5', { headers });
+  if (!r.ok) {
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Indisponible</td></tr>';
+    return;
+  }
+  const d = await r.json();
+  if (!d.conversations || !d.conversations.length) {
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Aucune conversation</td></tr>';
+    return;
+  }
+  tbody.innerHTML = d.conversations.map(c => {
+    const pct = Math.round((c.confidence || 0) * 100);
+    const cls = pct >= 70 ? 'badge-success' : pct >= 40 ? 'badge-warning' : 'badge-danger';
+    return `<tr>
+      <td style="max-width:180px">
+        <div class="truncate text-sm">${escapeHtml((c.user_message||'').substring(0,50))}</div>
+      </td>
+      <td><span class="badge ${cls}">${pct}%</span></td>
+      <td class="text-xs text-muted">${formatDateShort(c.created_at)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Health ────────────────────────────────────────────────────────
+async function loadHealth() {
+  const badge = document.getElementById('health-badge');
+  const details = document.getElementById('health-details');
+  try {
+    const r = await fetch('/api/v1/admin/health', { headers });
+    if (!r.ok) throw new Error('non-200');
+    const d = await r.json();
+    const ok = d.status === 'healthy' || d.status === 'ok';
+    badge.className = `badge ${ok ? 'badge-success' : 'badge-warning'}`;
+    badge.textContent = ok ? 'Sain' : d.status || 'Dégradé';
+    const parts = Object.entries(d.components || {})
+      .map(([k,v]) => `<span class="${v==='healthy'?'':'text-muted'}">${k}: ${v}</span>`)
+      .join(' &nbsp;·&nbsp; ');
+    details.innerHTML = parts || '—';
+  } catch {
+    badge.className = 'badge badge-danger';
+    badge.textContent = 'Erreur';
+    details.textContent = 'Impossible de joindre le service de santé';
+  }
+}
+
+// ── Period change ─────────────────────────────────────────────────
+document.getElementById('trend-period').addEventListener('change', e => loadTrendChart(e.target.value));
+
+// ── Init ──────────────────────────────────────────────────────────
+Promise.all([
+  loadKPIs(),
+  loadDocCount(),
+  loadTrendChart('7d'),
+  loadLatencyChart(),
+  loadRecentConvs(),
+  loadHealth(),
+]);
 </script>
 {% endblock %}

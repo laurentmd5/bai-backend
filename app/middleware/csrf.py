@@ -10,12 +10,16 @@ How it works:
 4. Browser automatically includes cookies in requests (SameSite protection)
 """
 
+import json
+import os
 import secrets
-from fastapi import Request, HTTPException
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.responses import Response, JSONResponse
 
 from app.core.logging import get_logger
+
+_SECURE_COOKIE = os.environ.get("ENVIRONMENT", "production") == "production"
 
 logger = get_logger(__name__)
 
@@ -31,7 +35,12 @@ EXEMPT_PATHS = {
     "/openapi.json",
     "/docs",
     "/redoc",
-    "/api/v1/whatsapp/webhook",  # WhatsApp webhook uses signature validation instead
+    "/api/v1/whatsapp/webhook",     # WhatsApp webhook uses signature validation instead
+    # Auth endpoints are exempt: no session exists yet before login
+    "/api/v1/admin/auth/login",
+    "/api/v1/admin/auth/verify-2fa",
+    "/api/v1/admin/auth/refresh",
+    "/api/v1/admin/auth/csrf-token",
 }
 
 
@@ -82,11 +91,11 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 has_cookie=bool(csrf_token_cookie),
                 client_ip=request.client.host if request.client else None,
             )
-            raise HTTPException(
+            return JSONResponse(
                 status_code=403,
-                detail="CSRF token missing or invalid"
+                content={"detail": "CSRF token missing or invalid", "code": "CSRF_MISSING"}
             )
-        
+
         # Validate tokens match
         if csrf_token_header != csrf_token_cookie:
             logger.warning(
@@ -95,9 +104,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 method=request.method,
                 client_ip=request.client.host if request.client else None,
             )
-            raise HTTPException(
+            return JSONResponse(
                 status_code=403,
-                detail="CSRF token validation failed"
+                content={"detail": "CSRF token validation failed", "code": "CSRF_MISMATCH"}
             )
         
         logger.debug(
@@ -144,7 +153,7 @@ def add_csrf_cookie(response: Response, token: str) -> Response:
         key="csrf_token",
         value=token,
         httponly=False,  # JS needs to read this
-        secure=True,  # HTTPS only in production
+        secure=_SECURE_COOKIE,  # HTTPS only in production; False in dev/test
         samesite="Strict",  # Prevent cross-site cookie submission
         max_age=3600,  # 1 hour expiration
     )

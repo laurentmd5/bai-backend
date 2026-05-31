@@ -10,49 +10,47 @@ from app.core.security import create_jwt_token
 
 @pytest.mark.asyncio
 class TestCSRFProtection:
-    """Tests de protection CSRF."""
-    
-    async def test_post_request_requires_csrf_token(self, sync_client, admin_headers):
-        """Les requêtes POST nécessitent un token CSRF."""
-        # Post sans token CSRF (header manquant)
+    """Tests de protection CSRF — voir aussi tests/integration/test_csrf.py pour les tests complets."""
+
+    async def test_post_request_without_csrf_cookie_rejected(self, sync_client, admin_headers):
+        """POST sans cookie csrf_token → 403."""
         response = sync_client.post(
             "/api/v1/admin/users",
             headers=admin_headers,
             json={
-                "email": "test@test.com",
+                "email": "test-csrf@test.com",
                 "password": "Password123!",
                 "full_name": "Test",
                 "role": "ADMIN",
-            }
+            },
+            cookies={},  # Aucun cookie
         )
-        # Should either succeed (if CSRF not fully implemented) or require token
-        assert response.status_code in [201, 403]
-    
+        assert response.status_code == 403
+
     async def test_get_request_no_csrf_required(self, sync_client, admin_headers):
         """Les requêtes GET ne nécessitent pas de token CSRF."""
         response = sync_client.get(
             "/api/v1/admin/users",
             headers=admin_headers,
         )
-        assert response.status_code == 200
-    
+        assert response.status_code != 403
+
     async def test_invalid_csrf_token_rejected(self, sync_client, admin_headers):
-        """Un token CSRF invalide est rejeté."""
-        headers = admin_headers.copy()
-        headers["X-CSRF-Token"] = "invalid-csrf-token"
-        
+        """Un token CSRF invalide (présent dans header mais ne correspond pas au cookie) → 403."""
+        # Poser un cookie légitime via le endpoint
+        sync_client.get("/api/v1/admin/auth/csrf-token")
+        headers = {**admin_headers, "X-CSRF-Token": "invalid-token-not-matching-cookie"}
         response = sync_client.post(
             "/api/v1/admin/users",
             headers=headers,
             json={
-                "email": "test@test.com",
+                "email": "invalid-csrf@test.com",
                 "password": "Password123!",
                 "full_name": "Test",
                 "role": "ADMIN",
-            }
+            },
         )
-        # Should reject invalid CSRF or allow if not fully implemented
-        assert response.status_code in [201, 403]
+        assert response.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -109,21 +107,17 @@ class TestRateLimiting:
     """Tests du rate limiting."""
     
     async def test_rate_limit_login_endpoint(self, sync_client):
-        """Rate limiting sur le endpoint login."""
-        # Try multiple login attempts
-        for i in range(6):
+        """Rate limiting sur le endpoint login : 5+ échecs → 401 ou 429 (jamais 200)."""
+        for i in range(7):
             response = sync_client.post(
                 "/api/v1/admin/auth/login",
                 json={
-                    "email": f"user{i}@test.com",
-                    "password": "wrong"
+                    "email": "ratelimit@test.com",
+                    "password": "wrong_password_for_test"
                 }
             )
-        
-        # Should be rate limited after multiple attempts
-        # (May not fail if rate limiting not fully implemented)
-        # Last response should be 401, 429, or similar
-        assert response.status_code in [401, 429]
+        # Toutes les réponses doivent être des erreurs, jamais 200
+        assert response.status_code in [401, 422, 429]
     
     async def test_rate_limit_2fa_endpoint(self, sync_client):
         """Rate limiting sur le endpoint 2FA verification."""

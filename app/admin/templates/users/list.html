@@ -1,95 +1,177 @@
 {% extends "base.html" %}
-{% block title %}Utilisateurs admin - BARROW.AI{% endblock %}
+{% block title %}Administrateurs — BARROW.AI{% endblock %}
 {% block page_title %}Administrateurs{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">/</span><span>Utilisateurs</span>
+{% endblock %}
+
 {% block content %}
-<div class="bg-white rounded-xl shadow-sm p-6">
-    <div class="flex justify-between items-center mb-6">
-        <h3 class="text-lg font-semibold">Liste des administrateurs</h3>
-        <button onclick="window.location.href='/admin/users/create'" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Ajouter</button>
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Comptes administrateurs</div>
+      <div class="card-subtitle" id="users-count">Chargement…</div>
     </div>
-    <div class="overflow-x-auto">
-        <table class="min-w-full text-sm">
-            <thead class="bg-gray-100">
-                <tr><th class="px-4 py-2 text-left">Email</th><th class="px-4 py-2 text-left">Nom</th><th class="px-4 py-2 text-left">Rôle</th><th class="px-4 py-2 text-left">2FA</th><th class="px-4 py-2 text-left">Actif</th><th class="px-4 py-2">Actions</th></tr>
-            </thead>
-            <tbody id="users-table-body">
-                <tr><td colspan="6" class="text-center py-4">Chargement...</td></tr>
-            </tbody>
-        </table>
+    <div class="search-bar">
+      <div class="search-input-wrap">
+        <i class="fas fa-search"></i>
+        <input type="text" id="search-input" placeholder="Rechercher par email ou nom…" autocomplete="off">
+      </div>
+      <select id="role-filter" class="form-control" style="width:auto;min-width:130px">
+        <option value="">Tous les rôles</option>
+        <option value="SUPERADMIN">Superadmin</option>
+        <option value="ADMIN">Admin</option>
+        <option value="AUDITOR">Auditeur</option>
+        <option value="VIEWER">Viewer</option>
+      </select>
+      <a href="/admin/users/create" class="btn btn-primary btn-sm">
+        <i class="fas fa-plus"></i> Ajouter
+      </a>
     </div>
-    <div id="pagination" class="mt-4 flex justify-between items-center"></div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Utilisateur</th>
+          <th>Rôle</th>
+          <th>2FA</th>
+          <th>Statut</th>
+          <th>Créé le</th>
+          <th class="col-actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="users-tbody"></tbody>
+    </table>
+  </div>
+  <div id="users-pagination"></div>
+</div>
+
+<!-- Confirm delete modal -->
+<div class="modal-overlay hidden" id="delete-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title"><i class="fas fa-exclamation-triangle" style="color:var(--danger);margin-right:.5rem"></i>Confirmer la suppression</span>
+      <button class="modal-close" onclick="closeDeleteModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.9rem;color:var(--text-secondary)">Vous êtes sur le point de désactiver l'administrateur <strong id="delete-user-name"></strong>. Cette action est réversible.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeDeleteModal()">Annuler</button>
+      <button class="btn btn-danger" id="confirm-delete-btn"><i class="fas fa-user-slash"></i> Désactiver</button>
+    </div>
+  </div>
 </div>
 
 <script>
-    let currentPage = 0;
-    const limit = 10;
-    
-    async function loadUsers(page = 0) {
-        const token = localStorage.getItem('access_token');
-        const offset = page * limit;
-        const res = await fetch(`/api/v1/admin/users?limit=${limit}&offset=${offset}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (res.ok) {
-            const data = await res.json();
-            renderUsers(data.users);
-            renderPagination(data.total, page);
-            currentPage = page;
-        } else if (res.status === 401) {
-            window.location.href = '/admin/login';
-        }
-    }
-    
-    function renderUsers(users) {
-        const tbody = document.getElementById('users-table-body');
-        if (!users.length) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4">Aucun utilisateur</td></tr>';
-            return;
-        }
-        tbody.innerHTML = users.map(u => `
-            <tr>
-                <td class="border-b px-4 py-2">${escapeHtml(u.email)}</td>
-                <td class="border-b px-4 py-2">${escapeHtml(u.full_name || '-')}</td>
-                <td class="border-b px-4 py-2">${u.role}</td>
-                <td class="border-b px-4 py-2">${u.two_factor_enabled ? '<i class="fas fa-check-circle text-green-600"></i>' : '<i class="fas fa-times-circle text-red-500"></i>'}</td>
-                <td class="border-b px-4 py-2">${u.is_active ? '<span class="badge badge-success">Actif</span>' : '<span class="badge badge-danger">Inactif</span>'}</td>
-                <td class="border-b px-4 py-2 text-center">
-                    <button onclick="editUser('${u.id}')" class="text-blue-600 hover:text-blue-800 mr-2"><i class="fas fa-edit"></i></button>
-                    <button onclick="deleteUser('${u.id}')" class="text-red-600 hover:text-red-800"><i class="fas fa-trash-alt"></i></button>
-                </td>
-            </tr>
-        `).join('');
-    }
-    
-    function renderPagination(total, current) {
-        const totalPages = Math.ceil(total / limit);
-        const container = document.getElementById('pagination');
-        if (totalPages <= 1) { container.innerHTML = ''; return; }
-        let html = '<div class="flex gap-2">';
-        if (current > 0) html += `<button onclick="loadUsers(${current-1})" class="px-3 py-1 border rounded">Précédent</button>`;
-        html += `<span class="px-3 py-1">Page ${current+1} / ${totalPages}</span>`;
-        if (current < totalPages-1) html += `<button onclick="loadUsers(${current+1})" class="px-3 py-1 border rounded">Suivant</button>`;
-        html += '</div>';
-        container.innerHTML = html;
-    }
-    
-    function editUser(id) {
-        window.location.href = `/admin/users/edit/${id}`;
-    }
-    
-    async function deleteUser(id) {
-        if (!confirm('Supprimer définitivement cet administrateur ?')) return;
-        const token = localStorage.getItem('access_token');
-        const res = await fetch(`/api/v1/admin/users/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
-        if (res.ok) loadUsers(currentPage);
-        else alert('Erreur lors de la suppression');
-    }
-    
-    function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/[&<>]/g, function(m) { return m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;'; });
-    }
-    
-    loadUsers();
+let currentPage = 0;
+const PAGE_LIMIT = 10;
+let searchQuery = '';
+let roleFilter  = '';
+let pendingDeleteId = null;
+
+async function loadUsers(page = 0) {
+  const tbody = document.getElementById('users-tbody');
+  tbody.innerHTML = skeletonRows(6, 4);
+  currentPage = page;
+
+  const params = new URLSearchParams({ limit: PAGE_LIMIT, offset: page * PAGE_LIMIT });
+  if (searchQuery) params.set('search', searchQuery);
+  if (roleFilter)  params.set('role', roleFilter);
+
+  const data = await apiJSON(`/users?${params}`);
+  if (!data) return;
+
+  document.getElementById('users-count').textContent =
+    `${data.total} compte${data.total !== 1 ? 's' : ''}`;
+
+  if (!data.users || !data.users.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">
+      <i class="fas fa-users-slash"></i>
+      <p>Aucun administrateur trouvé</p>
+    </div></td></tr>`;
+    document.getElementById('users-pagination').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = data.users.map(u => {
+    const roleClass = {SUPERADMIN:'badge-danger',ADMIN:'badge-info',AUDITOR:'badge-warning',VIEWER:'badge-neutral'}[u.role]||'badge-neutral';
+    return `<tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:.75rem">
+          <div class="sidebar-avatar" style="width:32px;height:32px;font-size:.75rem;background:var(--primary-muted);color:var(--primary);flex-shrink:0">
+            ${escapeHtml((u.full_name||u.email||'?')[0]).toUpperCase()}
+          </div>
+          <div>
+            <div style="font-weight:600;font-size:.875rem">${escapeHtml(u.full_name||'—')}</div>
+            <div class="text-xs text-muted">${escapeHtml(u.email)}</div>
+          </div>
+        </div>
+      </td>
+      <td><span class="badge ${roleClass}">${u.role}</span></td>
+      <td>
+        ${u.two_factor_enabled
+          ? '<span class="badge badge-success"><span class="badge-dot"></span>Activé</span>'
+          : '<span class="badge badge-neutral">Désactivé</span>'}
+      </td>
+      <td>
+        ${u.is_active
+          ? '<span class="badge badge-success"><span class="badge-dot"></span>Actif</span>'
+          : '<span class="badge badge-danger"><span class="badge-dot"></span>Inactif</span>'}
+      </td>
+      <td class="text-muted text-sm">${formatDateShort(u.created_at)}</td>
+      <td class="col-actions">
+        <button class="action-btn action-edit" title="Modifier" onclick="editUser('${u.id}')">
+          <i class="fas fa-pencil"></i>
+        </button>
+        <button class="action-btn action-delete" title="Désactiver" onclick="openDeleteModal('${u.id}','${escapeHtml(u.email)}')">
+          <i class="fas fa-user-slash"></i>
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  renderPagination(
+    document.getElementById('users-pagination'),
+    data.total, page, PAGE_LIMIT,
+    p => loadUsers(p)
+  );
+}
+
+function editUser(id) { window.location.href = `/admin/users/edit/${id}`; }
+
+function openDeleteModal(id, name) {
+  pendingDeleteId = id;
+  document.getElementById('delete-user-name').textContent = name;
+  document.getElementById('delete-modal').classList.remove('hidden');
+}
+function closeDeleteModal() {
+  document.getElementById('delete-modal').classList.add('hidden');
+  pendingDeleteId = null;
+}
+
+document.getElementById('confirm-delete-btn').addEventListener('click', async () => {
+  if (!pendingDeleteId) return;
+  const data = await apiJSON(`/users/${pendingDeleteId}`, { method: 'DELETE' });
+  if (data !== null) {
+    showToast('Administrateur désactivé', 'success');
+    closeDeleteModal();
+    loadUsers(currentPage);
+  }
+});
+
+// Search
+const debouncedSearch = debounce(val => { searchQuery = val; loadUsers(0); });
+document.getElementById('search-input').addEventListener('input', e => debouncedSearch(e.target.value.trim()));
+document.getElementById('role-filter').addEventListener('change', e => { roleFilter = e.target.value; loadUsers(0); });
+
+// Close modal on overlay click
+document.getElementById('delete-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeDeleteModal();
+});
+
+loadUsers();
 </script>
 {% endblock %}

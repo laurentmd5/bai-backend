@@ -1,63 +1,232 @@
 {% extends "base.html" %}
-{% block title %}Upload document{% endblock %}
+{% block title %}Upload document — BARROW.AI{% endblock %}
 {% block page_title %}Ajouter un document{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">/</span><a href="/admin/knowledge">Base de connaissances</a>
+  <span class="sep">/</span><span>Upload</span>
+{% endblock %}
+
 {% block content %}
-<div class="max-w-lg mx-auto bg-white rounded-xl shadow-sm p-8">
-    <form id="uploadForm" enctype="multipart/form-data">
-        <div class="mb-4">
-            <label class="block text-gray-700 font-bold mb-2">Fichier (PDF, DOCX, TXT, MD)</label>
-            <input type="file" name="file" accept=".pdf,.docx,.txt,.md" required class="form-input w-full px-3 py-2 border border-gray-300 rounded-lg">
+<div style="max-width:680px">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Importer un document</div>
+        <div class="card-subtitle">PDF, DOCX, TXT ou Markdown — max 50 Mo</div>
+      </div>
+    </div>
+    <div class="card-body">
+
+      <!-- Drop zone -->
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <div class="drop-zone-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+        <div class="drop-zone-text">Glissez votre fichier ici ou <strong style="color:var(--primary)">cliquez pour parcourir</strong></div>
+        <div class="drop-zone-hint">PDF · DOCX · TXT · Markdown</div>
+      </div>
+      <input type="file" id="file-input" name="file" accept=".pdf,.docx,.txt,.md" style="display:none">
+
+      <!-- Selected file info -->
+      <div id="file-info" class="hidden" style="margin-top:.75rem;display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;background:var(--primary-muted);border-radius:var(--radius);border:1px solid rgba(11,59,47,.15)">
+        <i class="fas fa-file" style="color:var(--primary);font-size:1.1rem"></i>
+        <div style="flex:1;min-width:0">
+          <div id="file-name" style="font-size:.875rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+          <div id="file-size" style="font-size:.75rem;color:var(--text-muted)"></div>
         </div>
-        <div class="mb-4">
-            <label class="block text-gray-700 font-bold mb-2">Titre</label>
-            <input type="text" name="title" class="form-input w-full px-3 py-2 border border-gray-300 rounded-lg">
+        <button type="button" class="action-btn" onclick="clearFile()" title="Retirer">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <hr class="divider" style="margin:1.5rem 0">
+
+      <form id="upload-form">
+        <div class="form-group">
+          <label class="form-label" for="title">Titre <span style="color:var(--text-muted);font-weight:400">(facultatif, déduit du nom de fichier)</span></label>
+          <input class="form-control" type="text" id="title" name="title" placeholder="Ex : Manuel utilisateur v2.3">
         </div>
-        <div class="mb-4">
-            <label class="block text-gray-700 font-bold mb-2">Description</label>
-            <textarea name="description" rows="3" class="form-input w-full px-3 py-2 border border-gray-300 rounded-lg"></textarea>
+
+        <div class="form-group">
+          <label class="form-label" for="description">Description</label>
+          <textarea class="form-control" id="description" name="description" rows="3" placeholder="Résumé du contenu…"></textarea>
         </div>
-        <div class="mb-4">
-            <label class="block text-gray-700 font-bold mb-2">Langue</label>
-            <select name="language" class="form-input w-full px-3 py-2 border border-gray-300 rounded-lg">
-                <option value="en">English</option>
-                <option value="fr">Français</option>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+          <div class="form-group">
+            <label class="form-label" for="language">Langue</label>
+            <select class="form-control" id="language" name="language">
+              <option value="fr">Français</option>
+              <option value="en">English</option>
+              <option value="es">Español</option>
+              <option value="de">Deutsch</option>
             </select>
+          </div>
         </div>
-        <button type="submit" class="btn btn-primary w-full">Uploader</button>
-    </form>
-    <div id="progress" class="mt-4 hidden"><div class="bg-gray-200 rounded-full h-2"><div id="progress-bar" class="bg-emerald-600 h-2 rounded-full" style="width:0%"></div></div><p class="text-sm text-center mt-2">Traitement...</p></div>
-    <div id="errorMsg" class="mt-4 text-red-600 text-sm hidden"></div>
+
+        <!-- Progress bar (hidden until upload starts) -->
+        <div id="progress-wrap" class="hidden" style="margin:1.25rem 0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+            <span id="progress-stage" style="font-size:.8125rem;font-weight:600;color:var(--text-secondary)">Envoi en cours…</span>
+            <span id="progress-pct" style="font-size:.8125rem;color:var(--text-muted)">0%</span>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress-bar" id="progress-bar" style="width:0%"></div>
+          </div>
+          <div id="progress-sub" style="font-size:.75rem;color:var(--text-muted);margin-top:.35rem">Téléversement du fichier…</div>
+        </div>
+
+        <!-- Error -->
+        <div id="error-box" class="alert alert-error hidden" style="margin:1rem 0">
+          <i class="fas fa-exclamation-circle"></i>
+          <span id="error-msg"></span>
+        </div>
+
+        <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:.5rem">
+          <a href="/admin/knowledge" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Retour
+          </a>
+          <button type="submit" class="btn btn-primary" id="submit-btn">
+            <i class="fas fa-upload"></i> Importer
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
 </div>
 
 <script>
-    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const formData = new FormData(e.target);
-        const token = localStorage.getItem('access_token');
-        const progressDiv = document.getElementById('progress');
-        const errorDiv = document.getElementById('errorMsg');
-        progressDiv.classList.remove('hidden');
-        errorDiv.classList.add('hidden');
-        
-        try {
-            const response = await fetch('/api/v1/admin/knowledge', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: formData
-            });
-            if (response.ok) {
-                window.location.href = '/admin/knowledge';
-            } else {
-                const err = await response.json();
-                errorDiv.textContent = err.detail || 'Erreur lors de l\'upload';
-                errorDiv.classList.remove('hidden');
-            }
-        } catch (err) {
-            errorDiv.textContent = 'Erreur réseau';
-            errorDiv.classList.remove('hidden');
-        } finally {
-            progressDiv.classList.add('hidden');
-        }
-    });
+let selectedFile = null;
+
+// Drop zone interactions
+const dropZone  = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) selectFile(f);
+});
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) selectFile(e.target.files[0]);
+});
+
+function selectFile(f) {
+  const allowed = ['.pdf','.docx','.txt','.md'];
+  const ext = '.' + f.name.split('.').pop().toLowerCase();
+  if (!allowed.includes(ext)) {
+    showError(`Format non supporté : ${ext}. Formats acceptés : PDF, DOCX, TXT, MD`);
+    return;
+  }
+  if (f.size > 50 * 1024 * 1024) {
+    showError('Fichier trop volumineux (max 50 Mo)');
+    return;
+  }
+  selectedFile = f;
+  document.getElementById('file-info').classList.remove('hidden');
+  document.getElementById('file-info').style.display = 'flex';
+  document.getElementById('file-name').textContent = f.name;
+  document.getElementById('file-size').textContent = formatSize(f.size);
+  if (!document.getElementById('title').value) {
+    document.getElementById('title').value = f.name.replace(/\.[^.]+$/, '');
+  }
+  hideError();
+}
+
+function clearFile() {
+  selectedFile = null;
+  fileInput.value = '';
+  document.getElementById('file-info').classList.add('hidden');
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' o';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' Ko';
+  return (bytes/1024/1024).toFixed(1) + ' Mo';
+}
+
+function showError(msg) {
+  document.getElementById('error-msg').textContent = msg;
+  document.getElementById('error-box').classList.remove('hidden');
+}
+function hideError() {
+  document.getElementById('error-box').classList.add('hidden');
+}
+
+// Upload with real progress
+document.getElementById('upload-form').addEventListener('submit', e => {
+  e.preventDefault();
+  if (!selectedFile) { showError('Veuillez sélectionner un fichier'); return; }
+
+  const token = localStorage.getItem('access_token');
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+  formData.append('title', document.getElementById('title').value || selectedFile.name);
+  formData.append('description', document.getElementById('description').value);
+  formData.append('language', document.getElementById('language').value);
+
+  const submitBtn = document.getElementById('submit-btn');
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Import en cours…';
+  document.getElementById('progress-wrap').classList.remove('hidden');
+  hideError();
+
+  const xhr = new XMLHttpRequest();
+
+  xhr.upload.addEventListener('progress', evt => {
+    if (!evt.lengthComputable) return;
+    const pct = Math.round(evt.loaded / evt.total * 100);
+    document.getElementById('progress-bar').style.width = pct + '%';
+    document.getElementById('progress-pct').textContent = pct + '%';
+    if (pct === 100) {
+      document.getElementById('progress-stage').textContent = 'Indexation en cours…';
+      document.getElementById('progress-sub').textContent = 'Génération des embeddings et indexation vectorielle…';
+      // Indeterminate animation once transfer is done
+      document.getElementById('progress-bar').style.transition = 'none';
+    }
+  });
+
+  xhr.addEventListener('load', () => {
+    if (xhr.status >= 200 && xhr.status < 300) {
+      document.getElementById('progress-stage').textContent = 'Document importé avec succès !';
+      document.getElementById('progress-bar').style.width = '100%';
+      document.getElementById('progress-bar').style.background = 'var(--success)';
+      setTimeout(() => { window.location.href = '/admin/knowledge'; }, 900);
+    } else {
+      let msg = 'Erreur lors de l\'import';
+      try {
+        const d = JSON.parse(xhr.responseText);
+        msg = d.detail || msg;
+      } catch(_) {}
+      document.getElementById('progress-wrap').classList.add('hidden');
+      showError(msg);
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="fas fa-upload"></i> Importer';
+    }
+  });
+
+  xhr.addEventListener('error', () => {
+    document.getElementById('progress-wrap').classList.add('hidden');
+    showError('Erreur réseau — vérifiez votre connexion');
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = '<i class="fas fa-upload"></i> Importer';
+  });
+
+  xhr.open('POST', '/api/v1/admin/knowledge');
+  xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+  // Attach CSRF
+  const csrf = getCsrfToken ? getCsrfToken() : null;
+  if (csrf) xhr.setRequestHeader('X-CSRF-Token', csrf);
+
+  xhr.send(formData);
+});
+
+// Inline getCsrfToken (utils.js may not be loaded on auth pages)
+function getCsrfToken() {
+  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
 </script>
 {% endblock %}

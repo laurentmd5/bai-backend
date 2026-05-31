@@ -1,55 +1,208 @@
-{% extends "base.html" %}
-{% block title %}Connexion - BARROW.AI Admin{% endblock %}
-{% block page_title %}Connexion{% endblock %}
-{% block content %}
-<div class="max-w-md mx-auto mt-20 bg-white rounded-lg shadow p-8">
-    <h2 class="text-2xl font-bold text-center mb-6">Administration BARROW.AI</h2>
-    <form id="loginForm">
-        <div class="mb-4">
-            <label class="block text-gray-700 text-sm font-bold mb-2" for="email">Email</label>
-            <input type="email" id="email" name="email" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connexion — BARROW.AI Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/admin/static/css/admin.css">
+</head>
+<body>
+<div class="login-layout">
+  <div class="login-card">
+    <!-- Header -->
+    <div class="login-header">
+      <div class="login-logo"><i class="fas fa-robot"></i></div>
+      <div class="login-title">BARROW.AI</div>
+      <div class="login-subtitle">Espace d'administration sécurisé</div>
+    </div>
+
+    <!-- Body -->
+    <div class="login-body">
+      <div id="alert-box" class="alert alert-error hidden" style="margin-bottom:1.25rem">
+        <i class="fas fa-exclamation-circle"></i>
+        <span id="alert-msg"></span>
+      </div>
+
+      <form id="login-form" novalidate>
+        <div class="form-group">
+          <label class="form-label" for="email">Adresse email</label>
+          <div class="input-group">
+            <i class="input-icon fas fa-envelope"></i>
+            <input class="form-control" type="email" id="email" name="email"
+              placeholder="admin@exemple.com" required autocomplete="email">
+          </div>
         </div>
-        <div class="mb-6">
-            <label class="block text-gray-700 text-sm font-bold mb-2" for="password">Mot de passe</label>
-            <input type="password" id="password" name="password" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
+
+        <div class="form-group">
+          <label class="form-label" for="password">
+            Mot de passe
+          </label>
+          <div class="input-group">
+            <i class="input-icon fas fa-lock"></i>
+            <input class="form-control" type="password" id="password" name="password"
+              placeholder="••••••••" required autocomplete="current-password">
+            <i class="input-icon-right fas fa-eye" id="toggle-pw" style="cursor:pointer"></i>
+          </div>
         </div>
-        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg transition">Se connecter</button>
-    </form>
-    <div id="errorMessage" class="mt-4 text-red-600 text-sm text-center hidden"></div>
+
+        <!-- Attempt dots (shown after 1st failure) -->
+        <div id="attempt-section" class="hidden">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.25rem">
+            <span style="font-size:.75rem;color:var(--text-muted)">Tentatives restantes</span>
+            <span id="attempts-remaining" style="font-size:.75rem;font-weight:700;color:var(--danger)"></span>
+          </div>
+          <div class="attempt-dots" id="attempt-dots"></div>
+        </div>
+
+        <!-- Lockout bar -->
+        <div id="lockout-bar" class="lockout-bar hidden">
+          <i class="fas fa-clock"></i>
+          <span>Compte temporairement verrouillé. Réessayez dans <strong id="lockout-timer"></strong>.</span>
+        </div>
+
+        <button type="submit" class="btn btn-primary w-full" id="submit-btn"
+          style="margin-top:1.5rem;padding:.75rem;font-size:.9375rem">
+          <i class="fas fa-sign-in-alt"></i> Se connecter
+        </button>
+      </form>
+    </div>
+
+    <div class="login-footer">
+      Accès réservé aux administrateurs autorisés &nbsp;·&nbsp; BARROW.AI © 2025
+    </div>
+  </div>
 </div>
 
 <script>
-    document.getElementById('loginForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const email = document.getElementById('email').value;
-        const password = document.getElementById('password').value;
-        const errorDiv = document.getElementById('errorMessage');
-        
-        try {
-            const response = await fetch('/api/v1/admin/auth/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password })
-            });
-            const data = await response.json();
-            if (response.ok) {
-                if (data.requires_2fa) {
-                    sessionStorage.setItem('temp_session', data.session_token);
-                    window.location.href = '/admin/verify-2fa';
-                } else {
-                    localStorage.setItem('access_token', data.access_token);
-                    localStorage.setItem('refresh_token', data.refresh_token);
-                    document.cookie = `access_token=${data.access_token}; path=/; max-age=900; SameSite=Strict`;
-                    window.location.href = '/admin/dashboard';
-                }
-            } else {
-                errorDiv.textContent = data.detail || 'Échec de la connexion';
-                errorDiv.classList.remove('hidden');
-            }
-        } catch (err) {
-            errorDiv.textContent = 'Erreur réseau';
-            errorDiv.classList.remove('hidden');
-        }
+const MAX_ATTEMPTS = 5;
+let failedAttempts  = 0;
+let lockoutEnd      = null;
+let lockoutInterval = null;
+
+// Toggle password visibility
+document.getElementById('toggle-pw').addEventListener('click', function() {
+  const input = document.getElementById('password');
+  const isText = input.type === 'text';
+  input.type = isText ? 'password' : 'text';
+  this.className = isText ? 'input-icon-right fas fa-eye' : 'input-icon-right fas fa-eye-slash';
+});
+
+function showAlert(msg, type = 'error') {
+  const box = document.getElementById('alert-box');
+  const msgEl = document.getElementById('alert-msg');
+  box.className = `alert alert-${type}`;
+  box.querySelector('i').className = type === 'error'
+    ? 'fas fa-exclamation-circle' : 'fas fa-check-circle';
+  msgEl.textContent = msg;
+  box.classList.remove('hidden');
+}
+function hideAlert() {
+  document.getElementById('alert-box').classList.add('hidden');
+}
+
+function updateAttemptDots() {
+  if (failedAttempts === 0) {
+    document.getElementById('attempt-section').classList.add('hidden');
+    return;
+  }
+  document.getElementById('attempt-section').classList.remove('hidden');
+  const remaining = MAX_ATTEMPTS - failedAttempts;
+  document.getElementById('attempts-remaining').textContent = `${remaining} restante${remaining>1?'s':''}`;
+  const dotsEl = document.getElementById('attempt-dots');
+  dotsEl.innerHTML = Array.from({length: MAX_ATTEMPTS}, (_, i) =>
+    `<div class="attempt-dot ${i < failedAttempts ? 'used' : ''}"></div>`
+  ).join('');
+}
+
+function startLockout(seconds) {
+  lockoutEnd = Date.now() + seconds * 1000;
+  document.getElementById('submit-btn').disabled = true;
+  document.getElementById('lockout-bar').classList.remove('hidden');
+
+  if (lockoutInterval) clearInterval(lockoutInterval);
+  lockoutInterval = setInterval(() => {
+    const remaining = Math.ceil((lockoutEnd - Date.now()) / 1000);
+    if (remaining <= 0) {
+      clearInterval(lockoutInterval);
+      lockoutInterval = null;
+      document.getElementById('submit-btn').disabled = false;
+      document.getElementById('lockout-bar').classList.add('hidden');
+      failedAttempts = 0;
+      updateAttemptDots();
+    } else {
+      const m = Math.floor(remaining / 60);
+      const s = remaining % 60;
+      document.getElementById('lockout-timer').textContent =
+        m > 0 ? `${m}m ${s}s` : `${s}s`;
+    }
+  }, 500);
+
+  // First tick immediately
+  const rem = Math.ceil(seconds);
+  document.getElementById('lockout-timer').textContent = `${rem}s`;
+}
+
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (lockoutEnd && Date.now() < lockoutEnd) return;
+
+  hideAlert();
+  const btn = document.getElementById('submit-btn');
+  const origText = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connexion…';
+
+  const email    = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+
+  try {
+    const res  = await fetch('/api/v1/admin/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
     });
+    const data = await res.json();
+
+    if (res.ok) {
+      failedAttempts = 0;
+      updateAttemptDots();
+
+      if (data.requires_2fa) {
+        sessionStorage.setItem('temp_session', data.session_token);
+        window.location.href = '/admin/verify-2fa';
+      } else {
+        localStorage.setItem('access_token',  data.access_token);
+        localStorage.setItem('refresh_token', data.refresh_token);
+        document.cookie = `access_token=${data.access_token}; path=/; max-age=900; SameSite=Strict`;
+        window.location.href = '/admin/dashboard';
+      }
+    } else if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get('Retry-After') || data.retry_after || '900');
+      showAlert(`Trop de tentatives échouées. Compte verrouillé.`);
+      startLockout(retryAfter);
+    } else {
+      failedAttempts = Math.min(failedAttempts + 1, MAX_ATTEMPTS);
+      updateAttemptDots();
+      const msg = data.detail || 'Email ou mot de passe incorrect';
+      showAlert(typeof msg === 'string' ? msg : 'Identifiants invalides');
+      btn.disabled = false;
+      btn.innerHTML = origText;
+      // Shake animation
+      document.getElementById('login-form').animate([
+        {transform:'translateX(-4px)'},{transform:'translateX(4px)'},
+        {transform:'translateX(-4px)'},{transform:'translateX(0)'}
+      ], { duration: 300 });
+    }
+  } catch (_) {
+    showAlert('Erreur réseau — vérifiez votre connexion');
+    btn.disabled = false;
+    btn.innerHTML = origText;
+  }
+});
 </script>
-{% endblock %}
+</body>
+</html>
