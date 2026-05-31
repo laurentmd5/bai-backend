@@ -344,12 +344,20 @@ class WhatsAppService:
         whatsapp_messages_received_total.labels(type="text").inc()
         
         user_message = message.text_content
-        
+
+        # Detect language from the user's own text
+        detected_language = self._input_validator.detect_language(user_message)
+        logger.info(
+            "whatsapp_text_language_detected",
+            phone=phone_number[-4:],
+            language=detected_language,
+        )
+
         # Validate input
         try:
             is_valid, sanitized_message, _ = self._input_validator.validate_chat_message(
                 message=user_message,
-                language="en",  # Could detect from message
+                language=detected_language,
                 channel="whatsapp",
             )
         except Exception as e:
@@ -359,16 +367,16 @@ class WhatsAppService:
                 text="I couldn't process that message. Please try again with a different question.",
             )
             return
-        
-        # Process through chat service
+
+        # Process through chat service with the detected language
         response = await self._chat_service.process_message(
             message=sanitized_message,
             session_id=None,  # Will be created/retrieved based on phone
-            language="en",
+            language=detected_language,
             channel="whatsapp",
             ip_address=None,
             user_agent="WhatsApp",
-            metadata={"phone_number": phone_number},
+            metadata={"phone_number": phone_number, "detected_language": detected_language},
         )
         
         # Send response
@@ -487,8 +495,11 @@ class WhatsAppService:
             )
             return
         
-        # Transcribe
-        transcribed_text = await whisper.transcribe(audio_bytes, language="en")
+        # Transcribe with automatic language detection
+        # whisper.transcribe_detect() passes language=None to Whisper so it
+        # identifies the spoken language itself, then we confirm with our
+        # text-based detector for better accuracy on short utterances.
+        transcribed_text, whisper_lang = await whisper.transcribe_detect(audio_bytes)
         if not transcribed_text:
             voice_message_processed_total.labels(status="transcription_failed").inc()
             await self.send_text_message(
@@ -496,12 +507,25 @@ class WhatsAppService:
                 text="I couldn't understand your voice message. Could you please repeat or type your question?"
             )
             return
-        
-        # Send transcribed text to chat service
+
+        # Refine language detection: use text-based detector to confirm/override
+        # Whisper's detection (more reliable on short clips or accented speech).
+        text_lang = self._input_validator.detect_language(transcribed_text)
+        # Prefer text-based detection; fall back to Whisper if text is too short
+        detected_language = text_lang if len(transcribed_text.split()) >= 3 else whisper_lang
+        logger.info(
+            "whatsapp_voice_language_detected",
+            phone=phone_number[-4:],
+            whisper_lang=whisper_lang,
+            text_lang=text_lang,
+            final_lang=detected_language,
+        )
+
+        # Validate
         try:
             is_valid, sanitized_message, _ = self._input_validator.validate_chat_message(
                 message=transcribed_text,
-                language="en",
+                language=detected_language,
                 channel="whatsapp",
             )
         except Exception as e:
@@ -511,23 +535,28 @@ class WhatsAppService:
                 text="I had trouble understanding your message. Could you try again?"
             )
             return
-        
+
         response = await self._chat_service.process_message(
             message=sanitized_message,
             session_id=None,
-            language="en",
+            language=detected_language,
             channel="whatsapp",
             ip_address=None,
             user_agent="WhatsApp",
-            metadata={"phone_number": phone_number, "is_voice": True},
+            metadata={
+                "phone_number": phone_number,
+                "is_voice": True,
+                "detected_language": detected_language,
+            },
         )
-        
+
         response_text = response.get("message", "")
         if not response_text:
-            response_text = "I'm not sure how to answer that. Please try again."
-        
-        # Synthesize voice response
-        audio_response = await tts.synthesize(response_text, language="en")
+            response_text = "I'm not sure how to answer that. Please try again." if detected_language == "en" \
+                else "Je ne suis pas sûr de pouvoir répondre à cela. Veuillez réessayer."
+
+        # Synthesize voice response in the same language as the question
+        audio_response = await tts.synthesize(response_text, language=detected_language)
         if audio_response:
             media_id = await upload_media(
                 audio_bytes=audio_response,

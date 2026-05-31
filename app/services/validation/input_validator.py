@@ -739,36 +739,67 @@ class InputValidator:
     def detect_language(self, text: str) -> str:
         """
         Detect the language of a text.
-        
-        Simple heuristic-based detection for POC.
-        Phase 2 will use a proper language detection library.
-        
+
+        Strategy (layered):
+        1. Check for Gambian local languages (Mandinka, Wolof) via keyword matching
+           — langdetect doesn't know these.
+        2. Use langdetect (statistical model, ~200 languages) for fr/en.
+        3. Fallback to keyword-based French detection if langdetect unavailable.
+        4. Default to "en".
+
         Args:
             text: Text to analyze
-            
+
         Returns:
-            Detected language code
+            Language code: "en", "fr", "mandinka", or "wolof"
         """
-        text_lower = text.lower()
-        
-        # French indicators
-        french_indicators = ["bonjour", "salut", "merci", "comment", "pourquoi", "qu'est", "je", "tu", "nous"]
-        french_count = sum(1 for word in french_indicators if word in text_lower)
-        
-        # Mandinka indicators
-        mandinka_indicators = ["salaam", "aleikum", "nna", "tang", "nyaa", "be", "le", "mu", "ka"]
-        mandinka_count = sum(1 for word in mandinka_indicators if word in text_lower)
-        
-        # Wolof indicators
-        wolof_indicators = ["na nga", "def", "jërejëf", "waaw", "déedéet", "ba beneen"]
-        wolof_count = sum(1 for word in wolof_indicators if word in text_lower)
-        
-        # Determine language
-        if french_count > 2:
-            return "fr"
-        elif mandinka_count > 2:
-            return "mandinka"
-        elif wolof_count > 2:
-            return "wolof"
-        else:
+        if not text or len(text.strip()) < 3:
             return "en"
+
+        text_lower = text.lower()
+        words = set(text_lower.split())
+
+        # ── 1. Gambian local languages (keyword priority) ──────────────────
+        mandinka_indicators = {
+            "salaam", "aleikum", "nna", "tang", "nyaa", "siita",
+            "foloo", "koto", "bara", "jula", "mansa", "wuloo",
+        }
+        wolof_indicators = {
+            "jërejëf", "waaw", "déedéet", "xamam", "xam",
+            "nanga", "sunu", "lii", "leggi", "dëkk",
+        }
+        wolof_phrases = ["na nga def", "ba beneen", "na nga"]
+
+        mandinka_score = len(mandinka_indicators & words)
+        wolof_score    = len(wolof_indicators & words) + sum(1 for p in wolof_phrases if p in text_lower)
+
+        if mandinka_score >= 2:
+            return "mandinka"
+        if wolof_score >= 1:
+            return "wolof"
+
+        # ── 2. langdetect for fr / en ──────────────────────────────────────
+        try:
+            from langdetect import detect, DetectorFactory  # type: ignore[import]
+            DetectorFactory.seed = 42  # deterministic
+            detected = detect(text)
+            if detected == "fr":
+                return "fr"
+            # Any other code defaults to "en"
+            return "en"
+        except Exception:
+            pass
+
+        # ── 3. Keyword fallback for French ────────────────────────────────
+        french_words = {
+            "bonjour", "salut", "merci", "comment", "pourquoi",
+            "je", "tu", "nous", "vous", "est", "sont", "avec",
+            "pour", "dans", "sur", "que", "qui", "quoi", "quel",
+            "quelle", "les", "des", "une", "monsieur", "madame",
+            "oui", "non", "aussi", "très", "bien", "mal",
+        }
+        french_score = len(french_words & words)
+        if french_score >= 2:
+            return "fr"
+
+        return "en"

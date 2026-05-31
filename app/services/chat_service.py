@@ -513,9 +513,26 @@ class ChatService:
             Response dict containing message, session_id, sources, confidence, etc.
         """
         start_time = datetime.utcnow()
-        
+
         self._verify_initialized()
-        
+
+        # Auto-detect language when the caller passes the default "en"
+        # and did not explicitly choose English.  The WhatsApp service
+        # already detects language and passes it; this covers the web
+        # chat API where the user omits the language field.
+        if language == "en":
+            try:
+                detected = self._input_validator.detect_language(message)
+                if detected != "en":
+                    language = detected
+                    logger.info(
+                        "chat_language_auto_detected",
+                        detected=language,
+                        channel=channel,
+                    )
+            except Exception:
+                pass  # keep default "en" on any detection error
+
         # Initialize response metadata
         response_metadata = {
             "channel": channel,
