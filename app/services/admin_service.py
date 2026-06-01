@@ -407,10 +407,12 @@ class AdminService:
         )
         
         logger.info("admin_logged_in", email=admin.email, admin_id=str(admin.id))
-        
+
         return {
             "requires_2fa": False,
             "session_token": None,
+            # expires_in must be at the top level (AdminLoginResponse field)
+            "expires_in": tokens["expires_in"],
             "user": {
                 "id": str(admin.id),
                 "email": admin.email,
@@ -418,6 +420,9 @@ class AdminService:
                 "role": admin.role,
                 "is_active": admin.is_active,
                 "two_factor_enabled": admin.two_factor_enabled,
+                "last_login": admin.last_login,
+                "created_at": admin.created_at,
+                "updated_at": admin.updated_at,
                 "permissions": self.ROLE_PERMISSIONS.get(admin.role, []),
             },
             "tokens": {
