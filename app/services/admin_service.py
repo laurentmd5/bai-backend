@@ -367,18 +367,19 @@ class AdminService:
         # Record successful login
         await self._admin_repo.record_login_success(admin.id, ip_address)
         
+        # Create admin session in Redis (before tokens so session_id is in JWT)
+        session_id = generate_secure_token(16)
+
         # Create JWT tokens
         user_data = {
             "sub": str(admin.id),
             "email": admin.email,
             "role": admin.role,
             "full_name": admin.full_name,
+            "session_id": session_id,
         }
-        
+
         tokens = create_token_pair(user_data)
-        
-        # Create admin session in Redis
-        session_id = generate_secure_token(16)
         csrf_token = generate_csrf_token(session_id)
         
         await cache_service.hset(

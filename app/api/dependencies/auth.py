@@ -38,14 +38,18 @@ async def get_current_admin(
     """
     Get current authenticated admin user from JWT token.
     """
-    if not credentials:
+    if credentials:
+        token = credentials.credentials
+    else:
+        # Browser navigation sends cookie, not Authorization header
+        token = request.cookies.get("access_token")
+
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    token = credentials.credentials
     
     try:
         payload = decode_jwt_token(token, "access")
