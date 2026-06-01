@@ -175,9 +175,10 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
         sessionStorage.setItem('temp_session', data.session_token);
         window.location.href = '/admin/verify-2fa';
       } else {
-        localStorage.setItem('access_token',  data.access_token);
-        localStorage.setItem('refresh_token', data.refresh_token);
-        document.cookie = `access_token=${data.access_token}; path=/; max-age=900; SameSite=Strict`;
+        localStorage.setItem('access_token',  data.tokens.access_token);
+        localStorage.setItem('refresh_token', data.tokens.refresh_token);
+        localStorage.setItem('csrf_token',    data.tokens.csrf_token);
+        document.cookie = `access_token=${data.tokens.access_token}; path=/; max-age=900; SameSite=Strict`;
         window.location.href = '/admin/dashboard';
       }
     } else if (res.status === 429) {
