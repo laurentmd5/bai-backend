@@ -108,7 +108,7 @@ def upgrade() -> None:
     op.create_index('idx_conversations_session_created', 'conversations', ['session_id', 'created_at'])
     op.create_index('idx_conversations_feedback', 'conversations', ['feedback'], postgresql_where=sa.text('feedback IS NOT NULL'))
     op.create_index('idx_conversations_cache_hit', 'conversations', ['cache_hit'], postgresql_where=sa.text('cache_hit = true'))
-    op.create_index('idx_conversations_recent', 'conversations', ['created_at'], postgresql_where=sa.text("created_at > NOW() - INTERVAL '30 days'"))
+    op.create_index('idx_conversations_recent', 'conversations', ['created_at'])
     
     # =========================================================================
     # Table: knowledge_docs

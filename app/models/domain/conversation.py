@@ -175,7 +175,7 @@ class Conversation(Base):
         Index("idx_conversations_session_created", "session_id", "created_at"),
         Index("idx_conversations_feedback", "feedback", postgresql_where="feedback IS NOT NULL"),
         Index("idx_conversations_cache_hit", "cache_hit", postgresql_where="cache_hit = true"),
-        Index("idx_conversations_recent", "created_at", postgresql_where="created_at > NOW() - INTERVAL '30 days'"),
+        Index("idx_conversations_recent", "created_at"),
     )
     
     def __repr__(self) -> str:
