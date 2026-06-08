@@ -226,7 +226,7 @@ services:
       WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
       
       # CORS
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://widget.barrow-ai.poc,https://admin.barrow-ai.poc,https://npp.gm}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://bai.sse.sn,http://localhost,http://localhost:8000}
       
       # Rate Limiting
       RATE_LIMIT_CHAT_PER_MINUTE: ${RATE_LIMIT_CHAT_PER_MINUTE:-30}
