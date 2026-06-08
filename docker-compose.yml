@@ -199,7 +199,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: barrow-ai-backend:latest
+    image: ${BACKEND_IMAGE:-barrow-ai-backend:latest}
     container_name: barrow-backend
     restart: unless-stopped
     networks:

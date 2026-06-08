@@ -1,0 +1,202 @@
+// Déploiement sur VPS (Préproduction) via SSH
+// Jenkins reste sur la VM Ubuntu locale
+
+pipeline {
+    agent any
+    
+    environment {
+        // Configuration Docker Hub (À configurer dans les credentials Jenkins)
+        DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-credentials'
+        // À remplacer par votre vrai nom d'utilisateur Docker Hub
+        DOCKER_IMAGE_NAME = 'laurentmd5/barrow-backend' 
+        DOCKER_IMAGE_TAG = "${BUILD_NUMBER}"
+        
+        // Configuration VPS (À configurer dans les credentials Jenkins)
+        VPS_HOST = 'barrowai.sse.sn'
+        VPS_USER = 'deployer'
+        VPS_SSH_CREDENTIALS_ID = 'vps-preprod-ssh'
+        DEPLOY_PATH = '/opt/barrow-ai-preprod'
+        
+        // Fichiers
+        COMPOSE_FILE = 'docker-compose.yml'
+        DOMAIN = 'barrowai.sse.sn'
+    }
+    
+    options {
+        timestamps()
+        timeout(time: 30, unit: 'MINUTES')
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+    
+    stages {
+        
+        // =====================================================================
+        // STAGE 1 : CLONE (Sur Jenkins)
+        // =====================================================================
+        stage('Clone') {
+            steps {
+                echo 'Clonage du depot GitHub sur la VM Jenkins...'
+                checkout scm
+                script {
+                    currentBuild.displayName = "#${BUILD_NUMBER} - ${GIT_COMMIT.take(8)}"
+                }
+            }
+        }
+        
+        // =====================================================================
+        // STAGE 2 : BUILD & PUSH (Vers Docker Hub)
+        // =====================================================================
+        stage('Build & Push') {
+            steps {
+                script {
+                    echo "Construction de l'image : ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
+                    docker.build("${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}", "-f Dockerfile .")
+                    
+                    echo "Push de l'image vers Docker Hub..."
+                    docker.withRegistry('https://index.docker.io/v1/', "${DOCKER_HUB_CREDENTIALS_ID}") {
+                        docker.image("${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}").push()
+                        // Optionnel: On peut aussi pousser le tag latest
+                        docker.image("${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}").push('latest')
+                    }
+                }
+            }
+        }
+        
+        // =====================================================================
+        // STAGE 3 : TRANSFERT DE CONFIGURATION
+        // =====================================================================
+        stage('Transfert Config') {
+            steps {
+                echo "Transfert des fichiers de configuration vers le VPS (${VPS_HOST})..."
+                sshagent (credentials: ["${VPS_SSH_CREDENTIALS_ID}"]) {
+                    sh """
+                        # Desactiver le check strict des hotes pour eviter les blocages interactifs
+                        export SSH_OPTS="-o StrictHostKeyChecking=no"
+                        
+                        # Creer l'arborescence
+                        ssh \\$SSH_OPTS ${VPS_USER}@${VPS_HOST} "mkdir -p ${DEPLOY_PATH}/logs ${DEPLOY_PATH}/scripts ${DEPLOY_PATH}/traefik"
+
+                        # Transferer docker-compose
+                        scp \\$SSH_OPTS ${WORKSPACE}/${COMPOSE_FILE} ${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/
+                        
+                        # Transferer les scripts et traefik
+                        scp \\$SSH_OPTS -r ${WORKSPACE}/scripts/* ${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/scripts/
+                        scp \\$SSH_OPTS -r ${WORKSPACE}/traefik/* ${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/traefik/
+                    """
+                }
+            }
+        }
+
+        // =====================================================================
+        // STAGE 4 : DEPLOIEMENT (Sur le VPS)
+        // =====================================================================
+        stage('Deploiement VPS') {
+            steps {
+                echo "Pull et redemarrage sur le VPS..."
+                sshagent (credentials: ["${VPS_SSH_CREDENTIALS_ID}"]) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ${VPS_USER}@${VPS_HOST} "
+                            cd ${DEPLOY_PATH}
+                            
+                            echo 'Pull de la nouvelle image depuis Docker Hub...'
+                            docker pull ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
+                            
+                            export DOMAIN=${DOMAIN}
+                            export BACKEND_IMAGE=${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
+                            
+                            echo 'Redemarrage des conteneurs...'
+                            docker compose -f ${COMPOSE_FILE} down --remove-orphans || true
+                            docker compose -f ${COMPOSE_FILE} up -d --force-recreate
+                        "
+                    """
+                }
+                sleep(time: 20, unit: 'SECONDS')
+            }
+        }
+
+        // =====================================================================
+        // STAGE 5 : MIGRATION DB & INIT
+        // =====================================================================
+        stage('Migration DB & Init') {
+            steps {
+                echo "Application des migrations de base de donnees et init..."
+                sshagent (credentials: ["${VPS_SSH_CREDENTIALS_ID}"]) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ${VPS_USER}@${VPS_HOST} "
+                            cd ${DEPLOY_PATH}
+                            export DOMAIN=${DOMAIN}
+                            export BACKEND_IMAGE=${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
+                            
+                            echo 'Application du schema de base de donnees...'
+                            docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/db_migrate.py
+                            
+                            echo 'Verification et creation admin initial...'
+                            ADMIN_COUNT=\\$(docker compose -f ${COMPOSE_FILE} exec -T postgres psql -U barrowai -d barrowai_poc -tAq -c 'SELECT COUNT(*) FROM admin_users;' 2>/dev/null || echo 0)
+                            
+                            if [ \\"\\$ADMIN_COUNT\\" = \\"0\\" ]; then
+                                echo 'Creation du compte initial...'
+                                docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/create_admin.py --email admin@pace.gm --name 'PACE Admin' --role superadmin --password Admin123!
+                            else
+                                echo 'Administrateurs existants. Creation ignoree.'
+                            fi
+                            
+                            echo 'Initialisation de Qdrant...'
+                            docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/init_qdrant.py || true
+                        "
+                    """
+                }
+            }
+        }
+
+        // =====================================================================
+        // STAGE 6 : VERIFIER
+        // =====================================================================
+        stage('Verifier') {
+            steps {
+                script {
+                    echo "Verification de la sante du service sur https://api.${DOMAIN}/health/live"
+                    def ok = false
+                    for (int i = 0; i < 20; i++) {
+                        def status = sh(
+                            script: "curl -s -o /dev/null -w '%{http_code}' https://api.${DOMAIN}/health/live || echo 000",
+                            returnStdout: true
+                        ).trim()
+                        if (status == '200') {
+                            ok = true
+                            echo "Service healthy (tentative ${i + 1})"
+                            break
+                        }
+                        sleep(time: 5, unit: 'SECONDS')
+                    }
+                    if (!ok) error("Service non healthy apres 20 tentatives")
+                }
+            }
+        }
+
+        // =====================================================================
+        // STAGE 7 : NETTOYER
+        // =====================================================================
+        stage('Nettoyer') {
+            steps {
+                echo "Nettoyage des images locales Jenkins..."
+                sh 'docker image prune -f || true'
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo """
+========================================
+     DEPLOIEMENT VPS REUSSI !
+========================================
+  API     : https://api.${DOMAIN}/health/live
+  Docs    : https://api.${DOMAIN}/docs
+========================================"""
+        }
+        failure {
+            echo "Echec du deploiement. Verifiez les logs."
+        }
+    }
+}

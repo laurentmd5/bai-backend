@@ -18,9 +18,8 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     JSON,
-    synonym,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from app.core.database import Base
