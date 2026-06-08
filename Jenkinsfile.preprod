@@ -61,14 +61,13 @@ pipeline {
                 sshagent (credentials: ["${VPS_SSH_CREDENTIALS_ID}"]) {
                     sh """
                         # Creer l'arborescence
-                        ssh -o StrictHostKeyChecking=no ${VPS_USER}@${VPS_HOST} "mkdir -p ${DEPLOY_PATH}/logs ${DEPLOY_PATH}/scripts ${DEPLOY_PATH}/traefik"
+                        ssh -o StrictHostKeyChecking=no ${VPS_USER}@${VPS_HOST} "mkdir -p ${DEPLOY_PATH}/logs ${DEPLOY_PATH}/scripts"
 
                         # Transferer docker-compose
                         scp -o StrictHostKeyChecking=no ${WORKSPACE}/${COMPOSE_FILE} ${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/
                         
-                        # Transferer les scripts et traefik
+                        # Transferer les scripts
                         scp -o StrictHostKeyChecking=no -r ${WORKSPACE}/scripts/* ${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/scripts/
-                        scp -o StrictHostKeyChecking=no -r ${WORKSPACE}/traefik/* ${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/traefik/
                     """
                 }
             }
@@ -125,22 +124,24 @@ docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/init_qdrant.py 
 
         stage('Verifier') {
             steps {
-                script {
-                    echo "Verification de la sante du service sur https://api.${DOMAIN}/health/live"
-                    def ok = false
-                    for (int i = 0; i < 20; i++) {
-                        def status = sh(
-                            script: "curl -s -o /dev/null -w '%{http_code}' https://api.${DOMAIN}/health/live || echo 000",
-                            returnStdout: true
-                        ).trim()
-                        if (status == '200') {
-                            ok = true
-                            echo "Service healthy (tentative ${i + 1})"
-                            break
+                echo "Verification locale de la sante du service sur le VPS (http://localhost:8000/health/live)"
+                sshagent (credentials: ["${VPS_SSH_CREDENTIALS_ID}"]) {
+                    script {
+                        def ok = false
+                        for (int i = 0; i < 20; i++) {
+                            def status = sh(
+                                script: "ssh -o StrictHostKeyChecking=no ${VPS_USER}@${VPS_HOST} \"curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health/live || echo 000\"",
+                                returnStdout: true
+                            ).trim()
+                            if (status == '200') {
+                                ok = true
+                                echo "Service healthy (tentative ${i + 1})"
+                                break
+                            }
+                            sleep(time: 5, unit: 'SECONDS')
                         }
-                        sleep(time: 5, unit: 'SECONDS')
+                        if (!ok) error("Service non healthy apres 20 tentatives")
                     }
-                    if (!ok) error("Service non healthy apres 20 tentatives")
                 }
             }
         }
@@ -160,8 +161,8 @@ docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/init_qdrant.py 
 ========================================
      DEPLOIEMENT VPS REUSSI !
 ========================================
-  API     : https://api.${DOMAIN}/health/live
-  Docs    : https://api.${DOMAIN}/docs
+  Backend ecoute localement sur le port 8000 du VPS.
+  Veuillez configurer Nginx pour pointer ${DOMAIN} vers http://localhost:8000
 ========================================"""
         }
         failure {
