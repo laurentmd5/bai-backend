@@ -11,7 +11,7 @@ pipeline {
         DOCKER_IMAGE_TAG = "${BUILD_NUMBER}"
         
         // Configuration VPS (À configurer dans les credentials Jenkins)
-        VPS_HOST = 'barrowai.sse.sn'
+        VPS_HOST = '167.86.106.160'
         VPS_USER = 'deployer'
         VPS_SSH_CREDENTIALS_ID = 'vps-preprod-ssh'
         DEPLOY_PATH = '/opt/barrow-ai-preprod'
