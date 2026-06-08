@@ -413,7 +413,7 @@ class AuditLog(Base):
         Index("idx_audit_logs_created_at", "created_at"),
         Index("idx_audit_logs_action_created", "action", "created_at"),
         Index("idx_audit_logs_severity", "severity", postgresql_where="severity IN ('WARN', 'CRITICAL')"),
-        Index("idx_audit_logs_recent", "created_at", postgresql_where="created_at > NOW() - INTERVAL '7 days'"),
+        Index("idx_audit_logs_recent", "created_at"),
     )
     
     def __repr__(self) -> str:
