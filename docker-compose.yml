@@ -225,6 +225,7 @@ services:
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
       WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
       
       # CORS
       CORS_ORIGINS: ${CORS_ORIGINS:-https://widget.barrow-ai.poc,https://admin.barrow-ai.poc,https://npp.gm}
