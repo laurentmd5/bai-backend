@@ -303,55 +303,6 @@ services:
     
     logging: *default-logging
 
-  # ===========================================================================
-  # WIDGET - Static Chat Widget
-  # ===========================================================================
-  widget:
-    build:
-      context: ./widget
-      dockerfile: Dockerfile
-    image: barrow-ai-widget:latest
-    container_name: barrow-widget
-    restart: unless-stopped
-    networks:
-      barrow-net:
-        ipv4_address: 172.20.0.10
-    environment:
-      API_URL: https://api.${DOMAIN:-barrow-ai.local}
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.widget.rule=Host(`widget.${DOMAIN:-barrow-ai.local}`)"
-      - "traefik.http.routers.widget.entrypoints=websecure"
-      - "traefik.http.routers.widget.tls=true"
-      - "traefik.http.routers.widget.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.widget.middlewares=sec-headers@file"
-      - "traefik.http.services.widget.loadbalancer.server.port=80"
-    logging: *default-logging
-
-  # ===========================================================================
-  # ADMIN - React Admin Dashboard
-  # ===========================================================================
-  admin:
-    build:
-      context: ./admin
-      dockerfile: Dockerfile
-      args:
-        VITE_API_URL: https://api.${DOMAIN:-barrow-ai.local}
-    image: barrow-ai-admin:latest
-    container_name: barrow-admin
-    restart: unless-stopped
-    networks:
-      barrow-net:
-        ipv4_address: 172.20.0.40
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.admin.rule=Host(`admin.${DOMAIN:-barrow-ai.local}`)"
-      - "traefik.http.routers.admin.entrypoints=websecure"
-      - "traefik.http.routers.admin.tls=true"
-      - "traefik.http.routers.admin.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.admin.middlewares=sec-headers@file,admin-ipwhitelist@file"
-      - "traefik.http.services.admin.loadbalancer.server.port=80"
-    logging: *default-logging
 
   # ===========================================================================
   # PROMETHEUS - Metrics Collection (Optional)
