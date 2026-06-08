@@ -18,6 +18,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     JSON,
+    synonym,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -151,6 +152,10 @@ class Conversation(Base):
         back_populates="conversations",
         lazy="selectin"
     )
+    
+    # Aliases for backward compatibility with analytics queries
+    response_time = synonym('latency_ms')
+    source = synonym('channel')
     
     # Table constraints and indexes
     __table_args__ = (

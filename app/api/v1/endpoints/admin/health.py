@@ -66,7 +66,7 @@ async def health_check(
         results["status"] = "degraded"
     
     # ✓ Check Redis (if configured)
-    if settings.REDIS_URL:
+    if settings.redis_url:
         try:
             from app.services.cache.redis_cache import cache_service
             # Test Redis connection
@@ -90,12 +90,12 @@ async def health_check(
         }
     
     # ✓ Check Qdrant (if configured)
-    if settings.QDRANT_URL:
+    if settings.qdrant_url:
         try:
             from qdrant_client import QdrantClient
             
             # Create client and check collection exists
-            client = QdrantClient(url=settings.QDRANT_URL)
+            client = QdrantClient(url=settings.qdrant_url)
             # Try to get collections (simple connectivity test)
             collections = client.get_collections()
             

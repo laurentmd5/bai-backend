@@ -277,6 +277,75 @@ class KnowledgeRepository(BaseRepository[KnowledgeDocument, Dict[str, Any], Dict
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
     
+    async def list_documents(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        status: Optional[str] = None,
+        language: Optional[str] = None,
+        uploaded_by: Optional[str] = None,
+    ) -> List[KnowledgeDocument]:
+        """
+        List knowledge base documents with optional filtering.
+        
+        Args:
+            limit: Maximum documents to return
+            offset: Pagination offset
+            status: Filter by status (pending|indexing|active|error|deprecated|archived)
+            language: Filter by language (en, fr, etc.)
+            uploaded_by: Filter by uploader admin ID
+            
+        Returns:
+            List of KnowledgeDocument instances
+        """
+        stmt = select(KnowledgeDocument)
+        
+        # Apply filters
+        if status:
+            stmt = stmt.where(KnowledgeDocument.status == status)
+        if language:
+            stmt = stmt.where(KnowledgeDocument.language == language)
+        if uploaded_by:
+            stmt = stmt.where(KnowledgeDocument.uploaded_by == uploaded_by)
+        
+        # Apply pagination
+        stmt = stmt.order_by(
+            KnowledgeDocument.uploaded_at.desc()
+        ).offset(offset).limit(limit)
+        
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+    
+    async def count_documents(
+        self,
+        status: Optional[str] = None,
+        language: Optional[str] = None,
+        uploaded_by: Optional[str] = None,
+    ) -> int:
+        """
+        Count knowledge base documents with optional filtering.
+        
+        Args:
+            status: Filter by status
+            language: Filter by language
+            uploaded_by: Filter by uploader admin ID
+            
+        Returns:
+            Total count
+        """
+        stmt = select(func.count()).select_from(KnowledgeDocument)
+        
+        # Apply filters
+        if status:
+            stmt = stmt.where(KnowledgeDocument.status == status)
+        if language:
+            stmt = stmt.where(KnowledgeDocument.language == language)
+        if uploaded_by:
+            stmt = stmt.where(KnowledgeDocument.uploaded_by == uploaded_by)
+        
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0
+    
     async def get_stats(self) -> Dict[str, Any]:
         """
         Get knowledge base statistics.
