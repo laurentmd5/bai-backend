@@ -7,7 +7,6 @@ pipeline {
     environment {
         // Configuration Docker Hub (À configurer dans les credentials Jenkins)
         DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-credentials'
-        // À remplacer par votre vrai nom d'utilisateur Docker Hub
         DOCKER_IMAGE_NAME = 'laurentmd5/barrow-backend' 
         DOCKER_IMAGE_TAG = "${BUILD_NUMBER}"
         
@@ -31,9 +30,6 @@ pipeline {
     
     stages {
         
-        // =====================================================================
-        // STAGE 1 : CLONE (Sur Jenkins)
-        // =====================================================================
         stage('Clone') {
             steps {
                 echo 'Clonage du depot GitHub sur la VM Jenkins...'
@@ -44,9 +40,6 @@ pipeline {
             }
         }
         
-        // =====================================================================
-        // STAGE 2 : BUILD & PUSH (Vers Docker Hub)
-        // =====================================================================
         stage('Build & Push') {
             steps {
                 script {
@@ -56,102 +49,80 @@ pipeline {
                     echo "Push de l'image vers Docker Hub..."
                     docker.withRegistry('https://index.docker.io/v1/', "${DOCKER_HUB_CREDENTIALS_ID}") {
                         docker.image("${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}").push()
-                        // Optionnel: On peut aussi pousser le tag latest
                         docker.image("${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}").push('latest')
                     }
                 }
             }
         }
         
-        // =====================================================================
-        // STAGE 3 : TRANSFERT DE CONFIGURATION
-        // =====================================================================
         stage('Transfert Config') {
             steps {
                 echo "Transfert des fichiers de configuration vers le VPS (${VPS_HOST})..."
                 sshagent (credentials: ["${VPS_SSH_CREDENTIALS_ID}"]) {
                     sh """
-                        # Desactiver le check strict des hotes pour eviter les blocages interactifs
-                        export SSH_OPTS="-o StrictHostKeyChecking=no"
-                        
                         # Creer l'arborescence
-                        ssh \\$SSH_OPTS ${VPS_USER}@${VPS_HOST} "mkdir -p ${DEPLOY_PATH}/logs ${DEPLOY_PATH}/scripts ${DEPLOY_PATH}/traefik"
+                        ssh -o StrictHostKeyChecking=no ${VPS_USER}@${VPS_HOST} "mkdir -p ${DEPLOY_PATH}/logs ${DEPLOY_PATH}/scripts ${DEPLOY_PATH}/traefik"
 
                         # Transferer docker-compose
-                        scp \\$SSH_OPTS ${WORKSPACE}/${COMPOSE_FILE} ${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/
+                        scp -o StrictHostKeyChecking=no ${WORKSPACE}/${COMPOSE_FILE} ${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/
                         
                         # Transferer les scripts et traefik
-                        scp \\$SSH_OPTS -r ${WORKSPACE}/scripts/* ${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/scripts/
-                        scp \\$SSH_OPTS -r ${WORKSPACE}/traefik/* ${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/traefik/
+                        scp -o StrictHostKeyChecking=no -r ${WORKSPACE}/scripts/* ${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/scripts/
+                        scp -o StrictHostKeyChecking=no -r ${WORKSPACE}/traefik/* ${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/traefik/
                     """
                 }
             }
         }
 
-        // =====================================================================
-        // STAGE 4 : DEPLOIEMENT (Sur le VPS)
-        // =====================================================================
-        stage('Deploiement VPS') {
+        stage('Deploiement & Migration') {
             steps {
-                echo "Pull et redemarrage sur le VPS..."
+                echo "Preparation du script de deploiement..."
+                // Utilisation de writeFile pour eviter les problemes d'echappement Groovy/Bash via SSH
+                writeFile file: 'deploy.sh', text: """#!/bin/bash
+set -e
+
+cd ${DEPLOY_PATH}
+export DOMAIN=${DOMAIN}
+export BACKEND_IMAGE=${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
+
+echo 'Pull de la nouvelle image depuis Docker Hub...'
+docker pull ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
+
+echo 'Redemarrage des conteneurs...'
+docker compose -f ${COMPOSE_FILE} down --remove-orphans || true
+docker compose -f ${COMPOSE_FILE} up -d --force-recreate
+
+echo 'Attente du demarrage (10s)...'
+sleep 10
+
+echo 'Application du schema de base de donnees...'
+docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/db_migrate.py
+
+echo 'Verification et creation admin initial...'
+ADMIN_COUNT=\$(docker compose -f ${COMPOSE_FILE} exec -T postgres psql -U barrowai -d barrowai_poc -tAq -c 'SELECT COUNT(*) FROM admin_users;' 2>/dev/null || echo 0)
+
+if [ "\$ADMIN_COUNT" = "0" ]; then
+    echo 'Creation du compte initial...'
+    docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/create_admin.py --email admin@pace.gm --name 'PACE Admin' --role superadmin --password Admin123!
+else
+    echo 'Administrateurs existants. Creation ignoree.'
+fi
+
+echo 'Initialisation de Qdrant...'
+docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/init_qdrant.py || true
+"""
+                
+                echo "Execution du script sur le VPS..."
                 sshagent (credentials: ["${VPS_SSH_CREDENTIALS_ID}"]) {
                     sh """
-                        ssh -o StrictHostKeyChecking=no ${VPS_USER}@${VPS_HOST} "
-                            cd ${DEPLOY_PATH}
-                            
-                            echo 'Pull de la nouvelle image depuis Docker Hub...'
-                            docker pull ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
-                            
-                            export DOMAIN=${DOMAIN}
-                            export BACKEND_IMAGE=${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
-                            
-                            echo 'Redemarrage des conteneurs...'
-                            docker compose -f ${COMPOSE_FILE} down --remove-orphans || true
-                            docker compose -f ${COMPOSE_FILE} up -d --force-recreate
-                        "
+                        scp -o StrictHostKeyChecking=no deploy.sh ${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/deploy.sh
+                        ssh -o StrictHostKeyChecking=no ${VPS_USER}@${VPS_HOST} "bash ${DEPLOY_PATH}/deploy.sh"
                     """
                 }
-                sleep(time: 20, unit: 'SECONDS')
+                sleep(time: 15, unit: 'SECONDS')
             }
         }
 
-        // =====================================================================
-        // STAGE 5 : MIGRATION DB & INIT
-        // =====================================================================
-        stage('Migration DB & Init') {
-            steps {
-                echo "Application des migrations de base de donnees et init..."
-                sshagent (credentials: ["${VPS_SSH_CREDENTIALS_ID}"]) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no ${VPS_USER}@${VPS_HOST} "
-                            cd ${DEPLOY_PATH}
-                            export DOMAIN=${DOMAIN}
-                            export BACKEND_IMAGE=${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
-                            
-                            echo 'Application du schema de base de donnees...'
-                            docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/db_migrate.py
-                            
-                            echo 'Verification et creation admin initial...'
-                            ADMIN_COUNT=\\$(docker compose -f ${COMPOSE_FILE} exec -T postgres psql -U barrowai -d barrowai_poc -tAq -c 'SELECT COUNT(*) FROM admin_users;' 2>/dev/null || echo 0)
-                            
-                            if [ \\"\\$ADMIN_COUNT\\" = \\"0\\" ]; then
-                                echo 'Creation du compte initial...'
-                                docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/create_admin.py --email admin@pace.gm --name 'PACE Admin' --role superadmin --password Admin123!
-                            else
-                                echo 'Administrateurs existants. Creation ignoree.'
-                            fi
-                            
-                            echo 'Initialisation de Qdrant...'
-                            docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/init_qdrant.py || true
-                        "
-                    """
-                }
-            }
-        }
-
-        // =====================================================================
-        // STAGE 6 : VERIFIER
-        // =====================================================================
         stage('Verifier') {
             steps {
                 script {
@@ -174,12 +145,10 @@ pipeline {
             }
         }
 
-        // =====================================================================
-        // STAGE 7 : NETTOYER
-        // =====================================================================
         stage('Nettoyer') {
             steps {
-                echo "Nettoyage des images locales Jenkins..."
+                echo "Nettoyage..."
+                sh 'rm -f deploy.sh || true'
                 sh 'docker image prune -f || true'
             }
         }
