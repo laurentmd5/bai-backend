@@ -901,13 +901,13 @@ class ChatService:
                 try:
                     llm_start = datetime.utcnow()
                     
-                    # We inject a strong instruction to reply in the detected language (e.g. Wolof)
-                    system_prompt_addon = f" CRITICAL: You MUST generate your final response in the following language: {language}. Ensure it sounds natural and conversational."
+                    # We append a strong instruction to reply in the detected language (e.g. Wolof)
+                    # We do NOT override system_prompt because that deletes the provider's default RAG prompt!
+                    prompt_with_instructions = f"{sanitized_message}\n\n[CRITICAL INSTRUCTION: You MUST generate your final response in the following language: {language}. Ensure it sounds natural and conversational.]"
                     
                     generated_response = await self._llm_provider.generate_with_retry(
-                        prompt=sanitized_message,
+                        prompt=prompt_with_instructions,
                         context=context,
-                        system_prompt=system_prompt_addon,
                         language=language,
                         max_retries=2,
                     )
