@@ -9,6 +9,8 @@ from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timedelta
 from uuid import UUID
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.exceptions import (
