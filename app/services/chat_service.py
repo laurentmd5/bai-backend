@@ -11,6 +11,7 @@ from datetime import datetime
 
 from app.services.rag_service import RAGService
 from app.services.llm.factory import get_llm_provider
+from app.services.llm.query_transformer import QueryTransformer
 from app.services.validation.input_validator import InputValidator
 from app.services.validation.output_validator import OutputValidator
 from app.services.validation.security_validator import SecurityValidator
@@ -239,6 +240,9 @@ class ChatService:
         # Services injected at initialization
         self._rag_service = rag_service
         self._llm_provider = llm_provider or get_llm_provider()
+        
+        # Initialize query transformer for advanced intelligence
+        self._query_transformer = QueryTransformer(self._llm_provider)
         
         # Initialize validators
         self._input_validator = InputValidator()
@@ -778,16 +782,44 @@ class ChatService:
                     return cached_response
                 
                 # ===============================================================
-                # STEP 6: RAG Retrieval
+                # STEP 5.5: Query Transformation & HyDE (Intelligence Layer)
                 # ===============================================================
-                try:
-                    context, sources, confidence = await self._rag_service.retrieve_and_build_context(
-                        query=sanitized_message,
-                        filters={"language": language} if language in ["en", "fr"] else None,
-                    )
+                transformer_result = await self._query_transformer.transform_query(sanitized_message)
+                
+                # Update language based on the smart LLM detection (better than basic input_validator)
+                if transformer_result.get("detected_language") and transformer_result.get("detected_language") != "unknown":
+                    language = transformer_result["detected_language"]
+                    response_metadata["language"] = language
+                
+                if transformer_result.get("is_casual_conversation"):
+                    logger.info("casual_conversation_detected", session_id=actual_session_id)
+                    # Bypass RAG entirely for greetings and chit-chat
+                    context = ""
+                    sources = []
+                    confidence = 1.0
+                else:
+                    # Construct the HyDE enhanced query
+                    search_query = sanitized_message
+                    optimized = transformer_result.get("optimized_search_query", "")
+                    hyde_doc = transformer_result.get("hypothetical_document", "")
                     
-                    response_metadata["rag_confidence"] = confidence
-                    response_metadata["sources_count"] = len(sources)
+                    if optimized or hyde_doc:
+                        # We combine the user's original query, the optimized keywords, and the hypothetical document
+                        # This gives Qdrant both lexical matches and deep semantic context.
+                        search_query = f"{sanitized_message}\n{optimized}\n{hyde_doc}".strip()
+                        logger.debug("using_hyde_search_query", optimized_length=len(search_query))
+                    
+                    # ===============================================================
+                    # STEP 6: RAG Retrieval
+                    # ===============================================================
+                    try:
+                        context, sources, confidence = await self._rag_service.retrieve_and_build_context(
+                            query=search_query,
+                            filters={"language": "en"} if language in ["en", "fr", "wolof", "mandinka", "fular"] else None,
+                        )
+                        
+                        response_metadata["rag_confidence"] = confidence
+                        response_metadata["sources_count"] = len(sources)
                     
                 except LowConfidenceException as e:
                     logger.info(
@@ -869,9 +901,13 @@ class ChatService:
                 try:
                     llm_start = datetime.utcnow()
                     
+                    # We inject a strong instruction to reply in the detected language (e.g. Wolof)
+                    system_prompt_addon = f" CRITICAL: You MUST generate your final response in the following language: {language}. Ensure it sounds natural and conversational."
+                    
                     generated_response = await self._llm_provider.generate_with_retry(
                         prompt=sanitized_message,
                         context=context,
+                        system_prompt=system_prompt_addon,
                         language=language,
                         max_retries=2,
                     )

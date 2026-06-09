@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query, Form, Request, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import get_current_admin, get_admin_service
@@ -30,6 +30,7 @@ from app.services.admin.document_parser import (
     split_text_into_chunks,
     DocumentParsingError,
 )
+from app.services.admin.knowledge_indexer import index_document_background_task
 
 logger = get_logger(__name__)
 
@@ -139,6 +140,8 @@ async def list_knowledge_documents(
 
 @router.post("", response_model=Dict[str, Any], status_code=status.HTTP_201_CREATED)
 async def upload_knowledge_document(
+    request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     title: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
@@ -313,12 +316,22 @@ async def upload_knowledge_document(
             is_public=is_public,
         )
         
-        # Set status to ACTIVE immediately (no Qdrant blocking in Phase 1)
+        # Set status to INDEXING to indicate background task is processing
         await repo.update_indexing_status(
             doc.id, 
-            DocumentStatus.ACTIVE,
-            chunks_count=chunk_count,
+            DocumentStatus.INDEXING,
+            chunks_count=0,
             token_count=token_count
+        )
+        
+        # Dispatch background task for Qdrant indexing
+        background_tasks.add_task(
+            index_document_background_task,
+            doc_id=doc.id,
+            chunks=chunks,
+            document_name=safe_filename,
+            language=language,
+            app=request.app
         )
         
         logger.info(
@@ -355,7 +368,7 @@ async def upload_knowledge_document(
         "document_id": str(doc.id),
         "filename": safe_filename,
         "title": doc.title,
-        "status": "active",
+        "status": "indexing",
         "chunks_count": chunk_count,
         "token_count": token_count,
         "created_at": datetime.utcnow().isoformat(),
