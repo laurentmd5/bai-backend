@@ -821,40 +821,40 @@ class ChatService:
                         response_metadata["rag_confidence"] = confidence
                         response_metadata["sources_count"] = len(sources)
                     
-                except LowConfidenceException as e:
-                    logger.info(
-                        "low_confidence_fallback",
-                        session_id=actual_session_id,
-                        score=e.details.get("score", 0),
-                        threshold=e.details.get("threshold", 0.7),
-                    )
-                    response_metadata["fallback_triggered"] = True
-                    
-                    fallback_message = self.FALLBACK_RESPONSES.get(language, self.FALLBACK_RESPONSES["en"])
-                    
-                    # Update session
-                    await session_repo.touch_session(session.id)
-                    
-                    # Store conversation
-                    await conv_repo.create_conversation(
-                        session_id=session.id,
-                        user_message=sanitized_message,
-                        bot_response=fallback_message,
-                        channel=channel,
-                        confidence=e.details.get("score", 0.0),
-                        cache_hit=False,
-                        fallback_triggered=True,
-                    )
-                    
-                    return {
-                        "message": fallback_message,
-                        "session_id": actual_session_id,
-                        "sources": [],
-                        "confidence": e.details.get("score", 0.0),
-                        "cache_hit": False,
-                        "fallback_triggered": True,
-                        "timestamp": datetime.utcnow().isoformat(),
-                    }
+                    except LowConfidenceException as e:
+                        logger.info(
+                            "low_confidence_fallback",
+                            session_id=actual_session_id,
+                            score=e.details.get("score", 0),
+                            threshold=e.details.get("threshold", 0.7),
+                        )
+                        response_metadata["fallback_triggered"] = True
+                        
+                        fallback_message = self.FALLBACK_RESPONSES.get(language, self.FALLBACK_RESPONSES["en"])
+                        
+                        # Update session
+                        await session_repo.touch_session(session.id)
+                        
+                        # Store conversation
+                        await conv_repo.create_conversation(
+                            session_id=session.id,
+                            user_message=sanitized_message,
+                            bot_response=fallback_message,
+                            channel=channel,
+                            confidence=e.details.get("score", 0.0),
+                            cache_hit=False,
+                            fallback_triggered=True,
+                        )
+                        
+                        return {
+                            "message": fallback_message,
+                            "session_id": actual_session_id,
+                            "sources": [],
+                            "confidence": e.details.get("score", 0.0),
+                            "cache_hit": False,
+                            "fallback_triggered": True,
+                            "timestamp": datetime.utcnow().isoformat(),
+                        }
                 
                 # ===============================================================
                 # STEP 6.5: Relevance Filtering
