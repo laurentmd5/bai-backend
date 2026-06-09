@@ -1108,6 +1108,36 @@ class AdminService:
     # AUDIT LOGS
     # =========================================================================
     
+    @staticmethod
+    async def log_audit_static(
+        session: AsyncSession,
+        admin_id: UUID,
+        action: str,
+        details: Optional[Dict[str, Any]] = None,
+        ip_address: Optional[str] = None
+    ) -> None:
+        from app.repositories.admin_repository import AdminRepository
+        from app.models.domain.admin import AuditAction
+        
+        # Determine Enum value safely
+        action_enum = None
+        for item in AuditAction:
+            if item.value == action:
+                action_enum = item
+                break
+                
+        if not action_enum:
+            return
+            
+        repo = AdminRepository(session)
+        await repo.log_audit(
+            admin_id=admin_id,
+            action=action_enum,
+            details=details,
+            ip_address=ip_address
+        )
+
+    
     async def get_audit_logs(
         self,
         admin_id: Optional[UUID] = None,

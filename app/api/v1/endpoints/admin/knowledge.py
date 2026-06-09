@@ -22,6 +22,7 @@ from app.core.database import get_session
 from app.core.logging import get_logger
 from app.models.domain.admin import AuditAction
 from app.models.response.knowledge import KnowledgeDocumentResponse
+from app.models.domain.knowledge import DocumentStatus
 from app.repositories.knowledge_repository import KnowledgeRepository
 from app.services.admin_service import AdminService
 from app.services.admin.document_parser import (
@@ -310,12 +311,15 @@ async def upload_knowledge_document(
             language=language,
             uploaded_by=current_admin["id"],
             is_public=is_public,
-            chunks_count=chunk_count,
-            token_count=token_count,
         )
         
         # Set status to ACTIVE immediately (no Qdrant blocking in Phase 1)
-        await repo.update_status(doc.id, "active")
+        await repo.update_indexing_status(
+            doc.id, 
+            DocumentStatus.ACTIVE,
+            chunks_count=chunk_count,
+            token_count=token_count
+        )
         
         logger.info(
             "document_stored",
