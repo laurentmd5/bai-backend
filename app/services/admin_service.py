@@ -1118,7 +1118,7 @@ class AdminService:
         details: Optional[Dict[str, Any]] = None,
         ip_address: Optional[str] = None
     ) -> None:
-        from app.repositories.admin_repository import AdminRepository
+        from app.repositories.admin_repository import AuditLogRepository
         from app.models.domain.admin import AuditAction
         
         # Determine Enum value safely
@@ -1131,8 +1131,8 @@ class AdminService:
         if not action_enum:
             return
             
-        repo = AdminRepository(session)
-        await repo.log_audit(
+        audit_repo = AuditLogRepository(session)
+        await audit_repo.create_log(
             admin_id=admin_id,
             action=action_enum,
             details=details,

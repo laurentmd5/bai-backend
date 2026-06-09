@@ -47,7 +47,7 @@ ALLOWED_CONTENT_TYPES = {
 # Allowed file extensions
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt", ".md"}
 
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 
 @router.get("", response_model=Dict[str, Any])
