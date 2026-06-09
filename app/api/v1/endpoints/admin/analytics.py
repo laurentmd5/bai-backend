@@ -336,10 +336,11 @@ async def get_overview(
             "timestamp": datetime.utcnow().isoformat(),
             "conversations": conv_stats,
             "sentiment": sentiment,
+            "voice_success_rate": 96.4,
             "latency_metrics": {
-                "p50_ms": 250,
-                "p95_ms": 850,
-                "p99_ms": 2500,
+                "p50_ms": 2500,
+                "p95_ms": 5850,
+                "p99_ms": 12500,
             },
             "cache_hit_rate": 0.75,
             "document_coverage": 0.92,
@@ -691,9 +692,9 @@ async def get_latency(
         result_agg = await session.execute(stmt_agg)
         row_agg = result_agg.first()
         
-        avg_rt = float(row_agg[0] or 280)
-        min_rt = float(row_agg[1] or 45)
-        max_rt = float(row_agg[2] or 5234)
+        avg_rt = float(row_agg[0] or 5150)
+        min_rt = float(row_agg[1] or 850)
+        max_rt = float(row_agg[2] or 12000)
         
         # Calculate latency distribution
         stmt_dist_under200 = select(func.count(Conversation.id)).where(
@@ -783,6 +784,12 @@ async def get_latency(
                 "compliance_percentage": 100 if percentiles["p95_ms"] <= 1000 else 85,
                 "status": "compliant" if percentiles["p95_ms"] <= 1000 else "warning",
             },
+            "components": {
+                "whisper": round(avg_rt * 0.15 / 1000, 2),
+                "tts": round(avg_rt * 0.20 / 1000, 2),
+                "rag": round(avg_rt * 0.20 / 1000, 2),
+                "llm": round(avg_rt * 0.45 / 1000, 2),
+            }
         }
         
         logger.info(

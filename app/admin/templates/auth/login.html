@@ -184,7 +184,11 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
         localStorage.setItem('access_token',  data.tokens.access_token);
         localStorage.setItem('refresh_token', data.tokens.refresh_token);
         localStorage.setItem('csrf_token',    data.tokens.csrf_token);
+        
+        // CSRF Double Submit Pattern: Save to cookie as well so backend can validate
         document.cookie = `access_token=${data.tokens.access_token}; path=/; max-age=900; SameSite=Strict`;
+        document.cookie = `csrf_token=${data.tokens.csrf_token}; path=/; SameSite=Strict`;
+
         window.location.href = '/admin/dashboard';
       }
     } else if (res.status === 429) {

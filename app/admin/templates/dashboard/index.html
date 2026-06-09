@@ -129,11 +129,11 @@ async function loadKPIs() {
   const r = await fetch('/api/v1/admin/analytics/overview?period=7d', { headers });
   if (!r.ok) return;
   const d = await r.json();
-  document.getElementById('kpi-messages').textContent = d.total_conversations ?? '—';
+  document.getElementById('kpi-messages').textContent = d.conversations?.total_conversations ?? '—';
   document.getElementById('kpi-voice').textContent =
     d.voice_success_rate != null ? d.voice_success_rate.toFixed(1) + '%' : '—%';
   document.getElementById('kpi-latency').textContent =
-    d.avg_response_time_ms != null ? (d.avg_response_time_ms / 1000).toFixed(2) + 's' : '—s';
+    d.latency_metrics?.p95_ms != null ? (d.latency_metrics.p95_ms / 1000).toFixed(2) + 's' : '—s';
 }
 
 async function loadDocCount() {
@@ -151,8 +151,8 @@ async function loadTrendChart(period = '7d') {
   if (r.ok) {
     const d = await r.json();
     (d.data_points || []).forEach(p => {
-      labels.push(p.date ? p.date.substring(5) : p.label);
-      values.push(p.total_messages || p.count || 0);
+      labels.push(p.date ? p.date.substring(5) : (p.timestamp ? p.timestamp.substring(5, 10) : p.label));
+      values.push(p.messages || p.conversations || p.count || 0);
     });
   }
   const ctx = document.getElementById('trend-chart').getContext('2d');

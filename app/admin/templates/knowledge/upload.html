@@ -225,6 +225,8 @@ document.getElementById('upload-form').addEventListener('submit', e => {
 
 // Inline getCsrfToken (utils.js may not be loaded on auth pages)
 function getCsrfToken() {
+  const local = localStorage.getItem('csrf_token');
+  if (local) return local;
   const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : null;
 }
