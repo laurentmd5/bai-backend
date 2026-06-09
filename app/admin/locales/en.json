@@ -95,5 +95,41 @@
       "deactivate": "Deactivate",
       "success_deactivate": "Administrator deactivated"
     }
+  },
+  "knowledge": {
+    "page_title": "Knowledge Base — BARROW.AI",
+    "breadcrumb": "Documents",
+    "card_title": "Indexed Documents",
+    "loading": "Loading...",
+    "search_placeholder": "Search for a document...",
+    "lang_all": "All languages",
+    "lang_fr": "French",
+    "lang_en": "English",
+    "status_all": "All statuses",
+    "status_active": "Active",
+    "status_inactive": "Inactive",
+    "btn_upload": "Upload",
+    "th_document": "Document",
+    "th_status": "Status",
+    "th_language": "Language",
+    "th_uploaded_by": "Uploaded by",
+    "th_date": "Date",
+    "th_actions": "Actions",
+    "modal_title": "Delete document",
+    "modal_body": "Delete",
+    "modal_warning": "? This action is irreversible and will delete associated embeddings.",
+    "btn_cancel": "Cancel",
+    "btn_delete": "Delete",
+    "js": {
+      "documents": "document(s)",
+      "no_docs": "No document found",
+      "untitled": "Untitled",
+      "active": "Active",
+      "inactive": "Inactive",
+      "view": "View",
+      "delete": "Delete",
+      "this_doc": "this document",
+      "deleted": "Document deleted"
+    }
   }
 }

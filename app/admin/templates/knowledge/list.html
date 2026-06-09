@@ -1,34 +1,34 @@
 {% extends "base.html" %}
-{% block title %}Base de connaissances — BARROW.AI{% endblock %}
-{% block page_title %}Base de connaissances{% endblock %}
+{% block title %}{{ t['knowledge']['page_title'] }}{% endblock %}
+{% block page_title %}{{ t['base']['knowledge_base'] }}{% endblock %}
 {% block breadcrumb %}
-  <span class="sep">/</span><span>Documents</span>
+  <span class="sep">/</span><span>{{ t['knowledge']['breadcrumb'] }}</span>
 {% endblock %}
 
 {% block content %}
 <div class="card">
   <div class="card-header">
     <div>
-      <div class="card-title">Documents indexés</div>
-      <div class="card-subtitle" id="docs-count">Chargement…</div>
+      <div class="card-title">{{ t['knowledge']['card_title'] }}</div>
+      <div class="card-subtitle" id="docs-count">{{ t['knowledge']['loading'] }}</div>
     </div>
     <div class="search-bar">
       <div class="search-input-wrap">
         <i class="fas fa-search"></i>
-        <input type="text" id="search-input" placeholder="Rechercher un document…" autocomplete="off">
+        <input type="text" id="search-input" placeholder="{{ t['knowledge']['search_placeholder'] }}" autocomplete="off">
       </div>
       <select id="lang-filter" class="form-control" style="width:auto;min-width:120px">
-        <option value="">Toutes les langues</option>
-        <option value="fr">Français</option>
-        <option value="en">English</option>
+        <option value="">{{ t['knowledge']['lang_all'] }}</option>
+        <option value="fr">{{ t['knowledge']['lang_fr'] }}</option>
+        <option value="en">{{ t['knowledge']['lang_en'] }}</option>
       </select>
       <select id="status-filter" class="form-control" style="width:auto;min-width:110px">
-        <option value="">Tous les statuts</option>
-        <option value="true">Actifs</option>
-        <option value="false">Inactifs</option>
+        <option value="">{{ t['knowledge']['status_all'] }}</option>
+        <option value="active">{{ t['knowledge']['status_active'] }}</option>
+        <option value="inactive">{{ t['knowledge']['status_inactive'] }}</option>
       </select>
       <a href="/admin/knowledge/upload" class="btn btn-primary btn-sm">
-        <i class="fas fa-upload"></i> Upload
+        <i class="fas fa-upload"></i> {{ t['knowledge']['btn_upload'] }}
       </a>
     </div>
   </div>
@@ -37,12 +37,12 @@
     <table class="data-table">
       <thead>
         <tr>
-          <th>Document</th>
-          <th>Statut</th>
-          <th>Langue</th>
-          <th>Uploadé par</th>
-          <th>Date</th>
-          <th class="col-actions">Actions</th>
+          <th>{{ t['knowledge']['th_document'] }}</th>
+          <th>{{ t['knowledge']['th_status'] }}</th>
+          <th>{{ t['knowledge']['th_language'] }}</th>
+          <th>{{ t['knowledge']['th_uploaded_by'] }}</th>
+          <th>{{ t['knowledge']['th_date'] }}</th>
+          <th class="col-actions">{{ t['knowledge']['th_actions'] }}</th>
         </tr>
       </thead>
       <tbody id="docs-tbody"></tbody>
@@ -55,17 +55,17 @@
 <div class="modal-overlay hidden" id="delete-modal">
   <div class="modal">
     <div class="modal-header">
-      <span class="modal-title"><i class="fas fa-trash" style="color:var(--danger);margin-right:.5rem"></i>Supprimer le document</span>
+      <span class="modal-title"><i class="fas fa-trash" style="color:var(--danger);margin-right:.5rem"></i>{{ t['knowledge']['modal_title'] }}</span>
       <button class="modal-close" onclick="closeDeleteModal()"><i class="fas fa-times"></i></button>
     </div>
     <div class="modal-body">
       <p style="font-size:.9rem;color:var(--text-secondary)">
-        Supprimer <strong id="delete-doc-name"></strong> ? Cette action est irréversible et supprimera les embeddings associés.
+        {{ t['knowledge']['modal_body'] }} <strong id="delete-doc-name"></strong>{{ t['knowledge']['modal_warning'] }}
       </p>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeDeleteModal()">Annuler</button>
-      <button class="btn btn-danger" id="confirm-delete-btn"><i class="fas fa-trash"></i> Supprimer</button>
+      <button class="btn btn-secondary" onclick="closeDeleteModal()">{{ t['knowledge']['btn_cancel'] }}</button>
+      <button class="btn btn-danger" id="confirm-delete-btn"><i class="fas fa-trash"></i> {{ t['knowledge']['btn_delete'] }}</button>
     </div>
   </div>
 </div>
@@ -96,18 +96,22 @@ async function loadDocuments(page = 0) {
   const params = new URLSearchParams({ limit: PAGE_LIMIT, offset: page * PAGE_LIMIT });
   if (searchQuery)  params.set('search', searchQuery);
   if (langFilter)   params.set('language', langFilter);
-  if (statusFilter) params.set('is_active', statusFilter);
+  if (statusFilter) {
+    if (statusFilter === 'active') params.set('status', 'active');
+    else if (statusFilter === 'inactive') params.set('status', 'error'); // or something to filter out if not active, wait knowledge.py allows 'active' 'pending' 'error'. Let's just pass the statusFilter directly as 'status' parameter since we changed the value to 'active' or 'pending' etc.
+    params.set('status', statusFilter);
+  }
 
   const data = await apiJSON(`/knowledge?${params}`);
   if (!data) return;
 
   document.getElementById('docs-count').textContent =
-    `${data.total} document${data.total !== 1 ? 's' : ''}`;
+    `${data.total} {{ t['knowledge']['js']['documents'] }}`;
 
   if (!data.documents || !data.documents.length) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">
       <i class="fas fa-folder-open"></i>
-      <p>Aucun document trouvé</p>
+      <p>{{ t['knowledge']['js']['no_docs'] }}</p>
     </div></td></tr>`;
     document.getElementById('docs-pagination').innerHTML = '';
     return;
@@ -120,22 +124,22 @@ async function loadDocuments(page = 0) {
           <i class="fas ${getFileIcon(d.title)}" style="color:var(--primary);font-size:.9rem"></i>
         </div>
         <div>
-          <div style="font-weight:600;font-size:.875rem">${escapeHtml(d.title||'Sans titre')}</div>
+          <div style="font-weight:600;font-size:.875rem">${escapeHtml(d.title||'{{ t["knowledge"]["js"]["untitled"] }}')}</div>
           <div class="text-xs text-muted">${escapeHtml((d.description||'').substring(0,60))}${(d.description||'').length>60?'…':''}</div>
         </div>
       </div>
     </td>
-    <td>${d.is_active
-      ? '<span class="badge badge-success"><span class="badge-dot"></span>Actif</span>'
-      : '<span class="badge badge-warning"><span class="badge-dot"></span>Inactif</span>'}</td>
+    <td>${d.status === 'active' || d.status === 'indexing'
+      ? '<span class="badge badge-success"><span class="badge-dot"></span>{{ t["knowledge"]["js"]["active"] }}</span>'
+      : '<span class="badge badge-warning"><span class="badge-dot"></span>{{ t["knowledge"]["js"]["inactive"] }}</span>'}</td>
     <td><span class="badge badge-neutral">${(d.language||'en').toUpperCase()}</span></td>
     <td class="text-sm text-muted">${escapeHtml(d.uploaded_by||'—')}</td>
     <td class="text-sm text-muted">${formatDateShort(d.created_at)}</td>
     <td class="col-actions">
-      <button class="action-btn action-view" title="Voir" onclick="viewDoc('${d.id}')">
+      <button class="action-btn action-view" title="{{ t['knowledge']['js']['view'] }}" onclick="viewDoc('${d.id}')">
         <i class="fas fa-eye"></i>
       </button>
-      <button class="action-btn action-delete" title="Supprimer" onclick="openDeleteModal('${d.id}','${escapeHtml(d.title||'ce document')}')">
+      <button class="action-btn action-delete" title="{{ t['knowledge']['js']['delete'] }}" onclick="openDeleteModal('${d.id}','${escapeHtml(d.title||'{{ t["knowledge"]["js"]["this_doc"] }}')}')">
         <i class="fas fa-trash"></i>
       </button>
     </td>
@@ -164,7 +168,7 @@ document.getElementById('confirm-delete-btn').addEventListener('click', async ()
   if (!pendingDeleteId) return;
   const data = await apiJSON(`/knowledge/${pendingDeleteId}`, { method: 'DELETE' });
   if (data !== null) {
-    showToast('Document supprimé', 'success');
+    showToast('{{ t["knowledge"]["js"]["deleted"] }}', 'success');
     closeDeleteModal();
     loadDocuments(currentPage);
   }

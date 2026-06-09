@@ -125,7 +125,7 @@ async def list_knowledge_documents(
                 "status": doc.status,
                 "language": doc.language,
                 "uploaded_by": str(doc.uploaded_by) if doc.uploaded_by else None,
-                "created_at": doc.created_at.isoformat(),
+                "created_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
                 "indexed_at": doc.indexed_at.isoformat() if doc.indexed_at else None,
                 "chunks_count": doc.chunks_count or 0,
             }
