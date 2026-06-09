@@ -57,7 +57,7 @@ class ChatService:
     
     # Special intents that bypass RAG+LLM pipeline
     SPECIAL_INTENTS = {
-        "greeting": ["hello", "hi", "hey", "bonjour", "salut", "salaam", "salaam aleikum", "nna tang"],
+        "greeting": ["hello", "hi", "hey", "bonjour", "salut", "salaam", "salaam aleikum", "nna tang", "nanga def", "nanga dëf"],
         "help": ["help", "aide", "menu", "what can you do", "capabilities"],
         "thanks": ["thank", "merci", "thanks", "thank you", "je vous remercie"],
         "stop": ["stop", "unsubscribe", "désabonner", "opt out", "opt-out"],
@@ -98,6 +98,17 @@ class ChatService:
             "• NPP la feeroolu 2027-2031\n"
             "• Adireesu nimberoolu ani konekitiviti\n\n"
             "M be i la jaabiroo la?\n\n"
+            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
+        ),
+        "wolof": (
+            "Nanga dëf! Dalal ak jàmm ci AskBarrow.ai — sa barabu xibaar ci mbiri "
+            "liggéeyi President Adama Barrow ak programi NPP.\n\n"
+            "Mën nga ma laaj ci mbir yii:\n"
+            "• Nataal ci sa gox\n"
+            "• Programi nguur gi (Digital Transformation, Infrastructure, Ndaw ñi)\n"
+            "• Yéeney NPP ngir 2027-2031\n"
+            "• Digital addressing ak jokkoo\n\n"
+            "Naka laa la mën a jappale tey?\n\n"
             "Ask. Know. Decide. - One Gambia. One People. One Barrow."
         ),
     }

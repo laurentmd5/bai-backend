@@ -267,7 +267,13 @@ ANSWER:"""
         
         context_text = context if context else "No specific context available."
         
-        return base_prompt.replace("{context}", context_text).replace("{question}", prompt)
+        full_prompt = base_prompt.replace("{context}", context_text).replace("{question}", prompt)
+        
+        # If the base_prompt didn't have {question}, the user prompt would be lost. Append it.
+        if prompt not in full_prompt and "{question}" not in base_prompt:
+            full_prompt = f"{full_prompt}\n\nRaw User Input: {prompt}"
+            
+        return full_prompt
     
     async def generate(
         self,
