@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Connexion — BARROW.AI Admin</title>
+  <title>{{ t.login.title }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -17,7 +17,7 @@
     <div class="login-header">
       <div class="login-logo"><i class="fas fa-robot"></i></div>
       <div class="login-title">BARROW.AI</div>
-      <div class="login-subtitle">Espace d'administration sécurisé</div>
+      <div class="login-subtitle">{{ t.login.subtitle }}</div>
     </div>
 
     <!-- Body -->
@@ -29,22 +29,22 @@
 
       <form id="login-form" novalidate>
         <div class="form-group">
-          <label class="form-label" for="email">Adresse email</label>
+          <label class="form-label" for="email">{{ t.login.email_label }}</label>
           <div class="input-group">
             <i class="input-icon fas fa-envelope"></i>
             <input class="form-control" type="email" id="email" name="email"
-              placeholder="admin@exemple.com" required autocomplete="email">
+              placeholder="{{ t.login.email_placeholder }}" required autocomplete="email">
           </div>
         </div>
 
         <div class="form-group">
           <label class="form-label" for="password">
-            Mot de passe
+            {{ t.login.password_label }}
           </label>
           <div class="input-group">
             <i class="input-icon fas fa-lock"></i>
             <input class="form-control" type="password" id="password" name="password"
-              placeholder="••••••••" required autocomplete="current-password">
+              placeholder="{{ t.login.password_placeholder }}" required autocomplete="current-password">
             <i class="input-icon-right fas fa-eye" id="toggle-pw" style="cursor:pointer"></i>
           </div>
         </div>
@@ -52,7 +52,7 @@
         <!-- Attempt dots (shown after 1st failure) -->
         <div id="attempt-section" class="hidden">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.25rem">
-            <span style="font-size:.75rem;color:var(--text-muted)">Tentatives restantes</span>
+            <span style="font-size:.75rem;color:var(--text-muted)">{{ t.login.attempts_remaining }}</span>
             <span id="attempts-remaining" style="font-size:.75rem;font-weight:700;color:var(--danger)"></span>
           </div>
           <div class="attempt-dots" id="attempt-dots"></div>
@@ -61,18 +61,24 @@
         <!-- Lockout bar -->
         <div id="lockout-bar" class="lockout-bar hidden">
           <i class="fas fa-clock"></i>
-          <span>Compte temporairement verrouillé. Réessayez dans <strong id="lockout-timer"></strong>.</span>
+          <span>{{ t.login.lockout_msg }} <strong id="lockout-timer"></strong>.</span>
         </div>
 
         <button type="submit" class="btn btn-primary w-full" id="submit-btn"
           style="margin-top:1.5rem;padding:.75rem;font-size:.9375rem">
-          <i class="fas fa-sign-in-alt"></i> Se connecter
+          <i class="fas fa-sign-in-alt"></i> {{ t.login.login_btn }}
         </button>
       </form>
     </div>
 
     <div class="login-footer">
-      Accès réservé aux administrateurs autorisés &nbsp;·&nbsp; BARROW.AI © 2025
+      {{ t.login.footer_msg }} &nbsp;·&nbsp; BARROW.AI © 2025
+    </div>
+<!-- Language Switcher in Login -->
+    <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
+      <a href="/admin/set-lang?lang=en" style="text-decoration: none; color: {% if lang == 'en' %}var(--primary){% else %}var(--text-muted){% endif %}; font-weight: {% if lang == 'en' %}600{% else %}400{% endif %};">EN</a>
+      <span style="color: var(--border); margin: 0 0.5rem;">|</span>
+      <a href="/admin/set-lang?lang=fr" style="text-decoration: none; color: {% if lang == 'fr' %}var(--primary){% else %}var(--text-muted){% endif %}; font-weight: {% if lang == 'fr' %}600{% else %}400{% endif %};">FR</a>
     </div>
   </div>
 </div>
@@ -154,7 +160,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
   const btn = document.getElementById('submit-btn');
   const origText = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connexion…';
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> {{ t.login.js.connecting }}';
 
   const email    = document.getElementById('email').value.trim();
   const password = document.getElementById('password').value;
@@ -183,13 +189,13 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
       }
     } else if (res.status === 429) {
       const retryAfter = parseInt(res.headers.get('Retry-After') || data.retry_after || '900');
-      showAlert(`Trop de tentatives échouées. Compte verrouillé.`);
+      showAlert(`{{ t.login.js.too_many_attempts }}`);
       startLockout(retryAfter);
     } else {
       failedAttempts = Math.min(failedAttempts + 1, MAX_ATTEMPTS);
       updateAttemptDots();
-      const msg = data.detail || 'Email ou mot de passe incorrect';
-      showAlert(typeof msg === 'string' ? msg : 'Identifiants invalides');
+      const msg = data.detail || '{{ t.login.js.invalid_credentials }}';
+      showAlert(typeof msg === 'string' ? msg : '{{ t.login.js.invalid_credentials }}');
       btn.disabled = false;
       btn.innerHTML = origText;
       // Shake animation
@@ -199,7 +205,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
       ], { duration: 300 });
     }
   } catch (_) {
-    showAlert('Erreur réseau — vérifiez votre connexion');
+    showAlert('{{ t.login.js.network_error }}');
     btn.disabled = false;
     btn.innerHTML = origText;
   }

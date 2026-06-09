@@ -39,6 +39,8 @@ async def create_admin(email: str, full_name: str, role: str, password: str = No
             role=AdminRole(role),
         )
         
+        await session.commit()
+        
         logger.info(f"Admin created: {admin.email}")
         print(f"Admin created: {email} / {password}")
 

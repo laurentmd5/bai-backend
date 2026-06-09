@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Tableau de bord — BARROW.AI{% endblock %}
-{% block page_title %}Tableau de bord{% endblock %}
+{% block title %}{{ t.dashboard.page_title }}{% endblock %}
+{% block page_title %}{{ t.dashboard.header_title }}{% endblock %}
 
 {% block content %}
 <!-- KPIs -->
@@ -8,28 +8,28 @@
   <div class="stat-card">
     <div class="stat-icon green"><i class="fas fa-comments"></i></div>
     <div>
-      <div class="stat-label">Conversations (7j)</div>
+      <div class="stat-label">{{ t.dashboard.kpi_conversations }}</div>
       <div class="stat-value" id="kpi-messages">—</div>
     </div>
   </div>
   <div class="stat-card">
     <div class="stat-icon blue"><i class="fas fa-microphone"></i></div>
     <div>
-      <div class="stat-label">Taux vocal réussi</div>
+      <div class="stat-label">{{ t.dashboard.kpi_voice }}</div>
       <div class="stat-value" id="kpi-voice">—%</div>
     </div>
   </div>
   <div class="stat-card">
     <div class="stat-icon amber"><i class="fas fa-database"></i></div>
     <div>
-      <div class="stat-label">Documents indexés</div>
+      <div class="stat-label">{{ t.dashboard.kpi_docs }}</div>
       <div class="stat-value" id="kpi-docs">—</div>
     </div>
   </div>
   <div class="stat-card">
     <div class="stat-icon purple"><i class="fas fa-tachometer-alt"></i></div>
     <div>
-      <div class="stat-label">Latence p95</div>
+      <div class="stat-label">{{ t.dashboard.kpi_latency }}</div>
       <div class="stat-value" id="kpi-latency">—s</div>
     </div>
   </div>
@@ -39,10 +39,10 @@
 <div class="grid-2" style="margin-bottom:1.5rem">
   <div class="card">
     <div class="card-header">
-      <div class="card-title">Messages par jour</div>
+      <div class="card-title">{{ t.dashboard.chart_messages_title }}</div>
       <select id="trend-period" class="form-control" style="width:auto;font-size:.8rem;padding:.3rem .6rem">
-        <option value="7d">7 jours</option>
-        <option value="30d">30 jours</option>
+        <option value="7d">{{ t.dashboard.chart_7d }}</option>
+        <option value="30d">{{ t.dashboard.chart_30d }}</option>
       </select>
     </div>
     <div class="card-body" style="padding-top:.5rem">
@@ -51,7 +51,7 @@
   </div>
   <div class="card">
     <div class="card-header">
-      <div class="card-title">Latence par composant</div>
+      <div class="card-title">{{ t.dashboard.chart_latency_title }}</div>
     </div>
     <div class="card-body" style="padding-top:.5rem">
       <canvas id="latency-chart" height="180"></canvas>
@@ -63,16 +63,16 @@
 <div class="grid-2">
   <div class="card">
     <div class="card-header">
-      <div class="card-title">Conversations récentes</div>
-      <a href="/admin/conversations" class="btn btn-ghost btn-sm" style="font-size:.8rem">Voir tout</a>
+      <div class="card-title">{{ t.dashboard.recent_conv_title }}</div>
+      <a href="/admin/conversations" class="btn btn-ghost btn-sm" style="font-size:.8rem">{{ t.dashboard.see_all }}</a>
     </div>
     <div class="table-wrap">
       <table class="data-table">
         <thead>
           <tr>
-            <th>Message</th>
-            <th>Confiance</th>
-            <th>Date</th>
+            <th>{{ t.dashboard.th_message }}</th>
+            <th>{{ t.dashboard.th_confidence }}</th>
+            <th>{{ t.dashboard.th_date }}</th>
           </tr>
         </thead>
         <tbody id="recent-convs">
@@ -84,32 +84,32 @@
 
   <div class="card">
     <div class="card-header">
-      <div class="card-title">Accès rapide</div>
+      <div class="card-title">{{ t.dashboard.quick_links_title }}</div>
     </div>
     <div class="card-body">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
         <a href="/admin/knowledge/upload" class="btn btn-outline" style="flex-direction:column;gap:.35rem;padding:1rem;height:auto">
           <i class="fas fa-upload" style="font-size:1.2rem"></i>
-          <span>Importer document</span>
+          <span>{{ t.dashboard.ql_import }}</span>
         </a>
         <a href="/admin/users/create" class="btn btn-outline" style="flex-direction:column;gap:.35rem;padding:1rem;height:auto">
           <i class="fas fa-user-plus" style="font-size:1.2rem"></i>
-          <span>Ajouter admin</span>
+          <span>{{ t.dashboard.ql_add_admin }}</span>
         </a>
         <a href="/admin/audit" class="btn btn-outline" style="flex-direction:column;gap:.35rem;padding:1rem;height:auto">
           <i class="fas fa-shield-alt" style="font-size:1.2rem"></i>
-          <span>Audit logs</span>
+          <span>{{ t.dashboard.ql_audit }}</span>
         </a>
         <a href="/admin/conversations" class="btn btn-outline" style="flex-direction:column;gap:.35rem;padding:1rem;height:auto">
           <i class="fas fa-comments" style="font-size:1.2rem"></i>
-          <span>Conversations</span>
+          <span>{{ t.dashboard.ql_conversations }}</span>
         </a>
       </div>
     </div>
 
     <div class="card-header" style="margin-top:.5rem">
-      <div class="card-title">Santé du système</div>
-      <span id="health-badge" class="badge badge-neutral">Vérification…</span>
+      <div class="card-title">{{ t.dashboard.health_title }}</div>
+      <span id="health-badge" class="badge badge-neutral">{{ t.dashboard.js.verifying }}</span>
     </div>
     <div class="card-body" id="health-details" style="font-size:.8125rem;color:var(--text-secondary)">
       —
@@ -257,15 +257,15 @@ async function loadHealth() {
     const d = await r.json();
     const ok = d.status === 'healthy' || d.status === 'ok';
     badge.className = `badge ${ok ? 'badge-success' : 'badge-warning'}`;
-    badge.textContent = ok ? 'Sain' : d.status || 'Dégradé';
+    badge.textContent = ok ? '{{ t.dashboard.js.healthy }}' : d.status || '{{ t.dashboard.js.degraded }}';
     const parts = Object.entries(d.components || {})
       .map(([k,v]) => `<span class="${v==='healthy'?'':'text-muted'}">${k}: ${v}</span>`)
       .join(' &nbsp;·&nbsp; ');
     details.innerHTML = parts || '—';
   } catch {
     badge.className = 'badge badge-danger';
-    badge.textContent = 'Erreur';
-    details.textContent = 'Impossible de joindre le service de santé';
+    badge.textContent = '{{ t.dashboard.js.error }}';
+    details.textContent = '{{ t.dashboard.js.health_error }}';
   }
 }
 

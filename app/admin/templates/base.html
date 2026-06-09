@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="{{ lang }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}BARROW.AI — Administration{% endblock %}</title>
+  <title>{% block title %}{{ t.base.title }}{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -25,30 +25,30 @@
     </div>
 
     <nav class="sidebar-nav">
-      <div class="nav-section-label">Navigation</div>
+      <div class="nav-section-label">{{ t.base.navigation }}</div>
 
       <a href="/admin/dashboard" class="nav-item" data-path="/admin/dashboard">
         <i class="fas fa-chart-line nav-icon"></i>
-        <span>Tableau de bord</span>
+        <span>{{ t.base.dashboard }}</span>
       </a>
       <a href="/admin/knowledge" class="nav-item" data-path="/admin/knowledge">
         <i class="fas fa-database nav-icon"></i>
-        <span>Base de connaissances</span>
+        <span>{{ t.base.knowledge_base }}</span>
       </a>
       <a href="/admin/users" class="nav-item" data-path="/admin/users">
         <i class="fas fa-user-shield nav-icon"></i>
-        <span>Administrateurs</span>
+        <span>{{ t.base.administrators }}</span>
       </a>
       <a href="/admin/conversations" class="nav-item" data-path="/admin/conversations">
         <i class="fas fa-comments nav-icon"></i>
-        <span>Conversations</span>
+        <span>{{ t.base.conversations }}</span>
       </a>
 
-      <div class="nav-section-label" style="margin-top:.75rem">Sécurité</div>
+      <div class="nav-section-label" style="margin-top:.75rem">{{ t.base.security }}</div>
 
       <a href="/admin/audit" class="nav-item" data-path="/admin/audit">
         <i class="fas fa-shield-alt nav-icon"></i>
-        <span>Audit logs</span>
+        <span>{{ t.base.audit_logs }}</span>
       </a>
     </nav>
 
@@ -60,7 +60,7 @@
         <div class="sidebar-user-name">{{ admin.full_name or admin.email }}</div>
         <div class="sidebar-user-role">{{ admin.role or 'Admin' }}</div>
       </div>
-      <a href="/admin/logout" class="sidebar-logout" title="Déconnexion">
+      <a href="/admin/logout" class="sidebar-logout" title="{{ t.base.logout }}">
         <i class="fas fa-sign-out-alt"></i>
       </a>
     </div>
@@ -77,6 +77,12 @@
       <div class="topbar-breadcrumb">
         <a href="/admin/dashboard"><i class="fas fa-home"></i></a>
         {% block breadcrumb %}{% endblock %}
+      </div>
+      <!-- Language Switcher -->
+      <div class="lang-switcher" style="margin-left: auto; display: flex; gap: 0.5rem; align-items: center;">
+        <a href="/admin/set-lang?lang=en" style="text-decoration: none; color: {% if lang == 'en' %}var(--primary){% else %}var(--text-muted){% endif %}; font-weight: {% if lang == 'en' %}600{% else %}400{% endif %};">EN</a>
+        <span style="color: var(--border);">|</span>
+        <a href="/admin/set-lang?lang=fr" style="text-decoration: none; color: {% if lang == 'fr' %}var(--primary){% else %}var(--text-muted){% endif %}; font-weight: {% if lang == 'fr' %}600{% else %}400{% endif %};">FR</a>
       </div>
     </header>
 
