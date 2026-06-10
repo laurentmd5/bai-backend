@@ -97,6 +97,15 @@ class OolelProvider(ILLMProvider):
             logger.error("oolel_request_error", error=str(e))
             raise LLMException(f"Error communicating with Oolel API: {str(e)}") from e
 
+    async def count_tokens(self, text: str) -> int:
+        """
+        Estimate the number of tokens in a given text.
+        For Oolel via Inference API, we approximate 1 token = 4 characters.
+        """
+        if not text:
+            return 0
+        return len(text) // 4
+
     async def generate_with_retry(
         self,
         prompt: str,
