@@ -9,6 +9,10 @@ for indexing in the vector database and knowledge base.
 import io
 import logging
 from typing import Optional
+import tempfile
+import os
+from pathlib import Path
+from app.core.config import settings
 
 try:
     import pypdf
@@ -23,14 +27,10 @@ except ImportError:
     HAS_DOCX = False
 
 try:
-    from llama_parse import LlamaParse
+    from llama_cloud import AsyncLlamaCloud
     HAS_LLAMAPARSE = True
 except ImportError:
     HAS_LLAMAPARSE = False
-
-import tempfile
-import os
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -121,27 +121,36 @@ async def _parse_pdf(content: bytes) -> str:
 
 
 async def _parse_with_llama(content: bytes, suffix: str) -> str:
-    """Extract text from file using LlamaParse."""
+    """Extract text from file using LlamaCloud."""
     api_key = settings.LLAMA_CLOUD_API_KEY.get_secret_value()
-    parser = LlamaParse(
-        api_key=api_key,
-        result_type="markdown",
-        verbose=True
-    )
+    client = AsyncLlamaCloud(api_key=api_key)
     
-    # LlamaParse requires a file path, so we write the bytes to a temp file
+    # LlamaCloud requires a file path, so we write the bytes to a temp file
     fd, temp_path = tempfile.mkstemp(suffix=suffix)
     try:
         with os.fdopen(fd, 'wb') as f:
             f.write(content)
         
-        # Use async load
-        documents = await parser.aload_data(temp_path)
+        # 1. Upload the file
+        file_info = await client.files.create(
+            file=Path(temp_path), 
+            purpose="parse"
+        )
         
-        if not documents:
-            raise DocumentParsingError(f"No text extracted from {suffix} via LlamaParse")
+        # 2. Parse the document
+        result = await client.parsing.parse(
+            file_id=file_info.id,
+            version="latest",
+            expand=["markdown"]
+        )
+        
+        if not result or not result.markdown or not result.markdown.pages:
+            raise DocumentParsingError(f"No text extracted from {suffix} via LlamaCloud")
             
-        text_parts = [doc.text for doc in documents if hasattr(doc, 'text') and doc.text]
+        text_parts = [page.markdown for page in result.markdown.pages if hasattr(page, 'markdown') and page.markdown]
+        if not text_parts:
+            raise DocumentParsingError(f"No markdown content found via LlamaCloud")
+            
         return "\n\n".join(text_parts)
     finally:
         try:

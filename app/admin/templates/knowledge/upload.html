@@ -12,7 +12,7 @@
     <div class="card-header">
       <div>
         <div class="card-title">{{ t['knowledge']['btn_upload'] }}</div>
-        <div class="card-subtitle">PDF, DOCX, TXT ou Markdown — max 50 Mo</div>
+        <div class="card-subtitle">{{ t['knowledge']['upload_subtitle']|safe }}</div>
       </div>
     </div>
     <div class="card-body">
@@ -20,8 +20,8 @@
       <!-- Drop zone -->
       <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
         <div class="drop-zone-icon"><i class="fas fa-cloud-upload-alt"></i></div>
-        <div class="drop-zone-text">Glissez votre fichier ici ou <strong style="color:var(--primary)">cliquez pour parcourir</strong></div>
-        <div class="drop-zone-hint">PDF · DOCX · TXT · Markdown</div>
+        <div class="drop-zone-text">{{ t['knowledge']['upload_drop_zone']|safe }}</div>
+        <div class="drop-zone-hint">{{ t['knowledge']['upload_drop_hint']|safe }}</div>
       </div>
       <input type="file" id="file-input" name="file" accept=".pdf,.docx,.txt,.md" style="display:none">
 
@@ -41,18 +41,18 @@
 
       <form id="upload-form">
         <div class="form-group">
-          <label class="form-label" for="title">Titre <span style="color:var(--text-muted);font-weight:400">(facultatif, déduit du nom de fichier)</span></label>
-          <input class="form-control" type="text" id="title" name="title" placeholder="Ex : Manuel utilisateur v2.3">
+          <label class="form-label" for="title">{{ t['knowledge']['upload_title_label'] }} <span style="color:var(--text-muted);font-weight:400">{{ t['knowledge']['upload_title_hint'] }}</span></label>
+          <input class="form-control" type="text" id="title" name="title" placeholder="{{ t['knowledge']['upload_title_placeholder'] }}">
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="description">Description</label>
-          <textarea class="form-control" id="description" name="description" rows="3" placeholder="Résumé du contenu…"></textarea>
+          <label class="form-label" for="description">{{ t['knowledge']['upload_desc_label'] }}</label>
+          <textarea class="form-control" id="description" name="description" rows="3" placeholder="{{ t['knowledge']['upload_desc_placeholder'] }}"></textarea>
         </div>
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
           <div class="form-group">
-            <label class="form-label" for="language">Langue</label>
+            <label class="form-label" for="language">{{ t['knowledge']['th_language'] }}</label>
             <select class="form-control" id="language" name="language">
               <option value="fr">{{ t['knowledge']['lang_fr'] }}</option>
               <option value="en">{{ t['knowledge']['lang_en'] }}</option>
@@ -82,10 +82,10 @@
 
         <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:.5rem">
           <a href="/admin/knowledge" class="btn btn-secondary">
-            <i class="fas fa-arrow-left"></i> Retour
+            <i class="fas fa-arrow-left"></i> {{ t['knowledge']['btn_return'] }}
           </a>
           <button type="submit" class="btn btn-primary" id="submit-btn">
-            <i class="fas fa-upload"></i> Importer
+            <i class="fas fa-upload"></i> {{ t['knowledge']['btn_import'] }}
           </button>
         </div>
       </form>
@@ -93,6 +93,8 @@
   </div>
 </div>
 
+{% endblock %}
+{% block extra_js %}
 <script>
 let selectedFile = null;
 

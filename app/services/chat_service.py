@@ -186,6 +186,21 @@ class ChatService:
             "Veuillez visiter www.npp.gm ou contacter le bureau PACE le plus proche.\n\n"
             "Ask. Know. Decide. - One Gambia. One People. One Barrow."
         ),
+        "wolof": (
+            "Dafa amul loolu ci sama xam-xam ci campagne bi. "
+            "Jëkkël www.npp.gm walla dem ci birou PACE bi jeex ci sa àll.\n\n"
+            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
+        ),
+        "mandinka": (
+            "N be fen kang bora i fono la ka ñininka soto. "
+            "Teng www.npp.gm walima ye PACE ofisi kelen kelen di.\n\n"
+            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
+        ),
+        "fular": (
+            "Ngal woodaaki hol ko ndaartaten e ngootaaku am. "
+            "Yah www.npp.gm walla PACE to fetel maa.\n\n"
+            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
+        ),
     }
     
     TECHNICAL_ERROR_RESPONSE = {

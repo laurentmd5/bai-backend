@@ -278,7 +278,7 @@ async def upload_knowledge_document(
         )
         
         # Split into chunks for later indexing
-        chunk_dicts = split_text_into_chunks(text_content, chunk_size=512)
+        chunk_dicts = split_text_into_chunks(text_content, chunk_size=200, overlap=30)
         chunks = [c["content"] for c in chunk_dicts]
         chunk_count = len(chunks)
         

@@ -56,8 +56,24 @@ class QueryTransformer:
                 cleaned_response = cleaned_response[3:]
             if cleaned_response.endswith("```"):
                 cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+            
+            # Extract only the first JSON object to avoid "Extra data" errors
+            # when Gemini returns multiple JSON objects or trailing text
+            brace_count = 0
+            first_json_end = -1
+            for i, char in enumerate(cleaned_response):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        first_json_end = i + 1
+                        break
+            if first_json_end > 0:
+                cleaned_response = cleaned_response[:first_json_end]
                 
-            result = json.loads(cleaned_response.strip())
+            result = json.loads(cleaned_response)
             
             logger.info("query_transformed", 
                         original=raw_query, 

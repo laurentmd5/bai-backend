@@ -301,14 +301,14 @@ class Settings(BaseSettings):
     )
     
     QDRANT_SIMILARITY_THRESHOLD: float = Field(
-        default=0.70,
+        default=0.40,
         ge=0.0,
         le=1.0,
         description="Minimum similarity score for RAG retrieval"
     )
     
     QDRANT_TOP_K: int = Field(
-        default=5,
+        default=10,
         ge=1,
         le=20,
         description="Number of chunks to retrieve per query"
