@@ -8,13 +8,18 @@ import unicodedata
 import difflib
 from typing import Tuple, Optional, List, Dict, Any
 from datetime import datetime
+from pydantic import BaseModel, ConfigDict
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.services.nlp.oolel_corrector import oolel_corrector
 from app.core.exceptions import (
     ValidationException,
     HostileContentException,
     PromptInjectionException,
+    ValidationError, 
+    SecurityException, 
+    ErrorCode
 )
 from app.core.security import (
     detect_sql_injection,
@@ -155,7 +160,7 @@ class InputValidator:
             "new instructions",
         ]
     
-    def normalize_user_input(self, message: str, language: str = "en") -> str:
+    async def normalize_user_input(self, message: str, language: str = "en") -> str:
         """
         Normalize user input for low-literacy users.
         
@@ -165,6 +170,7 @@ class InputValidator:
         - Common spelling corrections
         - Multiple punctuation removal
         - Whitespace normalization
+        - Oolel Corrector for Wolof informal spelling
         """
         if not message or len(message.strip()) < 2:
             # Very short messages - return a help prompt
@@ -174,6 +180,10 @@ class InputValidator:
             }
             return help_prompts.get(language, help_prompts["en"])
         
+        # Apply Oolel-Corrector if language is Wolof (or unknown, acting as a pass-through for English)
+        if language in ["wolof", "unknown", ""] and await oolel_corrector.is_available():
+            message = await oolel_corrector.normalize_text(message)
+
         # Convert to lowercase and normalize
         normalized = message.lower().strip()
         
@@ -188,10 +198,9 @@ class InputValidator:
         for acro, expansion in self.LOCAL_ACRONYMS.items():
             normalized = re.sub(r'\b' + re.escape(acro) + r'\b', expansion, normalized)
         
-        # Apply spelling corrections
+        # Apply spelling corrections (word boundaries)
         for wrong, correct in self.SPELL_CORRECTIONS.items():
-            if wrong in normalized:
-                normalized = normalized.replace(wrong, correct)
+            normalized = re.sub(r'\b' + re.escape(wrong) + r'\b', correct, normalized)
         
         # Spell correction using difflib for unknown words
         words = normalized.split()

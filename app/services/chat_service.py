@@ -11,6 +11,9 @@ from datetime import datetime
 
 from app.services.rag_service import RAGService
 from app.services.llm.factory import get_llm_provider
+from app.services.llm.gemini_provider import GeminiProvider
+from app.services.llm.ollama_provider import OllamaProvider
+from app.services.llm.oolel_provider import OolelProvider
 from app.services.llm.query_transformer import QueryTransformer
 from app.services.validation.input_validator import InputValidator
 from app.services.validation.output_validator import OutputValidator
@@ -57,7 +60,7 @@ class ChatService:
     
     # Special intents that bypass RAG+LLM pipeline
     SPECIAL_INTENTS = {
-        "greeting": ["hello", "hi", "hey", "bonjour", "salut", "salaam", "salaam aleikum", "nna tang", "nanga def", "nanga dëf"],
+        "greeting": ["hello", "hi", "hey", "bonjour", "salut", "salaam", "salaam aleikum", "nna tang", "nanga def", "nanga dëf", "naga def", "naga dëf"],
         "help": ["help", "aide", "menu", "what can you do", "capabilities"],
         "thanks": ["thank", "merci", "thanks", "thank you", "je vous remercie"],
         "stop": ["stop", "unsubscribe", "désabonner", "opt out", "opt-out"],
@@ -251,6 +254,7 @@ class ChatService:
         # Services injected at initialization
         self._rag_service = rag_service
         self._llm_provider = llm_provider or get_llm_provider()
+        self._oolel_provider = OolelProvider()
         
         # Initialize query transformer for advanced intelligence
         self._query_transformer = QueryTransformer(self._llm_provider)
@@ -285,7 +289,7 @@ class ChatService:
         # (avoids "lahido" -> "hi", "achievements" -> "hi", etc.)
         greeting_patterns = [
             r'^(hello|hi|hey|bonjour|salut|salaam)[\s,!.?]*$',  # single word
-            r'^(salaam aleikum|nna tang)',                       # start of message
+            r'^(salaam aleikum|nna tang|nanga def|nanga dëf|naga def|naga dëf)',                       # start of message
         ]
         for pattern in greeting_patterns:
             if re.match(pattern, message_lower):
@@ -324,6 +328,13 @@ class ChatService:
             Response string or None if not a special intent
         """
         if intent == "greeting":
+            # Check if keyword indicates specific language
+            if matched_keyword in ["bonjour", "salut"]:
+                return self.GREETING_RESPONSES["fr"]
+            if matched_keyword in ["salaam", "salaam aleikum", "nna tang"]:
+                return self.GREETING_RESPONSES.get("mandinka", self.GREETING_RESPONSES["en"])
+            if matched_keyword in ["nanga def", "nanga dëf", "naga def", "naga dëf"]:
+                return self.GREETING_RESPONSES.get("wolof", self.GREETING_RESPONSES["en"])
             return self.GREETING_RESPONSES.get(language, self.GREETING_RESPONSES["en"])
         
         if intent == "help":
@@ -675,7 +686,7 @@ class ChatService:
                 
                 # Normalize user input for low-literacy users
                 if self._input_validator:
-                    sanitized_message = self._input_validator.normalize_user_input(
+                    sanitized_message = await self._input_validator.normalize_user_input(
                         sanitized_message, language
                     )
                     logger.debug("input_normalized", original=message[:50], normalized=sanitized_message[:50])
@@ -912,16 +923,29 @@ class ChatService:
                 try:
                     llm_start = datetime.utcnow()
                     
-                    # We append a strong instruction to reply in the detected language (e.g. Wolof)
-                    # We do NOT override system_prompt because that deletes the provider's default RAG prompt!
-                    prompt_with_instructions = f"{sanitized_message}\n\n[CRITICAL INSTRUCTION: You MUST generate your final response in the following language: {language}. Ensure it sounds natural and conversational.]"
+                    if language == "wolof":
+                        # For Wolof, we let Gemini do the reasoning in English, then translate with Oolel
+                        gemini_lang = "en"
+                        prompt_with_instructions = f"{sanitized_message}\n\n[CRITICAL INSTRUCTION: You MUST generate your final response in English based strictly on the provided context.]"
+                    else:
+                        gemini_lang = language
+                        prompt_with_instructions = f"{sanitized_message}\n\n[CRITICAL INSTRUCTION: You MUST generate your final response in the following language: {language}. Ensure it sounds natural and conversational.]"
                     
                     generated_response = await self._llm_provider.generate_with_retry(
                         prompt=prompt_with_instructions,
                         context=context,
-                        language=language,
-                        max_retries=2,
+                        language=gemini_lang,
+                        max_retries=4,
                     )
+                    
+                    if language == "wolof" and await self._oolel_provider.is_available():
+                        # Translate the Gemini output to Wolof using Oolel
+                        oolel_sys_prompt = "You are a professional translator. Translate the following text into natural, conversational Wolof as spoken in Gambia and Senegal. Keep it authentic and culturally appropriate."
+                        generated_response = await self._oolel_provider.generate_with_retry(
+                            prompt=generated_response,
+                            system_prompt=oolel_sys_prompt,
+                            max_retries=3
+                        )
                     
                     llm_latency_ms = (datetime.utcnow() - llm_start).total_seconds() * 1000
                     response_metadata["llm_latency_ms"] = llm_latency_ms

@@ -393,6 +393,29 @@ class Settings(BaseSettings):
         return f"http://{self.OLLAMA_HOST}:{self.OLLAMA_PORT}"
     
     # =========================================================================
+    # HUGGING FACE & OOLEL SETTINGS
+    # =========================================================================
+    HF_API_KEY: Optional[SecretStr] = Field(
+        default=None,
+        description="Hugging Face Inference API key"
+    )
+    
+    OOLEL_LLM_ENDPOINT: str = Field(
+        default="https://api-inference.huggingface.co/models/soynade-research/oolel-v0.1-7b",
+        description="Oolel Text LLM Hugging Face Endpoint"
+    )
+    
+    OOLEL_CORRECTOR_ENDPOINT: str = Field(
+        default="https://api-inference.huggingface.co/models/soynade-research/oolel-corrector-1.5b",
+        description="Oolel Corrector Hugging Face Endpoint"
+    )
+    
+    OOLEL_TTS_ENDPOINT: str = Field(
+        default="https://api-inference.huggingface.co/models/soynade-research/oolel-voices",
+        description="Oolel TTS Hugging Face Endpoint"
+    )
+    
+    # =========================================================================
     # SECURITY SETTINGS
     # =========================================================================
     JWT_SECRET: SecretStr = Field(
