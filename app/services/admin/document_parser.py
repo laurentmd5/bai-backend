@@ -24,8 +24,6 @@ except ImportError:
 
 try:
     from llama_parse import LlamaParse
-    import nest_asyncio
-    nest_asyncio.apply()
     HAS_LLAMAPARSE = True
 except ImportError:
     HAS_LLAMAPARSE = False
