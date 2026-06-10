@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Upload document — BARROW.AI{% endblock %}
-{% block page_title %}Ajouter un document{% endblock %}
+{% block title %}{{ t['knowledge']['page_title'] }}{% endblock %}
+{% block page_title %}{{ t['knowledge']['btn_upload'] }}{% endblock %}
 {% block breadcrumb %}
-  <span class="sep">/</span><a href="/admin/knowledge">Base de connaissances</a>
-  <span class="sep">/</span><span>Upload</span>
+  <span class="sep">/</span><a href="/admin/knowledge">{{ t['base']['knowledge_base'] }}</a>
+  <span class="sep">/</span><span>{{ t['knowledge']['btn_upload'] }}</span>
 {% endblock %}
 
 {% block content %}
@@ -11,7 +11,7 @@
   <div class="card">
     <div class="card-header">
       <div>
-        <div class="card-title">Importer un document</div>
+        <div class="card-title">{{ t['knowledge']['btn_upload'] }}</div>
         <div class="card-subtitle">PDF, DOCX, TXT ou Markdown — max 50 Mo</div>
       </div>
     </div>
@@ -54,8 +54,8 @@
           <div class="form-group">
             <label class="form-label" for="language">Langue</label>
             <select class="form-control" id="language" name="language">
-              <option value="fr">Français</option>
-              <option value="en">English</option>
+              <option value="fr">{{ t['knowledge']['lang_fr'] }}</option>
+              <option value="en">{{ t['knowledge']['lang_en'] }}</option>
               <option value="es">Español</option>
               <option value="de">Deutsch</option>
             </select>

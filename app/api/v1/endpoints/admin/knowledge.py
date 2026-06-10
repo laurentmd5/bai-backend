@@ -278,7 +278,8 @@ async def upload_knowledge_document(
         )
         
         # Split into chunks for later indexing
-        chunks = split_text_into_chunks(text_content, chunk_size=512)
+        chunk_dicts = split_text_into_chunks(text_content, chunk_size=512)
+        chunks = [c["content"] for c in chunk_dicts]
         chunk_count = len(chunks)
         
         # Estimate token count (rough: 1 token ≈ 4 characters)
