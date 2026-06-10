@@ -74,8 +74,8 @@ async def index_all_documents():
     
     # Initialize document processor for intelligent chunking
     processor = DocumentProcessor(
-        chunk_size=500,
-        chunk_overlap=100,
+        chunk_size=512,
+        chunk_overlap=50,
         supported_extensions=[".docx", ".pdf", ".txt", ".md"]
     )
     

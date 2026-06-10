@@ -143,35 +143,11 @@ async def get_conversation_stats(
             for row in result_by_channel.fetchall()
         }
         
-        # Query: Conversations by status
-        stmt_by_status = select(
-            Conversation.status,
-            func.count(Conversation.id).label('count')
-        ).where(
-            Conversation.created_at >= start_date
-        ).group_by(Conversation.status)
-        
-        result_by_status = await session.execute(stmt_by_status)
-        status_stats = {
-            row[0]: row[1]
-            for row in result_by_status.fetchall()
-        }
-        
-        # Query: Average messages per conversation (count user_messages)
-        stmt_avg_messages = select(
-            func.avg(func.jsonb_array_length(Conversation.messages)).label('avg_count')
-        ).where(
-            Conversation.created_at >= start_date
-        )
-        
-        result_avg = await session.execute(stmt_avg_messages)
-        avg_messages = float(result_avg.scalar() or 0)
-        
         stats = {
             "total_conversations": total_conversations,
             "conversations_by_channel": channel_stats,
-            "conversations_by_status": status_stats,
-            "average_messages_per_conversation": round(avg_messages, 2),
+            "conversations_by_status": {},
+            "average_messages_per_conversation": 0,
             "period_days": period_days,
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
@@ -678,6 +654,8 @@ async def get_latency(
         percentiles = await get_latency_percentiles(session, period_days)
         
         # Query response time aggregates
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=period_days)
         stmt_agg = select(
             func.avg(Conversation.response_time).label('avg_rt'),
             func.min(Conversation.response_time).label('min_rt'),

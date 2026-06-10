@@ -53,6 +53,7 @@ class RAGService:
         Called once at application startup to:
         - Connect to Qdrant vector database
         - Load embedding model (BGE, ~8 seconds)
+        - Load CrossEncoder reranker model
         
         After initialization, this instance is stored in app.state.rag_service
         and reused for all requests, preventing redundant model loads.
@@ -61,15 +62,33 @@ class RAGService:
             logger.info(f"✅ RAGService already initialized, skipping")
             return
         
-        logger.warning(f"🔥 RAGService INITIALIZING - LOADING MODEL")
+        logger.warning(f"🔥 RAGService INITIALIZING - LOADING MODELS")
         
         try:
             # Initialize vector store (Qdrant connection)
             self._vector_store = QdrantVectorStore()
             await self._vector_store.initialize()
             
-            # Initialize embedding provider (BGE model - takes ~8 seconds)
+            # Initialize embedding provider
             self._embedding_provider = get_embedding_provider()
+            
+            # Initialize Re-ranker
+            try:
+                from sentence_transformers import CrossEncoder
+                import asyncio
+                # Load in thread to not block event loop
+                self._reranker = await asyncio.to_thread(
+                    CrossEncoder, 
+                    'cross-encoder/ms-marco-MiniLM-L-6-v2',
+                    max_length=512
+                )
+                logger.info(f"✅ Re-ranker initialized: cross-encoder/ms-marco-MiniLM-L-6-v2")
+            except ImportError:
+                logger.warning(f"⚠️ sentence-transformers not found. Re-ranking disabled.")
+                self._reranker = None
+            except Exception as e:
+                logger.error(f"❌ Failed to load Re-ranker: {str(e)}")
+                self._reranker = None
             
             self._initialized = True
             logger.info(f"✅ RAGService initialization complete")
@@ -118,18 +137,55 @@ class RAGService:
         # Generate embedding (with cache)
         query_vector = await self._embedding_provider.embed(query)
         
-        # Search in Qdrant with timing
+        # Search in Qdrant with timing (Dense + Sparse/Keyword)
         start_time = time.time()
-        results = await self._vector_store.search(
-            query_vector=query_vector,
-            limit=k,
-            score_threshold=threshold,
-            filters=filters,
+        
+        # Run Vector Search and Keyword Search concurrently
+        import asyncio
+        vector_search_task = asyncio.create_task(
+            self._vector_store.search(
+                query_vector=query_vector,
+                limit=k,
+                score_threshold=threshold,
+                filters=filters,
+            )
         )
+        
+        # Extract potential keyword for text match
+        keyword_task = asyncio.create_task(
+            self._vector_store.keyword_search(
+                query=query,
+                limit=max(3, k // 2),  # Less results from keyword search
+                filters=filters,
+            )
+        )
+        
+        vector_results, keyword_results = await asyncio.gather(vector_search_task, keyword_task)
+        
         duration = time.time() - start_time
         rag_retrieval_duration_seconds.observe(duration)
         
-        if not results:
+        # Combine results, removing duplicates based on document and chunk_index
+        combined_results = []
+        seen_chunks = set()
+        
+        # Prioritize Vector results
+        for res in vector_results:
+            payload = res.get("payload", {})
+            chunk_id = (payload.get("document_name"), payload.get("chunk_index"))
+            if chunk_id not in seen_chunks:
+                seen_chunks.add(chunk_id)
+                combined_results.append(res)
+                
+        # Add missing Keyword results
+        for res in keyword_results:
+            payload = res.get("payload", {})
+            chunk_id = (payload.get("document_name"), payload.get("chunk_index"))
+            if chunk_id not in seen_chunks:
+                seen_chunks.add(chunk_id)
+                combined_results.append(res)
+        
+        if not combined_results:
             logger.info(
                 "rag_no_results",
                 query_preview=query[:100],
@@ -137,17 +193,20 @@ class RAGService:
             )
             raise LowConfidenceException(0.0, threshold)
         
-        top_score = results[0]["score"]
+        # Top score is the highest vector score
+        top_score = vector_results[0]["score"] if vector_results else 0.8
         
         logger.debug(
             "rag_retrieval_completed",
             query_preview=query[:100],
-            chunks_found=len(results),
+            vector_chunks=len(vector_results),
+            keyword_chunks=len(keyword_results),
+            total_chunks_found=len(combined_results),
             top_score=top_score,
             retrieval_time_sec=round(duration, 3),
         )
         
-        return results, top_score
+        return combined_results, top_score
     
     async def build_context(
         self,
@@ -203,7 +262,7 @@ class RAGService:
         filters: Optional[Dict[str, Any]] = None,
     ) -> Tuple[str, List[Dict[str, Any]], float]:
         """
-        Complete RAG pipeline: retrieve chunks and build context.
+        Complete RAG pipeline: retrieve chunks, re-rank, and build context.
         
         Args:
             query: User question
@@ -214,23 +273,60 @@ class RAGService:
         Returns:
             Tuple of (context_string, sources, top_confidence)
         """
-        chunks, top_score = await self.retrieve(
+        # Retrieve more chunks initially for re-ranking (e.g., 20)
+        initial_k = max(top_k * 2 if top_k else self._top_k * 2, 20)
+        chunks, initial_top_score = await self.retrieve(
             query=query,
-            top_k=top_k,
+            top_k=initial_k,
             score_threshold=score_threshold,
             filters=filters,
         )
         
-        context = await self.build_context(chunks, include_sources=True)
+        # Apply Cross-Encoder Re-ranking
+        top_score = initial_top_score
+        final_chunks = chunks
+        
+        if hasattr(self, '_reranker') and self._reranker:
+            try:
+                pairs = [[query, chunk.get("payload", {}).get("text", "")] for chunk in chunks]
+                
+                # CrossEncoder prediction is CPU intensive, run in thread
+                import asyncio
+                scores = await asyncio.to_thread(self._reranker.predict, pairs)
+                
+                # Update scores and sort
+                for i, chunk in enumerate(chunks):
+                    chunk["rerank_score"] = float(scores[i])
+                    
+                chunks.sort(key=lambda x: x["rerank_score"], reverse=True)
+                
+                # Take top_k after re-ranking
+                final_k = top_k if top_k else self._top_k
+                final_chunks = chunks[:final_k]
+                
+                if final_chunks:
+                    # Keep track of the top rerank score for confidence
+                    top_score = max(final_chunks[0]["rerank_score"], 0.0)
+                    
+            except Exception as e:
+                logger.error("reranking_failed", error=str(e))
+                # Fallback to original chunks
+                final_k = top_k if top_k else self._top_k
+                final_chunks = chunks[:final_k]
+        else:
+            final_k = top_k if top_k else self._top_k
+            final_chunks = chunks[:final_k]
+        
+        context = await self.build_context(final_chunks, include_sources=True)
         
         # Format sources for response
         sources = []
-        for chunk in chunks:
+        for chunk in final_chunks:
             payload = chunk.get("payload", {})
             sources.append({
                 "document": payload.get("document_name", "Unknown"),
                 "section": payload.get("section", ""),
-                "relevance": chunk.get("score", 0.0),
+                "relevance": chunk.get("rerank_score", chunk.get("score", 0.0)),
                 "chunk_index": payload.get("chunk_index"),
             })
         

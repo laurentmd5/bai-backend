@@ -55,6 +55,15 @@ class RedisCacheService:
             self._client = await get_redis()
         return self._client
     
+    async def is_connected(self) -> bool:
+        """Check if Redis is reachable."""
+        try:
+            client = await self._get_client()
+            await client.ping()
+            return True
+        except Exception:
+            return False
+    
     def _make_key(self, namespace: CacheNamespace, *parts: str) -> str:
         """
         Create a namespaced cache key.

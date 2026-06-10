@@ -5,6 +5,7 @@ Monitors the health of all services: PostgreSQL, Redis, Qdrant.
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import text
 from datetime import datetime
 from typing import Dict, Any
 
@@ -50,7 +51,7 @@ async def health_check(
     # ✓ Check PostgreSQL
     try:
         # Simple query to verify database connection
-        result = await session.execute("SELECT 1")
+        result = await session.execute(text("SELECT 1"))
         await session.commit()
         results["services"]["postgresql"] = {
             "status": "healthy",
@@ -70,7 +71,9 @@ async def health_check(
         try:
             from app.services.cache.redis_cache import cache_service
             # Test Redis connection
-            await cache_service.ping()
+            is_ok = await cache_service.is_connected()
+            if not is_ok:
+                raise Exception("Redis not connected")
             results["services"]["redis"] = {
                 "status": "healthy",
                 "message": "Cache connection successful"

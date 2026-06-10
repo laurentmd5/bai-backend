@@ -72,5 +72,6 @@ async def _update_status(
                     status,
                     chunks_count=chunks_count
                 )
+                await session.commit()
     except Exception as db_e:
         logger.error("background_status_update_failed", doc_id=str(doc_id), error=str(db_e))

@@ -36,7 +36,6 @@ class QueryTransformer:
         1. "detected_language": Detect the language of the user's input (e.g., "en", "fr", "wolof", "mandinka", "fular").
         2. "is_casual_conversation": true if the input is just a greeting, chit-chat, or clearly doesn't require searching a document database. false otherwise.
         3. "optimized_search_query": Translate the query to standard English or French, fix any spelling/grammar errors, and expand it with highly relevant keywords that might appear in official documents. If it's a casual conversation, leave this empty.
-        4. "hypothetical_document": Write a short (1-2 sentences) hypothetical answer to the user's question in English or French. This will be used for HyDE (Hypothetical Document Embeddings) to find semantically similar documents. Do not write a hypothetical document if it's a casual conversation.
         
         CRITICAL: Your output MUST be valid JSON, with no markdown formatting blocks like ```json around it. Just the raw JSON object.
         """
@@ -88,6 +87,5 @@ class QueryTransformer:
             return {
                 "detected_language": "unknown",
                 "is_casual_conversation": False,
-                "optimized_search_query": raw_query,
-                "hypothetical_document": ""
+                "optimized_search_query": raw_query
             }

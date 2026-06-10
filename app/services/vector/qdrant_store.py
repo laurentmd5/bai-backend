@@ -105,9 +105,37 @@ class QdrantVectorStore(IVectorStore):
                         ),
                     )
                     
+                    # Create payload index for full-text keyword search
+                    client.create_payload_index(
+                        collection_name=self._collection_name,
+                        field_name="text",
+                        field_schema=models.TextIndexParams(
+                            type="text",
+                            tokenizer=models.TokenizerType.WORD,
+                            min_token_len=2,
+                            max_token_len=15,
+                            lowercase=True,
+                        )
+                    )
+                    
                     logger.info("qdrant_collection_created", collection=self._collection_name)
                 else:
                     logger.info("qdrant_collection_exists", collection=self._collection_name)
+                    # Try to create index on existing collection just in case
+                    try:
+                        client.create_payload_index(
+                            collection_name=self._collection_name,
+                            field_name="text",
+                            field_schema=models.TextIndexParams(
+                                type="text",
+                                tokenizer=models.TokenizerType.WORD,
+                                min_token_len=2,
+                                max_token_len=15,
+                                lowercase=True,
+                            )
+                        )
+                    except Exception:
+                        pass
                 
                 # Verify collection info
                 info = await self.get_collection_info()
@@ -204,6 +232,72 @@ class QdrantVectorStore(IVectorStore):
         except Exception as e:
             logger.error("qdrant_unexpected_error", error=str(e))
             raise QdrantException(f"Unexpected error during search: {str(e)}", e)
+            
+    async def keyword_search(
+        self,
+        query: str,
+        limit: int = 5,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Search for exact keywords using Qdrant's payload text index (BM25).
+        
+        Args:
+            query: User question/keywords
+            limit: Maximum number of results (default 5)
+            filters: Optional metadata filters
+            
+        Returns:
+            List of search results with payload
+        """
+        if not self._initialized:
+            await self.initialize()
+            
+        # Build filter condition combining metadata and full-text
+        conditions = [
+            models.FieldCondition(
+                key="text",
+                match=models.MatchText(text=query),
+            )
+        ]
+        
+        if filters:
+            for key, value in filters.items():
+                conditions.append(
+                    models.FieldCondition(
+                        key=key,
+                        match=models.MatchValue(value=value),
+                    )
+                )
+                
+        qdrant_filter = models.Filter(must=conditions)
+        
+        try:
+            client = self._get_client()
+            
+            # Since Qdrant scroll with full-text search returns matches, we use scroll
+            points, _ = client.scroll(
+                collection_name=self._collection_name,
+                scroll_filter=qdrant_filter,
+                limit=limit,
+                with_payload=True,
+                with_vectors=False,
+            )
+            
+            formatted_results = []
+            for point in points:
+                formatted_results.append({
+                    "id": str(point.id),
+                    "score": 0.8,  # Fake score for keyword matches
+                    "payload": point.payload,
+                })
+                
+            return formatted_results
+            
+        except Exception as e:
+            logger.error("qdrant_keyword_search_error", error=str(e))
+            # Gracefully degrade if index doesn't exist
+            return []
     
     async def upsert(
         self,

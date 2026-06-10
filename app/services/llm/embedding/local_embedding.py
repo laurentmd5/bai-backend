@@ -1,3 +1,4 @@
+import asyncio
 from typing import List, Optional
 from fastembed import TextEmbedding
 
@@ -10,7 +11,7 @@ logger = get_logger(__name__)
 class LocalEmbeddingProvider(IEmbeddingProvider):
     """Local embedding using fastembed (lightweight)."""
 
-    MODEL_NAME = "BAAI/bge-base-en-v1.5"
+    MODEL_NAME = "intfloat/multilingual-e5-base"
     EMBEDDING_DIMENSION = 768
 
     def __init__(self):
@@ -24,11 +25,16 @@ class LocalEmbeddingProvider(IEmbeddingProvider):
         return self._model
 
     async def embed(self, text: str) -> List[float]:
-        model = self._get_model()
-        embeddings = list(model.embed([text]))
-        return embeddings[0].tolist()
+        # Using to_thread because embed generates vectors synchronously and blocks the event loop
+        embeddings = await asyncio.to_thread(self._embed_sync, [text])
+        return embeddings[0]
 
     async def embed_batch(self, texts: List[str]) -> List[List[float]]:
+        # Using to_thread to prevent blocking the event loop for batch operations
+        embeddings = await asyncio.to_thread(self._embed_sync, texts)
+        return embeddings
+
+    def _embed_sync(self, texts: List[str]) -> List[List[float]]:
         model = self._get_model()
         embeddings = list(model.embed(texts))
         return [e.tolist() for e in embeddings]

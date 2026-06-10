@@ -44,6 +44,7 @@ langdetect==1.0.9
 aiofiles==25.1.0
 llama-cloud>=2.1.0
 nest-asyncio==1.6.0
+sentence-transformers==3.3.1
 
 # Validation
 pydantic==2.10.4

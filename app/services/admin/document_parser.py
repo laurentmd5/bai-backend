@@ -21,16 +21,12 @@ except ImportError:
     HAS_PDF = False
 
 try:
-    from docx import Document as DocxDocument
-    HAS_DOCX = True
-except ImportError:
-    HAS_DOCX = False
-
-try:
     from llama_cloud import AsyncLlamaCloud
     HAS_LLAMAPARSE = True
 except ImportError:
     HAS_LLAMAPARSE = False
+
+from app.services.processing.document_processor import DocumentProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -82,8 +78,44 @@ async def parse_document_content(
         raise DocumentParsingError(f"Unsupported format: {content_type}")
 
 
+async def _parse_with_llama(content: bytes, suffix: str) -> str:
+    """Extract text from file using LlamaCloud."""
+    api_key = settings.LLAMA_CLOUD_API_KEY.get_secret_value()
+    client = AsyncLlamaCloud(api_key=api_key)
+    
+    fd, temp_path = tempfile.mkstemp(suffix=suffix)
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            f.write(content)
+        
+        file_info = await client.files.create(
+            file=Path(temp_path), 
+            purpose="parse"
+        )
+        
+        result = await client.parsing.parse(
+            file_id=file_info.id,
+            version="latest",
+            expand=["markdown"]
+        )
+        
+        if not result or not result.markdown or not result.markdown.pages:
+            raise DocumentParsingError(f"No text extracted from {suffix} via LlamaCloud")
+            
+        text_parts = [page.markdown for page in result.markdown.pages if hasattr(page, 'markdown') and page.markdown]
+        if not text_parts:
+            raise DocumentParsingError("No markdown content found via LlamaCloud")
+            
+        return "\n\n".join(text_parts)
+    finally:
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+
+
 async def _parse_pdf(content: bytes) -> str:
-    """Extract text from PDF using LlamaParse (if available) or pypdf (fallback)."""
+    """Extract text from PDF using LlamaCloud (if available) or pypdf (fallback)."""
     if HAS_LLAMAPARSE and settings.LLAMA_CLOUD_API_KEY:
         try:
             return await _parse_with_llama(content, suffix=".pdf")
@@ -112,7 +144,7 @@ async def _parse_pdf(content: bytes) -> str:
         if not text_parts:
             raise DocumentParsingError("No text extracted from PDF (possibly scanned image)")
         
-        return "\n".join(text_parts)
+        return "\n\n".join(text_parts)
     
     except DocumentParsingError:
         raise
@@ -120,47 +152,8 @@ async def _parse_pdf(content: bytes) -> str:
         raise DocumentParsingError(f"PDF parsing failed: {str(e)}")
 
 
-async def _parse_with_llama(content: bytes, suffix: str) -> str:
-    """Extract text from file using LlamaCloud."""
-    api_key = settings.LLAMA_CLOUD_API_KEY.get_secret_value()
-    client = AsyncLlamaCloud(api_key=api_key)
-    
-    # LlamaCloud requires a file path, so we write the bytes to a temp file
-    fd, temp_path = tempfile.mkstemp(suffix=suffix)
-    try:
-        with os.fdopen(fd, 'wb') as f:
-            f.write(content)
-        
-        # 1. Upload the file
-        file_info = await client.files.create(
-            file=Path(temp_path), 
-            purpose="parse"
-        )
-        
-        # 2. Parse the document
-        result = await client.parsing.parse(
-            file_id=file_info.id,
-            version="latest",
-            expand=["markdown"]
-        )
-        
-        if not result or not result.markdown or not result.markdown.pages:
-            raise DocumentParsingError(f"No text extracted from {suffix} via LlamaCloud")
-            
-        text_parts = [page.markdown for page in result.markdown.pages if hasattr(page, 'markdown') and page.markdown]
-        if not text_parts:
-            raise DocumentParsingError(f"No markdown content found via LlamaCloud")
-            
-        return "\n\n".join(text_parts)
-    finally:
-        try:
-            os.remove(temp_path)
-        except OSError:
-            pass
-
-
 async def _parse_docx(content: bytes) -> str:
-    """Extract text from DOCX using LlamaParse (if available) or python-docx (fallback)."""
+    """Extract text from DOCX using LlamaCloud (if available) or python-docx (fallback)."""
     if HAS_LLAMAPARSE and settings.LLAMA_CLOUD_API_KEY:
         try:
             return await _parse_with_llama(content, suffix=".docx")
@@ -185,7 +178,7 @@ async def _parse_docx(content: bytes) -> str:
         if not text_parts:
             raise DocumentParsingError("No text extracted from DOCX")
         
-        return "\n".join(text_parts)
+        return "\n\n".join(text_parts)
     
     except DocumentParsingError:
         raise
@@ -199,55 +192,31 @@ def split_text_into_chunks(
     overlap: int = 50
 ) -> list[dict]:
     """
-    Split text into overlapping chunks (token-based estimation).
+    Split text into overlapping chunks using the DocumentProcessor
+    so that web upload and init_qdrant.py behave identically.
     
     Args:
         text: Full text content
-        chunk_size: Target chunk size (tokens, estimated as ~4 chars per token)
-        overlap: Overlap between chunks (tokens)
+        chunk_size: Target chunk size (characters)
+        overlap: Overlap between chunks (characters)
     
     Returns:
         List of {'content': str, 'index': int} dicts
     """
-    
-    # Estimate: 1 token ≈ 4 characters (conservative)
+    # Convert token limits to character limits for DocumentProcessor
     char_size = chunk_size * 4
     char_overlap = overlap * 4
     
+    processor = DocumentProcessor(chunk_size=char_size, chunk_overlap=char_overlap)
+    doc = processor._create_document(text, "web_upload")
+    processor_chunks = processor.chunk_document(doc)
+    
     chunks = []
-    sentences = text.split(". ")
-    
-    current_chunk = ""
-    chunk_index = 0
-    
-    for i, sentence in enumerate(sentences):
-        sentence = sentence.strip()
-        if not sentence:
-            continue
-        
-        # Add sentence + period
-        sentence_with_punct = sentence + (". " if i < len(sentences) - 1 else "")
-        
-        if len(current_chunk) + len(sentence_with_punct) > char_size:
-            # Save current chunk
-            if current_chunk.strip():
-                chunks.append({
-                    "content": current_chunk.strip(),
-                    "index": chunk_index,
-                })
-                chunk_index += 1
+    for i, chunk in enumerate(processor_chunks):
+        if chunk.page_content.strip():
+            chunks.append({
+                "content": chunk.page_content.strip(),
+                "index": i,
+            })
             
-            # Start new chunk with overlap
-            overlap_text = current_chunk[-char_overlap:] if len(current_chunk) > char_overlap else current_chunk
-            current_chunk = overlap_text + sentence_with_punct
-        else:
-            current_chunk += sentence_with_punct
-    
-    # Add final chunk
-    if current_chunk.strip():
-        chunks.append({
-            "content": current_chunk.strip(),
-            "index": chunk_index,
-        })
-    
     return chunks if chunks else [{"content": text, "index": 0}]

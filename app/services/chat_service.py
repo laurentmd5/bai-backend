@@ -469,62 +469,56 @@ class ChatService:
         Returns:
             True if response is relevant, False otherwise
         """
-        # For POC, disable relevance filtering to avoid false negatives
-        logger.debug("relevance_filter_disabled_for_poc", sources_count=len(sources))
-        return True
+        # 1. Duplicate detection (same document, same chunk = forced match)
+        unique_chunks = set()
+        for s in sources:
+            doc_name = s.get("document", s.get("doc_id", ""))
+            chunk_idx = s.get("chunk_index", s.get("index", 0))
+            unique_chunks.add((doc_name, chunk_idx))
         
-        # The full implementation is commented out for POC
-        # 
-        # # 1. Duplicate detection (same document, same chunk = forced match)
-        # unique_chunks = set()
-        # for s in sources:
-        #     doc_name = s.get("document", s.get("doc_id", ""))
-        #     chunk_idx = s.get("chunk_index", s.get("index", 0))
-        #     unique_chunks.add((doc_name, chunk_idx))
-        # 
-        # if len(unique_chunks) == 1:
-        #     logger.warning("all_sources_identical", chunks=len(sources))
-        #     return False
-        # 
-        # # 2. Detect the theme of the query
-        # query_lower = query.lower()
-        # detected_theme = None
-        # theme_keywords = []
-        # 
-        # for theme, keywords in self.RELEVANCE_KEYWORDS.items():
-        #     for kw in keywords:
-        #         if kw in query_lower:
-        #             detected_theme = theme
-        #             theme_keywords = keywords
-        #             break
-        #     if detected_theme:
-        #         break
-        # 
-        # if not detected_theme:
-        #     return True
-        # 
-        # # 3. Check if sources contain relevant keywords
-        # source_text = ""
-        # for s in sources[:3]:
-        #     text = s.get("text_preview", "") or s.get("content", "") or ""
-        #     section = s.get("section", "")
-        #     source_text += f" {text} {section}"
-        # 
-        # source_lower = source_text.lower()
-        # has_relevant_term = any(kw in source_lower for kw in theme_keywords[:5])
-        # 
-        # if not has_relevant_term:
-        #     logger.warning("no_relevant_terms_in_sources", theme=detected_theme)
-        #     return False
-        # 
-        # # 4. Check minimum similarity score
-        # min_score = min((s.get("relevance", s.get("score", 0)) for s in sources), default=0)
-        # threshold = getattr(settings, 'QDRANT_SIMILARITY_THRESHOLD', 0.70)
-        # 
-        # if min_score < threshold:
-        #     return False
-        # 
-        # return True
+        if len(unique_chunks) == 1:
+            logger.warning("all_sources_identical", chunks=len(sources))
+            return False
+        
+        # 2. Detect the theme of the query
+        query_lower = query.lower()
+        detected_theme = None
+        theme_keywords = []
+        
+        for theme, keywords in self.RELEVANCE_KEYWORDS.items():
+            for kw in keywords:
+                if kw in query_lower:
+                    detected_theme = theme
+                    theme_keywords = keywords
+                    break
+            if detected_theme:
+                break
+        
+        if not detected_theme:
+            return True
+        
+        # 3. Check if sources contain relevant keywords
+        source_text = ""
+        for s in sources[:3]:
+            text = s.get("text_preview", "") or s.get("content", "") or ""
+            section = s.get("section", "")
+            source_text += f" {text} {section}"
+        
+        source_lower = source_text.lower()
+        has_relevant_term = any(kw in source_lower for kw in theme_keywords[:5])
+        
+        if not has_relevant_term:
+            logger.warning("no_relevant_terms_in_sources", theme=detected_theme)
+            return False
+        
+        # 4. Check minimum similarity score
+        min_score = min((s.get("relevance", s.get("score", 0)) for s in sources), default=0)
+        threshold = getattr(settings, 'QDRANT_SIMILARITY_THRESHOLD', 0.70)
+        
+        if min_score < threshold:
+            return False
+        
+        return True
     
     async def process_message(
         self,
@@ -835,16 +829,15 @@ class ChatService:
                     sources = []
                     confidence = 1.0
                 else:
-                    # Construct the HyDE enhanced query
+                    # Construct the enhanced query (Optimized Search Query + Original)
                     search_query = sanitized_message
                     optimized = transformer_result.get("optimized_search_query", "")
-                    hyde_doc = transformer_result.get("hypothetical_document", "")
                     
-                    if optimized or hyde_doc:
-                        # We combine the user's original query, the optimized keywords, and the hypothetical document
-                        # This gives Qdrant both lexical matches and deep semantic context.
-                        search_query = f"{sanitized_message}\n{optimized}\n{hyde_doc}".strip()
-                        logger.debug("using_hyde_search_query", optimized_length=len(search_query))
+                    if optimized and optimized != sanitized_message:
+                        # We combine the user's original query and the optimized keywords
+                        # This gives Qdrant both lexical matches and translated semantic context.
+                        search_query = f"{sanitized_message}\n{optimized}".strip()
+                        logger.debug("using_optimized_search_query", optimized_length=len(search_query))
                     
                     # ===============================================================
                     # STEP 6: RAG Retrieval
@@ -956,11 +949,21 @@ class ChatService:
                     if language == "wolof" and await self._oolel_provider.is_available():
                         # Translate the Gemini output to Wolof using Oolel
                         oolel_sys_prompt = "You are a professional translator. Translate the following text into natural, conversational Wolof as spoken in Gambia and Senegal. Keep it authentic and culturally appropriate."
-                        generated_response = await self._oolel_provider.generate_with_retry(
-                            prompt=generated_response,
-                            system_prompt=oolel_sys_prompt,
-                            max_retries=3
-                        )
+                        try:
+                            translated_response = await self._oolel_provider.generate_with_retry(
+                                prompt=generated_response,
+                                system_prompt=oolel_sys_prompt,
+                                max_retries=2
+                            )
+                            generated_response = translated_response
+                        except Exception as e:
+                            logger.warning("oolel_translation_failed_fallback_gemini", error=str(e))
+                            # Fallback to Gemini for Wolof translation
+                            gemini_wolof_prompt = f"Translate the following text into conversational Wolof as spoken in Gambia:\n\n{generated_response}"
+                            generated_response = await self._llm_provider.generate_with_retry(
+                                prompt=gemini_wolof_prompt,
+                                max_retries=2
+                            )
                     
                     llm_latency_ms = (datetime.utcnow() - llm_start).total_seconds() * 1000
                     response_metadata["llm_latency_ms"] = llm_latency_ms
@@ -1023,17 +1026,25 @@ class ChatService:
                 # STEP 9: Cache and Persist
                 # ===============================================================
                 
-                # Cache the response
-                response_to_cache = {
-                    "message": final_response,
-                    "sources": sources,
-                    "confidence": confidence if confidence else 0.0,
-                }
-                await cache_service.set_rag_response(
-                    question=sanitized_message,
-                    response=response_to_cache,
-                    ttl=settings.CACHE_RAG_TTL_SECONDS,
+                # Cache the response if it's a valid answer
+                is_fallback = response_metadata.get("fallback_triggered", False)
+                is_no_info = (
+                    final_response.startswith("I do not have") or 
+                    final_response.startswith("Je ne dispose pas") or
+                    "I do not have this specific information" in final_response
                 )
+                
+                if not is_fallback and not is_no_info:
+                    response_to_cache = {
+                        "message": final_response,
+                        "sources": sources,
+                        "confidence": confidence if confidence else 0.0,
+                    }
+                    await cache_service.set_rag_response(
+                        question=sanitized_message,
+                        response=response_to_cache,
+                        ttl=settings.CACHE_RAG_TTL_SECONDS,
+                    )
                 
                 # Update session
                 await session_repo.touch_session(session.id)
