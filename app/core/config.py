@@ -400,6 +400,11 @@ class Settings(BaseSettings):
         description="Hugging Face Inference API key"
     )
     
+    LLAMA_CLOUD_API_KEY: Optional[SecretStr] = Field(
+        default=None,
+        description="LlamaParse Cloud API Key"
+    )
+    
     OOLEL_LLM_ENDPOINT: str = Field(
         default="https://api-inference.huggingface.co/models/soynade-research/oolel-v0.1-7b",
         description="Oolel Text LLM Hugging Face Endpoint"

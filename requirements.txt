@@ -42,6 +42,8 @@ faster-whisper==1.2.1
 edge-tts==7.2.8
 langdetect==1.0.9
 aiofiles==25.1.0
+llama-parse==0.6.94
+nest-asyncio==1.6.0
 
 # Validation
 pydantic==2.10.4

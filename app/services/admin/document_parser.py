@@ -22,6 +22,18 @@ try:
 except ImportError:
     HAS_DOCX = False
 
+try:
+    from llama_parse import LlamaParse
+    import nest_asyncio
+    nest_asyncio.apply()
+    HAS_LLAMAPARSE = True
+except ImportError:
+    HAS_LLAMAPARSE = False
+
+import tempfile
+import os
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -54,13 +66,13 @@ async def parse_document_content(
     
     # Detect format from content_type or filename
     if content_type == "application/pdf" or filename.lower().endswith(".pdf"):
-        return _parse_pdf(content)
+        return await _parse_pdf(content)
     
     elif content_type in [
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "application/msword"
     ] or filename.lower().endswith(".docx"):
-        return _parse_docx(content)
+        return await _parse_docx(content)
     
     elif content_type == "text/plain" or filename.lower().endswith(".txt"):
         return content.decode("utf-8", errors="ignore")
@@ -72,8 +84,15 @@ async def parse_document_content(
         raise DocumentParsingError(f"Unsupported format: {content_type}")
 
 
-def _parse_pdf(content: bytes) -> str:
-    """Extract text from PDF."""
+async def _parse_pdf(content: bytes) -> str:
+    """Extract text from PDF using LlamaParse (if available) or pypdf (fallback)."""
+    if HAS_LLAMAPARSE and settings.LLAMA_CLOUD_API_KEY:
+        try:
+            return await _parse_with_llama(content, suffix=".pdf")
+        except Exception as e:
+            logger.warning(f"LlamaParse failed, falling back to pypdf: {str(e)}")
+            # Fallback to pypdf
+
     if not HAS_PDF:
         raise DocumentParsingError(
             "PDF support requires pypdf. Install with: pip install pypdf"
@@ -103,8 +122,45 @@ def _parse_pdf(content: bytes) -> str:
         raise DocumentParsingError(f"PDF parsing failed: {str(e)}")
 
 
-def _parse_docx(content: bytes) -> str:
-    """Extract text from DOCX."""
+async def _parse_with_llama(content: bytes, suffix: str) -> str:
+    """Extract text from file using LlamaParse."""
+    api_key = settings.LLAMA_CLOUD_API_KEY.get_secret_value()
+    parser = LlamaParse(
+        api_key=api_key,
+        result_type="markdown",
+        verbose=True
+    )
+    
+    # LlamaParse requires a file path, so we write the bytes to a temp file
+    fd, temp_path = tempfile.mkstemp(suffix=suffix)
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            f.write(content)
+        
+        # Use async load
+        documents = await parser.aload_data(temp_path)
+        
+        if not documents:
+            raise DocumentParsingError(f"No text extracted from {suffix} via LlamaParse")
+            
+        text_parts = [doc.text for doc in documents if hasattr(doc, 'text') and doc.text]
+        return "\n\n".join(text_parts)
+    finally:
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+
+
+async def _parse_docx(content: bytes) -> str:
+    """Extract text from DOCX using LlamaParse (if available) or python-docx (fallback)."""
+    if HAS_LLAMAPARSE and settings.LLAMA_CLOUD_API_KEY:
+        try:
+            return await _parse_with_llama(content, suffix=".docx")
+        except Exception as e:
+            logger.warning(f"LlamaParse failed for DOCX, falling back to python-docx: {str(e)}")
+            # Fallback to python-docx
+
     if not HAS_DOCX:
         raise DocumentParsingError(
             "DOCX support requires python-docx. Install with: pip install python-docx"
