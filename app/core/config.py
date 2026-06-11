@@ -406,17 +406,17 @@ class Settings(BaseSettings):
     )
     
     OOLEL_LLM_ENDPOINT: str = Field(
-        default="https://api-inference.huggingface.co/models/soynade-research/oolel-v0.1-7b",
+        default="https://router.huggingface.co/hf-inference/models/soynade-research/oolel-v0.1-7b",
         description="Oolel Text LLM Hugging Face Endpoint"
     )
     
     OOLEL_CORRECTOR_ENDPOINT: str = Field(
-        default="https://api-inference.huggingface.co/models/soynade-research/oolel-corrector-1.5b",
+        default="https://router.huggingface.co/hf-inference/models/soynade-research/oolel-corrector-1.5b",
         description="Oolel Corrector Hugging Face Endpoint"
     )
     
     OOLEL_TTS_ENDPOINT: str = Field(
-        default="https://api-inference.huggingface.co/models/soynade-research/oolel-voices",
+        default="https://router.huggingface.co/hf-inference/models/soynade-research/oolel-voices",
         description="Oolel TTS Hugging Face Endpoint"
     )
     
