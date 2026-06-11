@@ -33,7 +33,7 @@ class QueryTransformer:
         The system has a knowledge base consisting of official documents about government policies, infrastructure, youth programs, and digital transformation for the NPP (National People's Party) in The Gambia. The documents are primarily written in English or French.
         
         Your task is to analyze the user's raw input and output a JSON object with the following fields:
-        1. "detected_language": Detect the language of the user's input (e.g., "en", "fr", "wolof", "mandinka", "fular").
+        1. "detected_language": Detect the language of the user's input (e.g., "en", "fr", "wolof", "mandinka", "fular"). Pay special attention to Gambian Wolof phrasing and spelling variations (e.g., "Ki mo", "Kan mo", "lu tudd", "naka nga def", "ndax", "lan la"). If you see these, the language is "wolof".
         2. "is_casual_conversation": true if the input is just a greeting, chit-chat, or clearly doesn't require searching a document database. false otherwise.
         3. "optimized_search_query": Translate the query to standard English or French, fix any spelling/grammar errors, and expand it with highly relevant keywords that might appear in official documents. If it's a casual conversation, leave this empty.
         
