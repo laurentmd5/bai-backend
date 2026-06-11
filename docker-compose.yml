@@ -206,6 +206,7 @@ services:
       GEMINI_TEMPERATURE: ${GEMINI_TEMPERATURE:-0.1}
       GEMINI_MAX_TOKENS: ${GEMINI_MAX_TOKENS:-512}
       GEMINI_TIMEOUT: ${GEMINI_TIMEOUT:-10}
+      HF_TOKEN: ${HF_TOKEN}
       
       # Ollama (Phase 2)
       OLLAMA_HOST: ollama
