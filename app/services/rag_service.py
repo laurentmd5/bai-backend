@@ -294,9 +294,13 @@ class RAGService:
                 import asyncio
                 scores = await asyncio.to_thread(self._reranker.predict, pairs)
                 
+                import math
+                
                 # Update scores and sort
                 for i, chunk in enumerate(chunks):
-                    chunk["rerank_score"] = float(scores[i])
+                    logit = float(scores[i])
+                    # Apply sigmoid to normalize logit to [0, 1] for database constraint
+                    chunk["rerank_score"] = 1.0 / (1.0 + math.exp(-logit))
                     
                 chunks.sort(key=lambda x: x["rerank_score"], reverse=True)
                 
@@ -306,7 +310,7 @@ class RAGService:
                 
                 if final_chunks:
                     # Keep track of the top rerank score for confidence
-                    top_score = max(final_chunks[0]["rerank_score"], 0.0)
+                    top_score = final_chunks[0]["rerank_score"]
                     
             except Exception as e:
                 logger.error("reranking_failed", error=str(e))
