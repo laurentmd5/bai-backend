@@ -46,6 +46,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     curl \
     ffmpeg \
+    dnsutils \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
