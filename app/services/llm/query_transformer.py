@@ -11,8 +11,9 @@ class QueryTransformer:
     to bridge the lexical and semantic gap for poorly structured or Wolof queries.
     """
     
-    def __init__(self, llm_provider: ILLMProvider):
+    def __init__(self, llm_provider: ILLMProvider, oolel_provider: ILLMProvider = None):
         self._llm = llm_provider
+        self._oolel_provider = oolel_provider
         
     async def transform_query(self, raw_query: str) -> Dict[str, Any]:
         """
@@ -83,6 +84,48 @@ class QueryTransformer:
             
         except Exception as e:
             logger.error("query_transformation_failed", error=str(e), query=raw_query)
+            
+            # Try Oolel as fallback
+            if self._oolel_provider and await self._oolel_provider.is_available():
+                try:
+                    logger.info("using_oolel_as_fallback_for_query_transformer", query=raw_query)
+                    response = await self._oolel_provider.generate_with_retry(
+                        prompt=f"Raw User Input: {raw_query}",
+                        system_prompt=system_prompt,
+                        max_retries=2
+                    )
+                    
+                    cleaned_response = response.strip()
+                    if cleaned_response.startswith("```json"):
+                        cleaned_response = cleaned_response[7:]
+                    if cleaned_response.startswith("```"):
+                        cleaned_response = cleaned_response[3:]
+                    if cleaned_response.endswith("```"):
+                        cleaned_response = cleaned_response[:-3]
+                    cleaned_response = cleaned_response.strip()
+                    
+                    brace_count = 0
+                    first_json_end = -1
+                    for i, char in enumerate(cleaned_response):
+                        if char == '{':
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                first_json_end = i + 1
+                                break
+                    if first_json_end > 0:
+                        cleaned_response = cleaned_response[:first_json_end]
+                        
+                    result = json.loads(cleaned_response)
+                    logger.info("query_transformed_by_oolel_fallback", 
+                                original=raw_query, 
+                                language=result.get("detected_language"))
+                    return result
+                    
+                except Exception as oolel_e:
+                    logger.error("oolel_fallback_for_query_transformer_failed", error=str(oolel_e))
+                    
             # Fallback gracefully
             return {
                 "detected_language": "unknown",

@@ -272,7 +272,7 @@ class ChatService:
         self._oolel_provider = OolelProvider()
         
         # Initialize query transformer for advanced intelligence
-        self._query_transformer = QueryTransformer(self._llm_provider)
+        self._query_transformer = QueryTransformer(self._llm_provider, self._oolel_provider)
         
         # Initialize validators
         self._input_validator = InputValidator()
@@ -975,32 +975,53 @@ class ChatService:
                     
                 except (LLMTimeoutException, LLMUnavailableException) as e:
                     logger.error("llm_generation_failed", error=str(e), session_id=actual_session_id)
-                    response_metadata["fallback_triggered"] = True
                     
-                    fallback_message = self.TECHNICAL_ERROR_RESPONSE.get(language, self.TECHNICAL_ERROR_RESPONSE["en"])
-                    
-                    await session_repo.touch_session(session.id)
-                    
-                    await conv_repo.create_conversation(
-                        session_id=session.id,
-                        user_message=sanitized_message,
-                        bot_response=fallback_message,
-                        channel=channel,
-                        confidence=confidence if confidence else 0.0,
-                        cache_hit=False,
-                        fallback_triggered=True,
-                        llm_model=self._llm_provider.get_model_name(),
-                    )
-                    
-                    return {
-                        "message": fallback_message,
-                        "session_id": actual_session_id,
-                        "sources": sources,
-                        "confidence": confidence if confidence else 0.0,
-                        "cache_hit": False,
-                        "fallback_triggered": True,
-                        "timestamp": datetime.utcnow().isoformat(),
-                    }
+                    # Try to use Oolel as a fallback for answer generation
+                    generated_response = None
+                    if await self._oolel_provider.is_available():
+                        try:
+                            logger.info("using_oolel_as_fallback_for_llm_generation", session_id=actual_session_id)
+                            oolel_sys_prompt = "You are AskBarrow, the official AI assistant for President Adama Barrow. Answer the user's question based strictly on the provided context."
+                            generated_response = await self._oolel_provider.generate_with_retry(
+                                prompt=f"Context:\n{context}\n\nQuestion: {sanitized_message}\nPlease answer in {language}.",
+                                system_prompt=oolel_sys_prompt,
+                                max_retries=2
+                            )
+                            # Record LLM latency
+                            llm_latency_ms = (datetime.utcnow() - llm_start).total_seconds() * 1000
+                            response_metadata["llm_latency_ms"] = llm_latency_ms
+                            response_metadata["fallback_llm"] = "oolel"
+                            
+                        except Exception as oolel_e:
+                            logger.error("oolel_fallback_generation_failed", error=str(oolel_e))
+                            
+                    if not generated_response:
+                        response_metadata["fallback_triggered"] = True
+                        
+                        fallback_message = self.TECHNICAL_ERROR_RESPONSE.get(language, self.TECHNICAL_ERROR_RESPONSE["en"])
+                        
+                        await session_repo.touch_session(session.id)
+                        
+                        await conv_repo.create_conversation(
+                            session_id=session.id,
+                            user_message=sanitized_message,
+                            bot_response=fallback_message,
+                            channel=channel,
+                            confidence=confidence if confidence else 0.0,
+                            cache_hit=False,
+                            fallback_triggered=True,
+                            llm_model=self._llm_provider.get_model_name(),
+                        )
+                        
+                        return {
+                            "message": fallback_message,
+                            "session_id": actual_session_id,
+                            "sources": sources,
+                            "confidence": confidence if confidence else 0.0,
+                            "cache_hit": False,
+                            "fallback_triggered": True,
+                            "timestamp": datetime.utcnow().isoformat(),
+                        }
                 
                 # ===============================================================
                 # STEP 8: Output Validation
