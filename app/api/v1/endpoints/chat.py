@@ -2,33 +2,46 @@
 Chat endpoints for BARROW.AI.
 """
 
-from fastapi import APIRouter, Request, HTTPException, status
+from fastapi import APIRouter, Request, HTTPException, status, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.request.chat import ChatMessageRequest, ChatFeedbackRequest
 from app.models.response.chat import ChatMessageResponse, ChatFeedbackResponse
 from app.core.logging import get_logger
+from app.core.database import get_session
+from app.services.chat_service import ChatService
+from app.repositories.session_repository import SessionRepository
+from app.repositories.conversation_repository import ConversationRepository
+from app.services.llm.factory import get_llm_provider
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+def get_chat_service(request: Request, db: AsyncSession = Depends(get_session)) -> ChatService:
+    rag_service = request.app.state.rag_service
+    if not rag_service:
+        logger.error("rag_service_not_initialized")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RAG service not available",
+        )
+    return ChatService(
+        SessionRepository(db),
+        ConversationRepository(db),
+        rag_service=rag_service,
+        llm_provider=get_llm_provider(),
+    )
 
 
 @router.post("/message", response_model=ChatMessageResponse)
 async def send_message(
     request: Request,
     chat_request: ChatMessageRequest,
+    chat_service: ChatService = Depends(get_chat_service)
 ) -> ChatMessageResponse:
     """
     Send a chat message and get AI response.
     """
-    # FIX: Use singleton service from app.state instead of creating new instance
-    chat_service = request.app.state.chat_service
-    if not chat_service:
-        logger.error("chat_service_not_initialized")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Chat service not available",
-        )
-
     try:
         client_ip = request.client.host if request.client else None
         user_agent = request.headers.get("User-Agent")
@@ -56,19 +69,11 @@ async def send_message(
 async def submit_feedback(
     request: Request,
     feedback_request: ChatFeedbackRequest,
+    chat_service: ChatService = Depends(get_chat_service)
 ) -> ChatFeedbackResponse:
     """
     Submit feedback for a chat message.
     """
-    # FIX: Use singleton service from app.state instead of creating new instance
-    chat_service = request.app.state.chat_service
-    if not chat_service:
-        logger.error("chat_service_not_initialized")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Chat service not available",
-        )
-
     try:
         success = await chat_service.process_feedback(
             conversation_id=feedback_request.conversation_id,

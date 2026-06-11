@@ -103,40 +103,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await rag_service.initialize()
     logger.info("rag_service_initialized")
     
-    # Initialize chat and WhatsApp services (shared)
-    from app.services.chat_service import ChatService
-    from app.services.whatsapp_service import WhatsAppService
-    from app.repositories.session_repository import SessionRepository
-    from app.repositories.conversation_repository import ConversationRepository
-    
-    # ⭐ CREATE A SINGLE SHARED SESSION for all repositories
-    shared_session = await async_session_factory()
-    
-    # Create repositories with the SAME shared session
-    session_repo = SessionRepository(shared_session)
-    conversation_repo = ConversationRepository(shared_session)
-    
-    # Create ChatService with all dependencies injected
-    # This ensures services are initialized once and reused
-    chat_service = ChatService(
-        session_repo,
-        conversation_repo,
-        rag_service=rag_service,
-        llm_provider=get_llm_provider(),
-    )
-    logger.info("chat_service_initialized")
-    
-    # WhatsApp uses the SAME ChatService
-    whatsapp_service = WhatsAppService(chat_service, session_repo)
-    logger.info("whatsapp_service_initialized")
-    
     logger.info("application_startup_complete")
     
     # Store singletons in app state for access by endpoints
-    app.state.chat_service = chat_service
-    app.state.whatsapp_service = whatsapp_service
     app.state.rag_service = rag_service
-    app.state.db_session = shared_session
     
     yield
     
@@ -144,13 +114,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # SHUTDOWN
     # =========================================================================
     logger.info("shutting_down_application")
-    
-    # Close shared database session
-    try:
-        await app.state.db_session.close()
-        logger.info("shared_db_session_closed")
-    except Exception as e:
-        logger.error("shared_db_session_close_error", error=str(e))
     
     # Close LLM providers
     try:

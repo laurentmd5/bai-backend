@@ -29,6 +29,7 @@ from app.core.exceptions import (
     LowConfidenceException,
     LLMTimeoutException,
     LLMUnavailableException,
+    LLMException,
     HostileContentException,
     PromptInjectionException,
     ValidationException,
@@ -973,7 +974,7 @@ class ChatService:
                         provider=self._llm_provider.get_provider_name()
                     ).observe(llm_latency_ms)
                     
-                except (LLMTimeoutException, LLMUnavailableException) as e:
+                except LLMException as e:
                     logger.error("llm_generation_failed", error=str(e), session_id=actual_session_id)
                     
                     # Try to use Oolel as a fallback for answer generation

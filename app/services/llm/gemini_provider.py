@@ -487,9 +487,11 @@ ANSWER:"""
                 logger.error("gemini_unexpected_error_no_retry", error=str(e))
                 break
         
-        # Return fallback message
-        language = kwargs.get("language", "en")
-        return self.FALLBACK_MESSAGES.get(language, self.FALLBACK_MESSAGES["en"])
+        # If we exhausted all retries, raise the last exception
+        if last_error:
+            raise last_error
+            
+        raise GeminiException("Failed to generate response after retries")
     
     async def is_available(self) -> bool:
         """

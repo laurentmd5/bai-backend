@@ -3,15 +3,64 @@ WhatsApp webhook endpoints for BARROW.AI.
 Handles incoming webhooks from Meta WhatsApp Cloud API.
 """
 
-from fastapi import APIRouter, Request, Query, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Request, Query, HTTPException, status, BackgroundTasks, Depends
 from fastapi.responses import PlainTextResponse, JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.database import get_session, get_session_context
+from app.services.whatsapp_service import WhatsAppService
+from app.services.chat_service import ChatService
+from app.repositories.session_repository import SessionRepository
+from app.repositories.conversation_repository import ConversationRepository
+from app.services.llm.factory import get_llm_provider
 
 logger = get_logger(__name__)
 
 router = APIRouter(tags=["WhatsApp"])
+
+def get_whatsapp_service(request: Request, db: AsyncSession = Depends(get_session)) -> WhatsAppService:
+    rag_service = request.app.state.rag_service
+    if not rag_service:
+        logger.error("rag_service_not_initialized")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RAG service not available",
+        )
+    session_repo = SessionRepository(db)
+    chat_service = ChatService(
+        session_repo,
+        ConversationRepository(db),
+        rag_service=rag_service,
+        llm_provider=get_llm_provider(),
+    )
+    return WhatsAppService(chat_service, session_repo)
+
+async def process_webhook_task(payload: dict, raw_body: bytes, signature: str, app_state: object):
+    """Background task to process webhook with its own database session."""
+    rag_service = getattr(app_state, "rag_service", None)
+    if not rag_service:
+        logger.error("process_webhook_task_failed: rag_service_missing")
+        return
+
+    try:
+        async with get_session_context() as db:
+            session_repo = SessionRepository(db)
+            chat_service = ChatService(
+                session_repo,
+                ConversationRepository(db),
+                rag_service=rag_service,
+                llm_provider=get_llm_provider(),
+            )
+            whatsapp_service = WhatsAppService(chat_service, session_repo)
+            await whatsapp_service.process_webhook(
+                payload=payload,
+                raw_body=raw_body,
+                signature=signature,
+            )
+    except Exception as e:
+        logger.error("process_webhook_task_unhandled_error", error=str(e), exc_info=True)
 
 
 @router.get("/webhook")
@@ -76,33 +125,25 @@ async def receive_webhook(
         # Return 200 — Meta must receive 200 or it will retry repeatedly
         return JSONResponse(content={"status": "received"}, status_code=200)
 
-    # FIX: Use singleton service from app.state instead of creating new instance
-    whatsapp_service = request.app.state.whatsapp_service
-    if not whatsapp_service:
-        logger.error("whatsapp_service_not_initialized")
-        return JSONResponse(content={"status": "error"}, status_code=500)
-
     background_tasks.add_task(
-        whatsapp_service.process_webhook,
+        process_webhook_task,
         payload=payload,
         raw_body=raw_body,
         signature=signature,
+        app_state=request.app.state,
     )
 
     return JSONResponse(content={"status": "received"}, status_code=200)
 
 
 @router.get("/health")
-async def health_check(request: Request) -> JSONResponse:
+async def health_check(
+    request: Request,
+    whatsapp_service: WhatsAppService = Depends(get_whatsapp_service)
+) -> JSONResponse:
     """
     Check WhatsApp service health.
     """
-    whatsapp_service = request.app.state.whatsapp_service
-    if not whatsapp_service:
-        return JSONResponse(
-            content={"status": "unhealthy", "reason": "service_not_initialized"},
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        )
 
     health = await whatsapp_service.health_check()
 
@@ -114,31 +155,25 @@ async def health_check(request: Request) -> JSONResponse:
 
 
 @router.get("/profile")
-async def get_business_profile(request: Request) -> JSONResponse:
+async def get_business_profile(
+    request: Request,
+    whatsapp_service: WhatsAppService = Depends(get_whatsapp_service)
+) -> JSONResponse:
     """
     Get WhatsApp Business Profile information.
     """
-    whatsapp_service = request.app.state.whatsapp_service
-    if not whatsapp_service:
-        return JSONResponse(
-            content={"status": "error", "reason": "service_not_initialized"},
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        )
     profile = await whatsapp_service.get_business_profile()
     return JSONResponse(content=profile)
 
 
 @router.get("/opt-outs")
-async def get_opt_outs(request: Request) -> JSONResponse:
+async def get_opt_outs(
+    request: Request,
+    whatsapp_service: WhatsAppService = Depends(get_whatsapp_service)
+) -> JSONResponse:
     """
     Get list of opted-out phone numbers (admin only).
     """
-    whatsapp_service = request.app.state.whatsapp_service
-    if not whatsapp_service:
-        return JSONResponse(
-            content={"status": "error", "reason": "service_not_initialized"},
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        )
     opt_outs = await whatsapp_service.get_opt_out_list()
     
     return JSONResponse(
