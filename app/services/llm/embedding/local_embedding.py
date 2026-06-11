@@ -11,8 +11,8 @@ logger = get_logger(__name__)
 class LocalEmbeddingProvider(IEmbeddingProvider):
     """Local embedding using fastembed (lightweight)."""
 
-    MODEL_NAME = "intfloat/multilingual-e5-base"
-    EMBEDDING_DIMENSION = 768
+    MODEL_NAME = "intfloat/multilingual-e5-large"
+    EMBEDDING_DIMENSION = 1024
 
     def __init__(self):
         self._model: Optional[TextEmbedding] = None

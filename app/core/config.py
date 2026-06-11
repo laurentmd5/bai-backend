@@ -291,12 +291,12 @@ class Settings(BaseSettings):
     )
     
     QDRANT_COLLECTION: str = Field(
-        default="npp_documents_poc",
+        default="npp_documents_poc_v2",
         description="Qdrant collection name"
     )
     
     QDRANT_VECTOR_SIZE: int = Field(
-        default=768,
+        default=1024,
         description="Embedding vector dimension"
     )
     
