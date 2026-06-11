@@ -24,7 +24,7 @@ class OolelProvider(ILLMProvider):
     
     def __init__(self):
         self.endpoint = settings.OOLEL_LLM_ENDPOINT
-        self.api_key = settings.HF_API_KEY.get_secret_value() if settings.HF_API_KEY else None
+        self.api_key = settings.HF_TOKEN.get_secret_value() if settings.HF_TOKEN else None
         
         self.headers = {
             "Content-Type": "application/json"

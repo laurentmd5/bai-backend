@@ -395,7 +395,7 @@ class Settings(BaseSettings):
     # =========================================================================
     # HUGGING FACE & OOLEL SETTINGS
     # =========================================================================
-    HF_API_KEY: Optional[SecretStr] = Field(
+    HF_TOKEN: Optional[SecretStr] = Field(
         default=None,
         description="Hugging Face Inference API key"
     )
