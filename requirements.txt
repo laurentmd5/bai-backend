@@ -46,8 +46,6 @@ llama-cloud>=2.1.0
 nest-asyncio==1.6.0
 sentence-transformers==3.3.1
 langchain-core==1.4.4
-huggingface-hub==1.18.0
-langgraph==1.2.4
 # Validation
 pydantic==2.10.4
 pydantic-settings==2.6.1
