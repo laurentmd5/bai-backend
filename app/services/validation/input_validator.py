@@ -177,12 +177,6 @@ class InputValidator:
             }
             return help_prompts.get(language, help_prompts["en"])
         
-        # Run fast validation
-        if not await self.fast_validate(message, language):
-            # Detailed validation
-            if not await self.detailed_validate(message, language):
-                return message, language
-        
         # Convert to lowercase and normalize
         normalized = message.lower().strip()
         
