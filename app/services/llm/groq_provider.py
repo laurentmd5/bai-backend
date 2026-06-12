@@ -118,6 +118,49 @@ You MUST follow these rules:
             logger.error("groq_unexpected_error", error=str(e))
             raise LLMException(f"Unexpected error calling Groq: {e}") from e
 
+    async def generate_with_retry(
+        self,
+        prompt: str,
+        context: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        max_retries: int = 2,
+        **kwargs
+    ) -> str:
+        """
+        Generate a response with automatic retry on failure.
+        """
+        last_error = None
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt > 0:
+                    await asyncio.sleep(1.0 * attempt)  # Exponential backoff
+                return await self.generate(
+                    prompt=prompt,
+                    context=context,
+                    system_prompt=system_prompt,
+                    **kwargs
+                )
+            except (LLMTimeoutException, LLMUnavailableException) as e:
+                logger.warning("groq_generation_retry", attempt=attempt+1, error=str(e))
+                last_error = e
+            except Exception as e:
+                # Don't retry on other errors
+                raise e
+                
+        raise last_error or LLMException("Failed after retries")
+
+    async def is_available(self) -> bool:
+        """Check if Groq API is available."""
+        return self.client is not None
+
+    def get_model_name(self) -> str:
+        """Get current model name."""
+        return self.MODEL_NAME
+
+    def get_provider_name(self) -> str:
+        """Get provider name."""
+        return "groq"
+
     async def count_tokens(self, text: str) -> int:
         """
         Count tokens using a simple approximation (1 token ~= 4 chars)
