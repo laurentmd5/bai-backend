@@ -420,6 +420,11 @@ class Settings(BaseSettings):
         description="Gradio Space ID for Oolel Voices TTS"
     )
     
+    OOLEL_CORRECTOR_ENDPOINT: str = Field(
+        default="https://router.huggingface.co/hf-inference/models/soynade-research/oolel-corrector-1.5b",
+        description="Endpoint for Oolel Wolof Orthography Corrector"
+    )
+    
     # =========================================================================
     # SECURITY SETTINGS
     # =========================================================================
