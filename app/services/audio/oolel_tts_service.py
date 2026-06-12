@@ -32,7 +32,7 @@ class OolelTTSService:
     def _get_client(self) -> Client:
         if self._client is None:
             # We initialize lazily
-            self._client = Client(self.space_id, hf_token=self.api_key)
+            self._client = Client(self.space_id, token=self.api_key)
         return self._client
 
     def _predict_sync(self, text: str) -> str:
