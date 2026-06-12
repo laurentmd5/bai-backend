@@ -12,7 +12,6 @@ from pydantic import BaseModel, ConfigDict
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.services.nlp.oolel_corrector import oolel_corrector
 from app.core.exceptions import (
     ValidationException,
     HostileContentException,
@@ -178,10 +177,12 @@ class InputValidator:
             }
             return help_prompts.get(language, help_prompts["en"])
         
-        # Apply Oolel-Corrector if language is Wolof (or unknown, acting as a pass-through for English)
-        if language in ["wolof", "unknown", ""] and await oolel_corrector.is_available():
-            message = await oolel_corrector.normalize_text(message)
-
+        # Run fast validation
+        if not await self.fast_validate(message, language):
+            # Detailed validation
+            if not await self.detailed_validate(message, language):
+                return message, language
+        
         # Convert to lowercase and normalize
         normalized = message.lower().strip()
         

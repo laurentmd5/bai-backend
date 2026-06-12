@@ -210,6 +210,7 @@ services:
       GEMINI_MAX_TOKENS: ${GEMINI_MAX_TOKENS:-512}
       GEMINI_TIMEOUT: ${GEMINI_TIMEOUT:-10}
       HF_TOKEN: ${HF_TOKEN}
+      GROQ_API_KEY: ${GROQ_API_KEY}
       
       # Ollama (Phase 2)
       OLLAMA_HOST: ollama
