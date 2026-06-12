@@ -411,8 +411,8 @@ class Settings(BaseSettings):
     )
     
     WHISPER_STT_ENDPOINT: str = Field(
-        default="https://router.huggingface.co/hf-inference/models/CAYTU/whosper-large-v2",
-        description="Hugging Face Router Endpoint for CAYTU Whosper Large v2"
+        default="https://router.huggingface.co/hf-inference/models/facebook/mms-1b-all",
+        description="Hugging Face Router Endpoint for Facebook MMS-1B-All"
     )
     
     OOLEL_TTS_SPACE_ID: str = Field(
