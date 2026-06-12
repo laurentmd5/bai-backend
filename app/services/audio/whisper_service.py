@@ -55,8 +55,8 @@ class WhisperTranscriber:
             # Wrap bytes in BytesIO
             audio_file = io.BytesIO(audio_bytes)
             
-            # Wolof code-switching prompt to guide Whisper
-            wolof_prompt = "Salaamalekum, nanga def? Jërëjëf. The National People's Party (NPP) is great."
+            # Wolof code-switching prompt to guide Whisper with diverse vocabulary
+            wolof_prompt = "Salaamalekum, nanga def? Jërëjëf. Waaw, déedéet, loolu deug la. Lu xew? Numu tudd? Dama bëgg xam ndax mën nga ma dimbali. The National People's Party (NPP) and President Barrow are great."
             
             # Run inference synchronously (we could use an executor but this is POC)
             segments, info = self.model.transcribe(
