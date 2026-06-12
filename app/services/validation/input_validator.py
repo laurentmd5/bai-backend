@@ -772,20 +772,28 @@ class InputValidator:
             "foloo", "koto", "bara", "jula", "mansa", "wuloo",
         }
         wolof_indicators = {
-            "jërejëf", "waaw", "déedéet", "xamam", "xam", "nanga", "sunu", "lii", "leggi", "dëkk",
-            "ki", "mo", "kan", "lan", "fan", "lu", "tudd", "ñu", "jot", "na", "la", "def",
-            "man", "yaw", "mom", "ñun", "yeen", "ñom", "sama", "sa", "am", "baax", "dara",
-            "lepp", "fale", "lo", "ko", "ma", "ga", "nga", "ngi", "da", "di", "dana", "dina",
-            "bu", "su", "ci", "bëgg", "wax", "jox", "jël", "dox", "dem", "ñëw", "toog",
-            "taxaw", "xool", "gis", "dégg", "ladj", "laaj", "ndax", "mën", "war", "nit",
-            "gox", "réew", "kër", "mbir", "jëf", "ñata", "ñaata", "fii", "aka", "ndeke",
-            "ndaxte", "ngir", "pur", "ba", "bi", "mi", "yi", "ñi", "koku", "boku", "loku",
-            "tay", "suba", "démb", "at", "weer", "bes", "ñett", "ñaar", "benn", "ndaw",
-            "mag", "góor", "jigéen", "xale", "jamma", "yow"
+            # Salutations & Politesse
+            "jërejëf", "waaw", "déedéet", "nanga", "naka", "salaamalekum", "maangi", "fi", "rekk", "sant",
+            # Question words
+            "ki", "mo", "kan", "lan", "fan", "lu", "tudd", "ñata", "ñaata", "ndax", "loo", "noo", "nu", "foo", "kuy", "yan", "ban",
+            # Pronouns & Possessives
+            "man", "yaw", "yow", "mom", "moom", "ñun", "yeen", "ñom", "sama", "sa", "sunu", "seen", "kii", "ñii", "lii", "yii", "koku", "boku", "loku",
+            # Verbs
+            "xam", "xamam", "am", "baax", "def", "wax", "jox", "jël", "dox", "dem", "ñëw", "toog", "taxaw", "xool", "gis", "dégg", "ladj", "laaj", "mën", "war", "bëgg", "jang", "liggéey", "fey", "fay", "bind", "door", "daw", "nelaw", "dimbali", "jappale", "indi",
+            # Nouns
+            "dëkk", "nit", "gox", "réew", "kër", "mbir", "jëf", "xale", "mag", "góor", "jigéen", "jamma", "xaalis", "koppar", "ndox", "ceeb", "yapp", "jën", "taalibe", "seriñ", "tubaab", "ndaw", "mbok",
+            # Adverbs, Adjectives & Prepositions
+            "leggi", "léegi", "tay", "suba", "démb", "at", "weer", "bes", "fii", "fale", "ndeke", "ndaxte", "ngir", "pur", "lepp", "dara", "bu", "su", "ci", "ba", "bi", "mi", "yi", "ñi", "aka", "torop", "tuti", "bu_baax",
+            # Numbers
+            "benn", "ñaar", "ñett", "ñeent", "juróom", "fukk",
+            # Particles
+            "la", "na", "da", "di", "dana", "dina", "nga", "ngi", "ko", "ma", "ga", "ñu"
         }
         wolof_phrases = [
-            "na nga def", "ba beneen", "na nga", "naka nga def", 
-            "lu khew", "lu xew", "numu tudd", "naka la tudd", "lo bëgg"
+            "na nga def", "naka nga def", "naka def", "nuyu naa la", "jamm nga am", 
+            "ba beneen", "lu xew", "lu khew", "numu tudd", "naka la tudd", "lo bëgg", 
+            "fan la", "kan la", "lan la", "ndax mën nga", "dama bëgg", "dafa am", 
+            "mën nga ma", "wax ma", "dimbali ma", "naka sa", "naka mu", "ana sa"
         ]
 
         mandinka_score = len(mandinka_indicators & words)
