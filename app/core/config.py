@@ -400,24 +400,24 @@ class Settings(BaseSettings):
         description="Hugging Face Inference API key"
     )
     
+    GROQ_API_KEY: Optional[SecretStr] = Field(
+        default=None,
+        description="Groq API Key for Llama 3.3 fallback"
+    )
+    
     LLAMA_CLOUD_API_KEY: Optional[SecretStr] = Field(
         default=None,
         description="LlamaParse Cloud API Key"
     )
     
-    OOLEL_LLM_ENDPOINT: str = Field(
-        default="https://router.huggingface.co/hf-inference/models/soynade-research/oolel-v0.1-7b",
-        description="Oolel Text LLM Hugging Face Endpoint"
+    WHISPER_STT_ENDPOINT: str = Field(
+        default="https://router.huggingface.co/hf-inference/models/openai/whisper-large-v2",
+        description="Hugging Face Router Endpoint for Whisper Large v2"
     )
     
-    OOLEL_CORRECTOR_ENDPOINT: str = Field(
-        default="https://router.huggingface.co/hf-inference/models/soynade-research/oolel-corrector-1.5b",
-        description="Oolel Corrector Hugging Face Endpoint"
-    )
-    
-    OOLEL_TTS_ENDPOINT: str = Field(
-        default="https://router.huggingface.co/hf-inference/models/soynade-research/oolel-voices",
-        description="Oolel TTS Hugging Face Endpoint"
+    OOLEL_TTS_SPACE_ID: str = Field(
+        default="soynade-research/Oolel-Voices-Demo",
+        description="Gradio Space ID for Oolel Voices TTS"
     )
     
     # =========================================================================

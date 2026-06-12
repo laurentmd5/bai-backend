@@ -11,9 +11,9 @@ class QueryTransformer:
     to bridge the lexical and semantic gap for poorly structured or Wolof queries.
     """
     
-    def __init__(self, llm_provider: ILLMProvider, oolel_provider: ILLMProvider = None):
+    def __init__(self, llm_provider: ILLMProvider, groq_provider: ILLMProvider = None):
         self._llm = llm_provider
-        self._oolel_provider = oolel_provider
+        self._groq_provider = groq_provider
         
     async def transform_query(self, raw_query: str) -> Dict[str, Any]:
         """
@@ -85,11 +85,11 @@ class QueryTransformer:
         except Exception as e:
             logger.error("query_transformation_failed", error=str(e), query=raw_query)
             
-            # Try Oolel as fallback
-            if self._oolel_provider and await self._oolel_provider.is_available():
+            # Try Groq as fallback
+            if self._groq_provider and await self._groq_provider.is_available():
                 try:
-                    logger.info("using_oolel_as_fallback_for_query_transformer", query=raw_query)
-                    response = await self._oolel_provider.generate_with_retry(
+                    logger.info("using_groq_as_fallback_for_query_transformer", query=raw_query)
+                    response = await self._groq_provider.generate_with_retry(
                         prompt=f"Raw User Input: {raw_query}",
                         system_prompt=system_prompt,
                         max_retries=2
@@ -118,17 +118,17 @@ class QueryTransformer:
                         cleaned_response = cleaned_response[:first_json_end]
                         
                     result = json.loads(cleaned_response)
-                    logger.info("query_transformed_by_oolel_fallback", 
+                    logger.info("query_transformed_by_groq_fallback", 
                                 original=raw_query, 
                                 language=result.get("detected_language"))
                     return result
                     
-                except Exception as oolel_e:
-                    logger.error("oolel_fallback_for_query_transformer_failed", error=str(oolel_e))
+                except Exception as groq_e:
+                    logger.error("groq_fallback_for_query_transformer_failed", error=str(groq_e))
                     
-            # Fallback gracefully
             return {
-                "detected_language": "unknown",
+                "detected_language": "en", # Fallback to English
                 "is_casual_conversation": False,
-                "optimized_search_query": raw_query
+                "optimized_search_query": raw_query,
+                "hypothetical_document": None
             }

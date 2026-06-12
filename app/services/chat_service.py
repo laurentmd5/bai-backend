@@ -13,7 +13,7 @@ from app.services.rag_service import RAGService
 from app.services.llm.factory import get_llm_provider
 from app.services.llm.gemini_provider import GeminiProvider
 from app.services.llm.ollama_provider import OllamaProvider
-from app.services.llm.oolel_provider import OolelProvider
+from app.services.llm.groq_provider import GroqProvider
 from app.services.llm.query_transformer import QueryTransformer
 from app.services.validation.input_validator import InputValidator
 from app.services.validation.output_validator import OutputValidator
@@ -270,10 +270,10 @@ class ChatService:
         # Services injected at initialization
         self._rag_service = rag_service
         self._llm_provider = llm_provider or get_llm_provider()
-        self._oolel_provider = OolelProvider()
+        self._groq_provider = GroqProvider()
         
         # Initialize query transformer for advanced intelligence
-        self._query_transformer = QueryTransformer(self._llm_provider, self._oolel_provider)
+        self._query_transformer = QueryTransformer(self._llm_provider, self._groq_provider)
         
         # Initialize validators
         self._input_validator = InputValidator()
@@ -947,18 +947,19 @@ class ChatService:
                         max_retries=4,
                     )
                     
-                    if language == "wolof" and await self._oolel_provider.is_available():
-                        # Translate the Gemini output to Wolof using Oolel
-                        oolel_sys_prompt = "You are a professional translator. Translate the following text into natural, conversational Wolof as spoken in Gambia and Senegal. Keep it authentic and culturally appropriate."
+                    # 3. Wolof generation using Groq as fallback
+                    if language == "wolof" and await self._groq_provider.is_available():
                         try:
-                            translated_response = await self._oolel_provider.generate_with_retry(
-                                prompt=generated_response,
-                                system_prompt=oolel_sys_prompt,
+                            logger.info("using_groq_as_fallback_for_wolof_translation")
+                            translated_response = await self._groq_provider.generate_with_retry(
+                                prompt=f"Translate this exact text to Wolof (The Gambia dialect):\n\n{generated_response}",
+                                system_prompt="You are an expert Wolof translator for The Gambia. Translate exactly what is asked.",
                                 max_retries=2
                             )
-                            generated_response = translated_response
+                            if translated_response:
+                                generated_response = translated_response
                         except Exception as e:
-                            logger.warning("oolel_translation_failed_fallback_gemini", error=str(e))
+                            logger.error("groq_wolof_translation_failed", error=str(e))
                             # Fallback to Gemini for Wolof translation
                             gemini_wolof_prompt = f"Translate the following text into conversational Wolof as spoken in Gambia:\n\n{generated_response}"
                             generated_response = await self._llm_provider.generate_with_retry(
@@ -977,24 +978,24 @@ class ChatService:
                 except LLMException as e:
                     logger.error("llm_generation_failed", error=str(e), session_id=actual_session_id)
                     
-                    # Try to use Oolel as a fallback for answer generation
+                    # Try to use Groq as a fallback for answer generation
                     generated_response = None
-                    if await self._oolel_provider.is_available():
+                    if await self._groq_provider.is_available():
                         try:
-                            logger.info("using_oolel_as_fallback_for_llm_generation", session_id=actual_session_id)
-                            oolel_sys_prompt = "You are AskBarrow, the official AI assistant for President Adama Barrow. Answer the user's question based strictly on the provided context."
-                            generated_response = await self._oolel_provider.generate_with_retry(
+                            logger.info("using_groq_as_fallback_for_llm_generation", session_id=actual_session_id)
+                            groq_sys_prompt = "You are AskBarrow, the official AI assistant for President Adama Barrow. Answer the user's question based strictly on the provided context."
+                            generated_response = await self._groq_provider.generate_with_retry(
                                 prompt=f"Context:\n{context}\n\nQuestion: {sanitized_message}\nPlease answer in {language}.",
-                                system_prompt=oolel_sys_prompt,
+                                system_prompt=groq_sys_prompt,
                                 max_retries=2
                             )
                             # Record LLM latency
                             llm_latency_ms = (datetime.utcnow() - llm_start).total_seconds() * 1000
                             response_metadata["llm_latency_ms"] = llm_latency_ms
-                            response_metadata["fallback_llm"] = "oolel"
+                            response_metadata["fallback_llm"] = "groq"
                             
-                        except Exception as oolel_e:
-                            logger.error("oolel_fallback_generation_failed", error=str(oolel_e))
+                        except Exception as groq_e:
+                            logger.error("groq_fallback_generation_failed", error=str(groq_e))
                             
                     if not generated_response:
                         response_metadata["fallback_triggered"] = True

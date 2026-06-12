@@ -558,11 +558,13 @@ class WhatsAppService:
 
         # Synthesize voice response in the same language as the question
         audio_response = None
-        if detected_language == "wolof" and await oolel_tts.is_available():
-            audio_response = await oolel_tts.synthesize(response_text, language=detected_language)
-            
-        if not audio_response:
-            # Fallback to Edge TTS if Oolel is unavailable or language is not Wolof
+        if detected_language == "wolof":
+            if await oolel_tts.is_available():
+                audio_response = await oolel_tts.synthesize(response_text, language=detected_language)
+            # If Oolel TTS fails for Wolof (e.g. timeout), we DO NOT fallback to Edge TTS.
+            # Edge TTS sounds terrible in Wolof. We will just send the text response below.
+        else:
+            # For other languages (English, French, etc), use Edge TTS
             audio_response = await tts.synthesize(response_text, language=detected_language)
             
         if audio_response:

@@ -1,16 +1,12 @@
 """
-Whisper transcription service with Redis caching.
+Whisper transcription service with Redis caching using Hugging Face Inference Providers.
 """
 
-import asyncio
-import tempfile
 import hashlib
-import functools
 import time
-from pathlib import Path
 from typing import Optional
 
-from faster_whisper import WhisperModel
+import httpx
 
 from app.core.logging import get_logger
 from app.core.config import settings
@@ -22,122 +18,79 @@ logger = get_logger(__name__)
 
 class WhisperTranscriber:
     """
-    Local Whisper model for speech-to-text transcription.
-    Uses Redis cache to avoid re‑transcribing identical audio.
+    Cloud Whisper model for speech-to-text transcription via Hugging Face.
+    Uses Redis cache to avoid re-transcribing identical audio.
     """
     
-    MODEL_SIZE = getattr(settings, "WHISPER_MODEL_SIZE", "base")
-    COMPUTE_TYPE = "int8"  # Fast on CPU
     CACHE_TTL = getattr(settings, "AUDIO_CACHE_TTL_SECONDS", 86400)  # 24h
     
     def __init__(self):
-        self._model = None
-        self._initialized = False
-    
-    def _ensure_model(self):
-        if self._initialized:
-            return
-        logger.info("loading_whisper_model", model=self.MODEL_SIZE, compute=self.COMPUTE_TYPE)
-        self._model = WhisperModel(
-            self.MODEL_SIZE,
-            device="cpu",
-            compute_type=self.COMPUTE_TYPE,
-            cpu_threads=4,
-            num_workers=2
-        )
-        self._initialized = True
-        logger.info("whisper_model_loaded")
+        self._endpoint = settings.WHISPER_STT_ENDPOINT
+        self._hf_token = settings.HF_TOKEN.get_secret_value() if settings.HF_TOKEN else None
     
     def _compute_hash(self, audio_bytes: bytes) -> str:
-        """Compute SHA‑256 hash of audio for cache key."""
+        """Compute SHA-256 hash of audio for cache key."""
         return hashlib.sha256(audio_bytes).hexdigest()
-    
-    # Whisper language code → app language code mapping
-    _WHISPER_LANG_MAP: dict = {
-        "fr": "fr",
-        "en": "en",
-        "mn": "mandinka",  # Whisper uses "mn" for Mongolian, close enough fallback
-    }
-    # Supported app languages for TTS/RAG
-    _SUPPORTED_LANGS: frozenset = frozenset({"en", "fr", "mandinka", "wolof"})
 
     async def _run_transcription(
         self,
         audio_bytes: bytes,
-        language: Optional[str],
-        beam_size: int,
     ) -> tuple[Optional[str], str]:
         """
-        Core transcription logic. Returns (transcript, detected_language).
-        When language=None, Whisper auto-detects the spoken language.
+        Core transcription logic calling the Hugging Face Router API.
         """
-        self._ensure_model()
-
-        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
-            tmp.write(audio_bytes)
-            tmp_path = tmp.name
-
+        if not self._hf_token:
+            logger.error("hf_token_missing_for_whisper")
+            return None, "en"
+            
+        start_time = time.time()
+        
         try:
-            loop = asyncio.get_event_loop()
-            transcribe_func = functools.partial(
-                self._model.transcribe,
-                tmp_path,
-                language=language,  # None → Whisper auto-detects
-                beam_size=beam_size,
-                vad_filter=True,
-                vad_parameters={"min_silence_duration_ms": 500},
-            )
-
-            start_time = time.time()
-            segments, info = await loop.run_in_executor(None, transcribe_func)
+            # We use a 30 second timeout as Whisper large can take a bit for long audios
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    self._endpoint,
+                    headers={"Authorization": f"Bearer {self._hf_token}"},
+                    content=audio_bytes
+                )
+                
+            response.raise_for_status()
+            result = response.json()
+            
             duration = time.time() - start_time
             whisper_transcription_duration_seconds.observe(duration)
-
-            transcript = " ".join([seg.text for seg in segments]).strip()
-
-            # info.language is always set by Whisper (auto-detected or confirmed)
-            whisper_lang = getattr(info, "language", "en") or "en"
-            detected_lang = self._WHISPER_LANG_MAP.get(whisper_lang, "en")
-
+            
+            transcript = result.get("text", "").strip()
+            
             if transcript:
                 logger.info(
-                    "voice_transcribed",
-                    duration=info.duration,
-                    whisper_language=whisper_lang,
-                    app_language=detected_lang,
+                    "voice_transcribed_hf_cloud",
                     length=len(transcript),
                     processing_time_sec=round(duration, 2),
                 )
-                return transcript, detected_lang
+                # The HF API returns raw text. We return "en" as a safe fallback
+                # because `whatsapp_service.py` uses `langdetect` on the output text anyway.
+                return transcript, "en"
             else:
-                logger.warning("empty_transcript", duration=info.duration)
-                return None, detected_lang
+                logger.warning("empty_transcript_from_hf")
+                return None, "en"
 
+        except httpx.HTTPStatusError as e:
+            logger.error("whisper_hf_api_http_error", status_code=e.response.status_code, text=e.response.text)
+            return None, "en"
         except Exception as e:
-            logger.error("whisper_transcription_failed", error=str(e))
-            return None, language or "en"
-        finally:
-            Path(tmp_path).unlink(missing_ok=True)
+            logger.error("whisper_hf_api_failed", error=str(e))
+            return None, "en"
 
     async def transcribe(
         self,
         audio_bytes: bytes,
         language: Optional[str] = "en",
-        beam_size: int = 3,
+        beam_size: int = 3,  # Kept for signature compatibility but ignored in Cloud API
     ) -> Optional[str]:
         """
         Transcribe audio bytes to text (with Redis cache).
-
-        Args:
-            audio_bytes: Raw audio data
-            language: Expected language code, or None to auto-detect
-            beam_size: Whisper beam search width
-
-        Returns:
-            Transcribed text, or None on failure.
         """
-        self._ensure_model()
-
         audio_hash = self._compute_hash(audio_bytes)
         cache_key = f"audio_transcript:{language or 'auto'}:{audio_hash}"
         cached = await cache_service.get(CacheNamespace.RAG_RESPONSE, cache_key)
@@ -145,7 +98,7 @@ class WhisperTranscriber:
             logger.debug("audio_transcript_cache_hit", hash=audio_hash[:8])
             return cached
 
-        transcript, _ = await self._run_transcription(audio_bytes, language, beam_size)
+        transcript, _ = await self._run_transcription(audio_bytes)
         if transcript:
             await cache_service.set(
                 CacheNamespace.RAG_RESPONSE, cache_key,
@@ -159,31 +112,18 @@ class WhisperTranscriber:
         beam_size: int = 3,
     ) -> tuple[Optional[str], str]:
         """
-        Transcribe audio and auto-detect its language.
-
-        Uses Whisper's built-in language identification (no language hint).
-        Returns a tuple (transcript, language_code) where language_code is
-        one of: "en", "fr", "mandinka", "wolof".
-
-        Args:
-            audio_bytes: Raw audio data
-            beam_size: Whisper beam search width
-
-        Returns:
-            (transcript_text_or_None, detected_language_code)
+        Transcribe audio and return text with dummy language.
+        `whatsapp_service.py` detects Wolof automatically from the returned text.
         """
-        self._ensure_model()
-
         audio_hash = self._compute_hash(audio_bytes)
         cache_key = f"audio_transcript:auto:{audio_hash}"
         cached = await cache_service.get(CacheNamespace.RAG_RESPONSE, cache_key)
+        
         if cached and isinstance(cached, dict):
             logger.debug("audio_transcript_detect_cache_hit", hash=audio_hash[:8])
             return cached.get("text"), cached.get("lang", "en")
 
-        transcript, detected_lang = await self._run_transcription(
-            audio_bytes, language=None, beam_size=beam_size
-        )
+        transcript, detected_lang = await self._run_transcription(audio_bytes)
         if transcript:
             await cache_service.set(
                 CacheNamespace.RAG_RESPONSE, cache_key,

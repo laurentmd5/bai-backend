@@ -1,7 +1,9 @@
 import asyncio
-import io
+import os
+import aiofiles
 from typing import Optional, Dict
-import httpx
+
+from gradio_client import Client
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -11,7 +13,7 @@ logger = get_logger(__name__)
 
 class OolelTTSService:
     """
-    TTS Service using Oolel Voices (Soynade Research) via Hugging Face Inference API.
+    TTS Service using Oolel Voices (Soynade Research) via Gradio Space.
     Designed for Wolof and Wolof-English/French code-switching.
     """
     
@@ -19,16 +21,29 @@ class OolelTTSService:
     
     def __init__(self):
         self._cache: Dict[str, bytes] = {}
-        self.endpoint = settings.OOLEL_TTS_ENDPOINT
+        self.space_id = settings.OOLEL_TTS_SPACE_ID
         self.api_key = settings.HF_TOKEN.get_secret_value() if settings.HF_TOKEN else None
-        
-        self.headers = {}
-        if self.api_key:
-            self.headers["Authorization"] = f"Bearer {self.api_key}"
+        self._client = None
             
     async def is_available(self) -> bool:
-        """Check if API key is configured."""
-        return self.api_key is not None
+        """Always return true as we can try to connect to the space."""
+        return True
+
+    def _get_client(self) -> Client:
+        if self._client is None:
+            # We initialize lazily
+            self._client = Client(self.space_id, hf_token=self.api_key)
+        return self._client
+
+    def _predict_sync(self, text: str) -> str:
+        """Run Gradio prediction synchronously."""
+        client = self._get_client()
+        # The /predict endpoint takes a single text input and returns an audio file path
+        result = client.predict(
+            text=text,
+            api_name="/predict"
+        )
+        return result
 
     async def synthesize(
         self,
@@ -37,20 +52,16 @@ class OolelTTSService:
         **kwargs
     ) -> Optional[bytes]:
         """
-        Convert text to audio using Oolel Voices.
+        Convert text to audio using Oolel Voices Gradio Space.
         
         Args:
             text: Text to speak (supports Wolof/English/French mixing)
             language: Base language (usually wolof)
             
         Returns:
-            Raw audio bytes (usually WAV or FLAC from HF Inference API), or None on failure.
+            Raw audio bytes (WAV/FLAC), or None on failure.
         """
         if not text or not text.strip():
-            return None
-            
-        if not self.api_key:
-            logger.error("oolel_tts_no_api_key")
             return None
 
         # Check cache
@@ -58,56 +69,56 @@ class OolelTTSService:
         if cache_key in self._cache:
             return self._cache[cache_key]
 
-        payload = {
-            "inputs": text,
-        }
-
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                for attempt in range(3):
-                    response = await client.post(
-                        self.endpoint,
-                        headers=self.headers,
-                        json=payload
-                    )
+            # First attempt: 30s timeout
+            # Second attempt: 15s timeout
+            timeouts = [30.0, 15.0]
+            audio_path = None
+            
+            for attempt, timeout in enumerate(timeouts):
+                try:
+                    logger.info("oolel_tts_gradio_request", text_length=len(text), attempt=attempt+1, timeout=timeout)
                     
-                    if response.status_code == 200:
-                        # Success, HF API returns audio bytes
-                        audio_data = response.content
-                        
-                        # Update cache
-                        if len(self._cache) >= self.MAX_CACHE_SIZE:
-                            # Remove oldest
-                            first_key = next(iter(self._cache))
-                            del self._cache[first_key]
-                        self._cache[cache_key] = audio_data
-                        
-                        logger.info("oolel_tts_success", length=len(audio_data))
-                        return audio_data
-                        
-                    elif response.status_code == 503:
-                        # Model is loading
-                        try:
-                            data = response.json()
-                            estimated_time = data.get("estimated_time", 10.0)
-                        except:
-                            estimated_time = 10.0
-                            
-                        logger.warning("oolel_tts_loading", estimated_time=estimated_time, attempt=attempt+1)
-                        await asyncio.sleep(min(estimated_time, 20.0))
-                        
-                    elif response.status_code == 429:
-                        wait_time = 2 ** attempt
-                        logger.warning("oolel_tts_rate_limit", wait_seconds=wait_time, attempt=attempt+1)
-                        await asyncio.sleep(wait_time)
-                        
-                    else:
-                        logger.error("oolel_tts_error", status_code=response.status_code, text=response.text)
-                        return None
-                        
-                logger.error("oolel_tts_max_retries_exceeded")
+                    # Run the synchronous gradio call in a thread with a timeout
+                    audio_path = await asyncio.wait_for(
+                        asyncio.to_thread(self._predict_sync, text),
+                        timeout=timeout
+                    )
+                    break # Success!
+                    
+                except asyncio.TimeoutError:
+                    logger.warning("oolel_tts_timeout", attempt=attempt+1, timeout_used=timeout)
+                except Exception as e:
+                    logger.error("oolel_tts_gradio_error", attempt=attempt+1, error=str(e))
+                    if attempt == len(timeouts) - 1:
+                        raise e
+            
+            if not audio_path:
+                logger.error("oolel_tts_all_attempts_failed")
                 return None
 
+            # Read the audio file asynchronously
+            async with aiofiles.open(audio_path, mode="rb") as f:
+                audio_data = await f.read()
+                
+            # Clean up the temp file generated by Gradio
+            try:
+                os.remove(audio_path)
+            except Exception as e:
+                logger.warning("oolel_tts_cleanup_failed", path=audio_path, error=str(e))
+
+            # Update cache
+            if len(self._cache) >= self.MAX_CACHE_SIZE:
+                first_key = next(iter(self._cache))
+                del self._cache[first_key]
+            self._cache[cache_key] = audio_data
+            
+            logger.info("oolel_tts_success", length=len(audio_data))
+            return audio_data
+
+        except asyncio.TimeoutError:
+            logger.error("oolel_tts_final_timeout_exceeded")
+            return None
         except Exception as e:
             logger.error("oolel_tts_exception", error=str(e))
             return None
