@@ -790,7 +790,7 @@ class InputValidator:
             "la", "na", "da", "di", "dana", "dina", "nga", "ngi", "ko", "ma", "ga", "ñu"
         }
         wolof_phrases = [
-            "na nga def", "naka nga def", "naka def", "nuyu naa la", "jamm nga am", 
+            "na nga def", "naka nga def", "naka def", "naga def", "nuyu naa la", "jamm nga am", 
             "ba beneen", "lu xew", "lu khew", "numu tudd", "naka la tudd", "lo bëgg", 
             "fan la", "kan la", "lan la", "ndax mën nga", "dama bëgg", "dafa am", 
             "mën nga ma", "wax ma", "dimbali ma", "naka sa", "naka mu", "ana sa"
