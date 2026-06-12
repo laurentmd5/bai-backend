@@ -410,9 +410,9 @@ class Settings(BaseSettings):
         description="LlamaParse Cloud API Key"
     )
     
-    WHISPER_STT_ENDPOINT: str = Field(
-        default="https://router.huggingface.co/hf-inference/models/facebook/mms-1b-all",
-        description="Hugging Face Router Endpoint for Facebook MMS-1B-All"
+    WHISPER_MODEL_SIZE: str = Field(
+        default="large-v3-turbo",
+        description="Faster-Whisper model size for local STT"
     )
     
     OOLEL_TTS_SPACE_ID: str = Field(

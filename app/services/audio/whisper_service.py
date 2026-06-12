@@ -1,12 +1,13 @@
 """
-Whisper transcription service with Redis caching using Hugging Face Inference Providers.
+Whisper transcription service with Redis caching using local faster-whisper.
 """
 
 import hashlib
+import io
 import time
 from typing import Optional
 
-import httpx
+from faster_whisper import WhisperModel
 
 from app.core.logging import get_logger
 from app.core.config import settings
@@ -18,15 +19,21 @@ logger = get_logger(__name__)
 
 class WhisperTranscriber:
     """
-    Cloud Whisper model for speech-to-text transcription via Hugging Face.
+    Local Whisper model for speech-to-text transcription.
     Uses Redis cache to avoid re-transcribing identical audio.
     """
     
     CACHE_TTL = getattr(settings, "AUDIO_CACHE_TTL_SECONDS", 86400)  # 24h
     
     def __init__(self):
-        self._endpoint = settings.WHISPER_STT_ENDPOINT
-        self._hf_token = settings.HF_TOKEN.get_secret_value() if settings.HF_TOKEN else None
+        self.model_size = settings.WHISPER_MODEL_SIZE
+        # Initialize model on CPU with INT8 quantization for efficiency
+        logger.info(f"Loading local faster-whisper model: {self.model_size}")
+        self.model = WhisperModel(
+            self.model_size,
+            device="cpu",
+            compute_type="int8"
+        )
     
     def _compute_hash(self, audio_bytes: bytes) -> str:
         """Compute SHA-256 hash of audio for cache key."""
@@ -35,59 +42,67 @@ class WhisperTranscriber:
     async def _run_transcription(
         self,
         audio_bytes: bytes,
+        beam_size: int = 5,
+        language: Optional[str] = None
     ) -> tuple[Optional[str], str]:
         """
-        Core transcription logic calling the Hugging Face Router API.
+        Core transcription logic using local faster-whisper.
+        Uses aggressive Wolof/English initial prompt to force code-switching.
         """
-        if not self._hf_token:
-            logger.error("hf_token_missing_for_whisper")
-            return None, "wolof"
-            
         start_time = time.time()
         
         try:
-            # We use a 30 second timeout as Whisper large can take a bit for long audios
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    self._endpoint,
-                    headers={"Authorization": f"Bearer {self._hf_token}"},
-                    content=audio_bytes
-                )
-                
-            response.raise_for_status()
-            result = response.json()
+            # Wrap bytes in BytesIO
+            audio_file = io.BytesIO(audio_bytes)
+            
+            # Wolof code-switching prompt to guide Whisper
+            wolof_prompt = "Salaamalekum, nanga def? Jërëjëf. The National People's Party (NPP) is great."
+            
+            # Run inference synchronously (we could use an executor but this is POC)
+            segments, info = self.model.transcribe(
+                audio_file,
+                beam_size=beam_size,
+                language=language,
+                initial_prompt=wolof_prompt,
+                condition_on_previous_text=False, # Prevent hallucination loops
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=500)
+            )
+            
+            # Consume the generator
+            transcript = " ".join([segment.text for segment in segments]).strip()
             
             duration = time.time() - start_time
             whisper_transcription_duration_seconds.observe(duration)
             
-            transcript = result.get("text", "").strip()
+            detected_lang = info.language
+            
+            # Whisper struggles to return "wo" (Wolof). If it returns "en" or "nn",
+            # we default it to wolof so our pipeline handles it properly.
+            if detected_lang not in ["fr", "mandinka"]:
+                detected_lang = "wolof"
             
             if transcript:
                 logger.info(
-                    "voice_transcribed_hf_cloud",
+                    "voice_transcribed_local",
                     length=len(transcript),
                     processing_time_sec=round(duration, 2),
+                    detected_lang=detected_lang
                 )
-                # The HF API returns raw text. We return "wolof" as a default
-                # because we are using CAYTU/whosper-large-v2, and short audios
-                # (< 3 words) will fall back to this language in the pipeline.
-                return transcript, "wolof"
+                return transcript, detected_lang
             else:
-                logger.warning("empty_transcript_from_hf")
+                logger.warning("empty_transcript_from_whisper")
                 return None, "wolof"
 
-        except httpx.HTTPStatusError as e:
-            logger.error("whisper_hf_api_http_error", status_code=e.response.status_code, text=e.response.text)
-            return None, "wolof"
         except Exception as e:
-            logger.error("whisper_hf_api_failed", error=str(e))
+            logger.error("whisper_local_failed", error=str(e))
             return None, "wolof"
 
     async def transcribe(
         self,
         audio_bytes: bytes,
-        language: Optional[str] = "en",
-        beam_size: int = 3,  # Kept for signature compatibility but ignored in Cloud API
+        language: Optional[str] = None,
+        beam_size: int = 5,
     ) -> Optional[str]:
         """
         Transcribe audio bytes to text (with Redis cache).
@@ -99,7 +114,7 @@ class WhisperTranscriber:
             logger.debug("audio_transcript_cache_hit", hash=audio_hash[:8])
             return cached
 
-        transcript, _ = await self._run_transcription(audio_bytes)
+        transcript, _ = await self._run_transcription(audio_bytes, beam_size, language)
         if transcript:
             await cache_service.set(
                 CacheNamespace.RAG_RESPONSE, cache_key,
@@ -110,11 +125,10 @@ class WhisperTranscriber:
     async def transcribe_detect(
         self,
         audio_bytes: bytes,
-        beam_size: int = 3,
+        beam_size: int = 5,
     ) -> tuple[Optional[str], str]:
         """
-        Transcribe audio and return text with dummy language.
-        `whatsapp_service.py` detects Wolof automatically from the returned text.
+        Transcribe audio and return text with detected language.
         """
         audio_hash = self._compute_hash(audio_bytes)
         cache_key = f"audio_transcript:auto:{audio_hash}"
@@ -124,7 +138,7 @@ class WhisperTranscriber:
             logger.debug("audio_transcript_detect_cache_hit", hash=audio_hash[:8])
             return cached.get("text"), cached.get("lang", "wolof")
 
-        transcript, detected_lang = await self._run_transcription(audio_bytes)
+        transcript, detected_lang = await self._run_transcription(audio_bytes, beam_size)
         if transcript:
             await cache_service.set(
                 CacheNamespace.RAG_RESPONSE, cache_key,
