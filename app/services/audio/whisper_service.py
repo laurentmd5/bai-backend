@@ -41,7 +41,7 @@ class WhisperTranscriber:
         """
         if not self._hf_token:
             logger.error("hf_token_missing_for_whisper")
-            return None, "en"
+            return None, "wolof"
             
         start_time = time.time()
         
@@ -68,19 +68,20 @@ class WhisperTranscriber:
                     length=len(transcript),
                     processing_time_sec=round(duration, 2),
                 )
-                # The HF API returns raw text. We return "en" as a safe fallback
-                # because `whatsapp_service.py` uses `langdetect` on the output text anyway.
-                return transcript, "en"
+                # The HF API returns raw text. We return "wolof" as a default
+                # because we are using CAYTU/whosper-large-v2, and short audios
+                # (< 3 words) will fall back to this language in the pipeline.
+                return transcript, "wolof"
             else:
                 logger.warning("empty_transcript_from_hf")
-                return None, "en"
+                return None, "wolof"
 
         except httpx.HTTPStatusError as e:
             logger.error("whisper_hf_api_http_error", status_code=e.response.status_code, text=e.response.text)
-            return None, "en"
+            return None, "wolof"
         except Exception as e:
             logger.error("whisper_hf_api_failed", error=str(e))
-            return None, "en"
+            return None, "wolof"
 
     async def transcribe(
         self,
@@ -121,7 +122,7 @@ class WhisperTranscriber:
         
         if cached and isinstance(cached, dict):
             logger.debug("audio_transcript_detect_cache_hit", hash=audio_hash[:8])
-            return cached.get("text"), cached.get("lang", "en")
+            return cached.get("text"), cached.get("lang", "wolof")
 
         transcript, detected_lang = await self._run_transcription(audio_bytes)
         if transcript:
