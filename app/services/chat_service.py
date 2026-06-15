@@ -869,18 +869,33 @@ class ChatService:
                 try:
                     llm_start = datetime.utcnow()
                     
+                    # Fetch conversation history
+                    history_text = ""
+                    try:
+                        history_list = await self.get_conversation_history(session.id, limit=4)
+                        if history_list:
+                            history_lines = []
+                            # history_list is returned newest first, we want oldest first
+                            for msg in reversed(history_list):
+                                history_lines.append(f"User: {msg.get('user_message', '')}")
+                                history_lines.append(f"Assistant: {msg.get('bot_response', '')}")
+                            history_text = "\n".join(history_lines)
+                    except Exception as e:
+                        logger.error("failed_to_fetch_history_for_prompt", error=str(e))
+                    
                     if language == "wolof":
                         # For Wolof, we let Gemini do the reasoning in English, then translate with Oolel
                         gemini_lang = "en"
                         prompt_with_instructions = f"{sanitized_message}\n\n[CRITICAL INSTRUCTION: You MUST generate your final response in English based strictly on the provided context.]"
                     else:
                         gemini_lang = language
-                        prompt_with_instructions = f"{sanitized_message}\n\n[CRITICAL INSTRUCTION: You MUST generate your final response in the following language: {language}. Ensure it sounds natural and conversational.]"
+                        prompt_with_instructions = sanitized_message
                     
                     generated_response = await self._llm_provider.generate_with_retry(
                         prompt=prompt_with_instructions,
                         context=context,
                         language=gemini_lang,
+                        history=history_text,
                         max_retries=4,
                     )
                     

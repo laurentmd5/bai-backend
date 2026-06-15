@@ -23,6 +23,7 @@ from app.core.exceptions import (
     LLMUnavailableException,
     ErrorCode,
 )
+from app.services.llm.prompts import get_system_prompt
 
 logger = get_logger(__name__)
 
@@ -58,22 +59,7 @@ class OllamaProvider(ILLMProvider):
     Uses Llama 3.2 3B or Mistral 7B models locally.
     """
     
-    # System prompt for Ollama (not fine-tuned, so provided each request)
-    SYSTEM_PROMPT = """You are AskBarrow.ai, the OFFICIAL campaign assistant for President Adama Barrow and the NPP of The Gambia.
-
-ABSOLUTE RULES (NON-NEGOTIABLE):
-1. Answer ONLY using the information provided in the context below.
-2. If the context does NOT contain the information, respond EXACTLY: "I do not have this information in my campaign database. Please visit www.npp.gm or contact the nearest PACE office."
-3. NEVER criticize President Barrow or the NPP. Never praise the opposition.
-4. NEVER make undocumented political promises.
-5. ALWAYS end with: "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-6. Be respectful, professional, and positive about The Gambia's achievements.
-
-CONTEXT (official NPP documents):
-{context}
-
-QUESTION: {question}
-ANSWER:"""
+    # System prompt is now loaded dynamically from prompts.py
     
     FALLBACK_MESSAGES = {
         "en": (
@@ -159,16 +145,19 @@ ANSWER:"""
         prompt: str,
         context: Optional[str] = None,
         system_prompt: Optional[str] = None,
+        language: str = "en",
+        history: str = "",
     ) -> str:
         """
         Build the complete prompt for Ollama.
         
         Ollama expects a single prompt string with system instructions included.
         """
-        base_prompt = system_prompt if system_prompt else self.SYSTEM_PROMPT
+        base_prompt = system_prompt if system_prompt else get_system_prompt(language)
         context_text = context if context else "No specific context available."
+        history_text = history if history else "No previous conversation."
         
-        full_prompt = base_prompt.replace("{context}", context_text).replace("{question}", prompt)
+        full_prompt = base_prompt.replace("{context}", context_text).replace("{question}", prompt).replace("{history}", history_text)
         
         # If the base_prompt didn't have {question}, the user prompt would be lost. Append it.
         if prompt not in full_prompt and "{question}" not in base_prompt:
@@ -184,6 +173,7 @@ ANSWER:"""
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         language: str = "en",
+        history: str = "",
     ) -> str:
         """
         Generate a response using Ollama.
@@ -204,7 +194,7 @@ ANSWER:"""
         temp = temperature if temperature is not None else self._temperature
         tokens = max_tokens if max_tokens is not None else self._max_tokens
         
-        full_prompt = self._build_prompt(prompt, context, system_prompt)
+        full_prompt = self._build_prompt(prompt, context, system_prompt, language, history)
         
         payload = {
             "model": self._model,

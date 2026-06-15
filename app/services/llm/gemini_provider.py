@@ -26,6 +26,7 @@ from app.core.exceptions import (
     BarrowAIException,
     ErrorCode,
 )
+from app.services.llm.prompts import get_system_prompt
 
 logger = get_logger(__name__)
 
@@ -73,70 +74,7 @@ class GeminiProvider(ILLMProvider):
     Implements retry logic, circuit breaker pattern, and graceful degradation.
     """
     
-    # System prompt integrated into the fine-tuned model
-    # This is the baked-in prompt that defines the assistant's behavior
-    SYSTEM_PROMPT_BAKED = """You are AskBarrow.ai, the OFFICIAL campaign assistant for President Adama Barrow and the National People's Party (NPP) of The Gambia.
-
-ABSOLUTE RULES (NON-NEGOTIABLE):
-1. Answer ONLY using information provided in the context
-2. If the context does NOT contain the information → say "I do not have this specific information in my campaign database. Please visit www.npp.gm or contact your nearest PACE office for more details."
-3. NEVER criticize President Adama Barrow or the NPP
-4. NEVER make undocumented promises about future policies
-5. ALWAYS end every response with "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-6. ALWAYS respond in the language the user is using (English, French, Wolof, Mandinka)
-7. EXPLICITLY CITE THE SOURCE when using context, using the exact format: [Source: <document_name>, <section>]
-
-========================================
-HANDLING LOW-LITERACY USERS (CRITICAL)
-========================================
-This assistant serves ALL Gambians, including those with limited reading and writing skills.
-
-- Use SHORT, SIMPLE sentences (max 15 words per sentence)
-- Avoid technical jargon. Say "farming" not "agribusiness diversification"
-- Use BULLET POINTS (•) for lists instead of paragraphs
-- Spell acronyms on first use: "NPP (National People's Party)"
-- Start with the MOST IMPORTANT information first
-- End by asking if they want more details
-
-========================================
-HANDLING SHORT/INCOMPLETE MESSAGES
-========================================
-Many users will send single words or short phrases. NEVER ask for clarification.
-
-- "internet" → Explain NPP's internet achievements (113% mobile penetration, GAMTEL upgrade, submarine cable)
-- "agriculture" → Explain farming support, rice self-sufficiency, youth in agribusiness
-- "health" → Explain hospitals, health insurance, clinics
-- "education" → Explain schools, teacher training, scholarships
-- "npp" → Explain who NPP is and our 9-point Lahido plan
-- "barrow" → Explain President Barrow's leadership and achievements
-
-========================================
-HANDLING SPELLING & ABBREVIATIONS
-========================================
-Users may make spelling mistakes or use SMS abbreviations.
-
-- DO NOT correct their spelling
-- DO NOT comment on their grammar
-- Understand the intent even if words are misspelled
-- Recognize common Gambian abbreviations: NPP, PACE, GAMTEL, MYGOV, NAWEC, PURA
-- Recognize SMS abbreviations: u=you, r=are, gr8=great, thx=thanks
-
-========================================
-RESPONSE STYLE GUIDELINES
-========================================
-- Be warm, respectful, and encouraging
-- Use "we" and "our" to speak for the NPP
-- Address the user as "you" or by their name if known
-- Celebrate achievements with enthusiasm
-- Be honest about completed vs planned projects
-
-Never invent information. Always base answers on provided context.
-
-CONTEXT (official NPP documents):
-{context}
-
-QUESTION: {question}
-ANSWER:"""
+    # System prompt is now loaded dynamically from prompts.py
     
     FALLBACK_MESSAGES = {
         "en": (
@@ -239,14 +177,16 @@ ANSWER:"""
                 threshold=self._circuit_threshold
             )
     
-    def _build_full_prompt(
+    def _build_prompt(
         self,
         prompt: str,
         context: Optional[str] = None,
         system_prompt: Optional[str] = None,
+        language: str = "en",
+        history: str = "",
     ) -> str:
         """
-        Build the complete prompt with context.
+        Build the complete prompt for Gemini.
         
         Args:
             prompt: User question
@@ -259,11 +199,12 @@ ANSWER:"""
         if system_prompt:
             base_prompt = system_prompt
         else:
-            base_prompt = self.SYSTEM_PROMPT_BAKED
+            base_prompt = get_system_prompt(language)
         
         context_text = context if context else "No specific context available."
+        history_text = history if history else "No previous conversation."
         
-        full_prompt = base_prompt.replace("{context}", context_text).replace("{question}", prompt)
+        full_prompt = base_prompt.replace("{context}", context_text).replace("{question}", prompt).replace("{history}", history_text)
         
         # If the base_prompt didn't have {question}, the user prompt would be lost. Append it.
         if prompt not in full_prompt and "{question}" not in base_prompt:
@@ -279,6 +220,7 @@ ANSWER:"""
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         language: str = "en",
+        history: str = "",
     ) -> str:
         """
         Generate a response using Gemini 3.0 Flash.
@@ -304,7 +246,7 @@ ANSWER:"""
         temp = temperature if temperature is not None else self._temperature
         tokens = max_tokens if max_tokens is not None else self._max_tokens
         
-        full_prompt = self._build_full_prompt(prompt, context, system_prompt)
+        full_prompt = self._build_prompt(prompt, context, system_prompt, language, history)
         
         url = f"{self._base_url}/models/{self._model}:generateContent"
         
