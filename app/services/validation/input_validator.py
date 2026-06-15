@@ -48,7 +48,7 @@ class InputValidator:
     """
     
     # Allowed languages
-    ALLOWED_LANGUAGES = {"en", "fr", "mandinka", "wolof"}
+    ALLOWED_LANGUAGES = {"en", "mandinka", "wolof"}
     
     # Maximum message length
     MAX_MESSAGE_LENGTH = 2000
@@ -171,11 +171,7 @@ class InputValidator:
         """
         if not message or len(message.strip()) < 2:
             # Very short messages - return a help prompt
-            help_prompts = {
-                "en": "I'm here to help you learn about President Barrow and NPP achievements. You can ask me about internet, farming, health, schools, or roads.",
-                "fr": "Je suis là pour vous informer sur les réalisations du Président Barrow et du NPP. Vous pouvez me poser des questions sur internet, l'agriculture, la santé, l'éducation ou les routes."
-            }
-            return help_prompts.get(language, help_prompts["en"])
+            return "I am here to inform you about President Barrow and the NPP's achievements. You can ask me about internet, agriculture, health, education, or roads."
         
         # Convert to lowercase and normalize
         normalized = message.lower().strip()
@@ -753,7 +749,7 @@ class InputValidator:
             text: Text to analyze
 
         Returns:
-            Language code: "en", "fr", "mandinka", or "wolof"
+            Language code: "en", "mandinka", or "wolof"
         """
         if not text or len(text.strip()) < 3:
             return "en"
@@ -804,9 +800,6 @@ class InputValidator:
             from langdetect import detect, DetectorFactory  # type: ignore[import]
             DetectorFactory.seed = 42  # deterministic
             detected = detect(text)
-            if detected == "fr":
-                return "fr"
-            # Any other code defaults to "en"
             return "en"
         except Exception:
             pass
@@ -821,6 +814,6 @@ class InputValidator:
         }
         french_score = len(french_words & words)
         if french_score >= 2:
-            return "fr"
+            return "en"
 
         return "en"

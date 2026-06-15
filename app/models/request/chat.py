@@ -52,8 +52,8 @@ class ChatMessageRequest(BaseModel):
     language: str = Field(
         default="en",
         description="Preferred language for response",
-        examples=["en", "fr", "mandinka", "wolof"],
-        pattern="^(en|fr|mandinka|wolof)$"
+        examples=["en", "mandinka", "wolof"],
+        pattern="^(en|mandinka|wolof)$"
     )
     
     channel: str = Field(

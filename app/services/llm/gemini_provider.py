@@ -144,11 +144,6 @@ ANSWER:"""
             "Please try again in a few moments or visit www.npp.gm for more information.\n\n"
             "Ask. Know. Decide. - One Gambia. One People. One Barrow."
         ),
-        "fr": (
-            "Je rencontre une difficulté technique momentanée. "
-            "Veuillez réessayer dans quelques instants ou visiter www.npp.gm.\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
     }
     
     def __init__(self):

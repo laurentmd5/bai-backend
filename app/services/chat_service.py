@@ -82,17 +82,6 @@ class ChatService:
             "How can I help you today?\n\n"
             "Ask. Know. Decide. - One Gambia. One People. One Barrow."
         ),
-        "fr": (
-            "Bonjour ! Bienvenue sur AskBarrow.ai — votre source officielle d'information "
-            "sur les réalisations du Président Adama Barrow et les programmes du NPP.\n\n"
-            "Vous pouvez me demander :\n"
-            "• Le développement dans votre région\n"
-            "• Les programmes gouvernementaux (Transformation Numérique, Infrastructure, Jeunesse)\n"
-            "• Les plans du NPP pour 2027-2031\n"
-            "• L'adressage numérique et la connectivité\n\n"
-            "Comment puis-je vous aider aujourd'hui ?\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
         "mandinka": (
             "Salaam Aleikum! I ye AskBarrow.ai la. Nte le mu i la kuntaalaa ti "
             "President Adama Barrow ni NPP la waleeroolu la.\n\n"
@@ -133,32 +122,12 @@ class ChatService:
             "What would you like to know?\n\n"
             "Ask. Know. Decide. - One Gambia. One People. One Barrow."
         ),
-        "fr": (
-            "Je suis AskBarrow.ai, votre assistant d'information sur les réalisations du Président Barrow.\n\n"
-            "**Sujets que je peux aborder :**\n"
-            "• Connectivité internet et mobile (113% de pénétration, mise à niveau GAMTEL)\n"
-            "• Adressage numérique (194 000+ propriétés cartographiées)\n"
-            "• Services d'e-Gouvernement (plateforme MYGOV)\n"
-            "• Programmes Jeunesse et TIC\n"
-            "• La Voie à Suivre du NPP 2027-2031\n\n"
-            "**Exemples de questions :**\n"
-            "• 'Qu'a fait le NPP pour l'internet ?'\n"
-            "• 'Parlez-moi de l'adressage numérique'\n"
-            "• 'Quels sont les plans pour la 5G ?'\n\n"
-            "Que souhaitez-vous savoir ?\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
     }
     
     STOP_RESPONSE = {
         "en": (
             "You have been unsubscribed from AskBarrow.ai messages. "
             "You can restart the conversation anytime by sending 'START'.\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
-        "fr": (
-            "Vous avez été désabonné des messages AskBarrow.ai. "
-            "Vous pouvez relancer la conversation à tout moment en envoyant 'START'.\n\n"
             "Ask. Know. Decide. - One Gambia. One People. One Barrow."
         ),
     }
@@ -169,22 +138,12 @@ class ChatService:
             "How can I help you today?\n\n"
             "Ask. Know. Decide. - One Gambia. One People. One Barrow."
         ),
-        "fr": (
-            "Bon retour sur AskBarrow.ai ! Vous êtes maintenant réabonné. "
-            "Comment puis-je vous aider aujourd'hui ?\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
     }
     
     FALLBACK_RESPONSES = {
         "en": (
             "I do not have this specific information in my campaign database. "
             "Please visit www.npp.gm or contact your nearest PACE office for more details.\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
-        "fr": (
-            "Je ne dispose pas de cette information spécifique dans ma base de campagne. "
-            "Veuillez visiter www.npp.gm ou contacter le bureau PACE le plus proche.\n\n"
             "Ask. Know. Decide. - One Gambia. One People. One Barrow."
         ),
         "wolof": (
@@ -210,11 +169,6 @@ class ChatService:
             "Please try again in a few moments.\n\n"
             "Ask. Know. Decide. - One Gambia. One People. One Barrow."
         ),
-        "fr": (
-            "Je rencontre une difficulté technique momentanée. "
-            "Veuillez réessayer dans quelques instants.\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
     }
     
     HOSTILE_CONTENT_RESPONSE = {
@@ -222,12 +176,6 @@ class ChatService:
             "I'm AskBarrow.ai, the official assistant for President Adama Barrow and the NPP. "
             "I'm here to provide information about the President's achievements and the party's programs. "
             "How can I help you with that?\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
-        "fr": (
-            "Je suis AskBarrow.ai, l'assistant officiel du Président Adama Barrow et du NPP. "
-            "Je suis là pour fournir des informations sur les réalisations du Président et les programmes du parti. "
-            "Comment puis-je vous aider ?\n\n"
             "Ask. Know. Decide. - One Gambia. One People. One Barrow."
         ),
     }
@@ -345,8 +293,6 @@ class ChatService:
         """
         if intent == "greeting":
             # Check if keyword indicates specific language
-            if matched_keyword in ["bonjour", "salut"]:
-                return self.GREETING_RESPONSES["fr"]
             if matched_keyword in ["salaam", "salaam aleikum", "nna tang"]:
                 return self.GREETING_RESPONSES.get("mandinka", self.GREETING_RESPONSES["en"])
             if matched_keyword in ["nanga def", "nanga dëf", "naga def", "naga dëf"]:
@@ -383,39 +329,30 @@ class ChatService:
         keyword_map = {
             "internet": {
                 "en": "NPP increased mobile penetration to 113%, upgraded GAMTEL backbone to 800G, launched a $25M submarine cable project, and completed 100% digital addressing in Banjul and Kanifing. Would you like more details?",
-                "fr": "Le NPP a augmenté la pénétration mobile à 113%, modernisé le réseau GAMTEL, lancé un projet de câble sous-marin de 25M$, et achevé l'adressage numérique à Banjul et Kanifing. Voulez-vous plus de détails?"
             },
             "agriculture": {
                 "en": "NPP plans include rice self-sufficiency by 2031, support for farmers, irrigation projects, training for youth, and making Gambia food secure. Ask me for specific details!",
-                "fr": "Les plans du NPP incluent l'autosuffisance en riz d'ici 2031, le soutien aux agriculteurs, des projets d'irrigation, et la formation des jeunes pour une Gambie autosuffisante."
             },
             "health": {
                 "en": "NPP is strengthening hospitals, expanding health insurance, building new clinics, and training more doctors and nurses. We want every Gambian to have access to quality healthcare.",
-                "fr": "Le NPP renforce les hôpitaux, élargit l'assurance maladie, construit de nouveaux dispensaires et forme plus de médecins. Chaque Gambien mérite des soins de qualité."
             },
             "education": {
                 "en": "NPP is building new schools, training more teachers, providing scholarships, and expanding technical training centers so youth can learn skills for jobs.",
-                "fr": "Le NPP construit des écoles, forme plus d'enseignants, offre des bourses et étend les centres de formation technique pour que les jeunes apprennent des métiers."
             },
             "youth": {
                 "en": "NPP creates jobs for youth through skills training, entrepreneurship programs, and support for young farmers and digital workers. We believe empowered youth build a stronger Gambia.",
-                "fr": "Le NPP crée des emplois pour les jeunes par la formation, l'entrepreneuriat et le soutien aux jeunes agriculteurs et travailleurs numériques."
             },
             "governance": {
                 "en": "NPP is fighting corruption, strengthening transparency, improving public services, and making government more accountable to citizens. We believe government must serve the people.",
-                "fr": "Le NPP lutte contre la corruption, renforce la transparence, améliore les services publics et rend le gouvernement plus responsable devant les citoyens."
             },
             "digital": {
                 "en": "NPP is bringing internet to all regions, digitizing government services, training youth in digital skills, and building a modern digital economy for Gambia.",
-                "fr": "Le NPP apporte l'internet dans toutes les régions, numérise les services gouvernementaux, forme les jeunes au numérique et construit une économie digitale moderne."
             },
             "npp": {
                 "en": "NPP is the National People's Party, led by President Adama Barrow. Our 9-point Lahido plan focuses on jobs, digital transformation, agriculture, health, education, youth empowerment, infrastructure, good governance, and environment.",
-                "fr": "Le NPP est le parti dirigé par le Président Adama Barrow. Notre plan Lahido en 9 points couvre l'emploi, le numérique, l'agriculture, la santé, l'éducation, la jeunesse, les infrastructures, la gouvernance et l'environnement."
             },
             "barrow": {
                 "en": "President Adama Barrow has led Gambia since 2017, strengthening democracy, building roads, expanding internet, and improving healthcare under the NPP government.",
-                "fr": "Le Président Adama Barrow dirige la Gambie depuis 2017, renforçant la démocratie, construisant des routes, développant internet et améliorant la santé."
             },
         }
         

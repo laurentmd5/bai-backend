@@ -81,11 +81,6 @@ ANSWER:"""
             "Please try again in a few moments.\n\n"
             "Ask. Know. Decide. - One Gambia. One People. One Barrow."
         ),
-        "fr": (
-            "Je rencontre une difficulté technique momentanée. "
-            "Veuillez réessayer dans quelques instants.\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
     }
     
     def __init__(self):

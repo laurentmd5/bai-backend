@@ -13,7 +13,7 @@ PACE_CONTACT = "contact the nearest PACE office"
 # =============================================================================
 # LANGUAGES
 # =============================================================================
-SUPPORTED_LANGUAGES = {"en", "fr", "mandinka", "wolof"}
+SUPPORTED_LANGUAGES = {"en", "mandinka", "wolof"}
 DEFAULT_LANGUAGE = "en"
 
 # =============================================================================
