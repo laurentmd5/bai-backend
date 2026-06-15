@@ -86,6 +86,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         llm = get_llm_provider()
         embedding = get_embedding_provider()
         
+        # Eagerly load the model into memory ONLY when the FastAPI server boots up,
+        # not during CLI scripts, to avoid race conditions.
+        if hasattr(embedding, "_get_model"):
+            embedding._get_model()
+            
         llm_available = await llm.is_available()
         embedding_available = await embedding.is_available()
         
