@@ -76,10 +76,16 @@ class WhisperTranscriber:
             whisper_transcription_duration_seconds.observe(duration)
             
             detected_lang = info.language
+            prob = info.language_probability
             
-            # Whisper struggles to return "wo" (Wolof). If it returns "en" or "nn",
-            # we default it to wolof so our pipeline handles it properly.
-            if detected_lang not in ["fr", "mandinka"]:
+            # Whisper struggles with Wolof and usually outputs random languages with low confidence (e.g. 'ms' 0.36).
+            # However, for English it will output 'en' with higher confidence (e.g. 0.55+ despite the Wolof prompt).
+            # We add a confidence threshold to avoid overriding legitimate English/French audio.
+            if detected_lang == "en" and prob >= 0.45:
+                pass  # Keep 'en'
+            elif detected_lang == "fr" and prob >= 0.45:
+                pass  # Keep 'fr'
+            else:
                 detected_lang = "wolof"
             
             if transcript:
