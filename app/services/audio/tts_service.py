@@ -10,15 +10,15 @@ import edge_tts
 from app.core.logging import get_logger
 from app.core.config import settings
 from app.core.metrics import tts_synthesis_duration_seconds
+from app.services.audio.oolel_client import oolel_client
 
 logger = get_logger(__name__)
 
 
 class EdgeTTSService:
     """
-    Free TTS using Microsoft Edge voices.
-    Uses male voices with a slower speaking rate.
-    Caches synthesized audio in memory (simple dict).
+    Unified TTS Service.
+    Routes Wolof to Oolel TTS, and other languages to Edge TTS.
     """
     
     # Male voices
@@ -63,6 +63,17 @@ class EdgeTTSService:
         """
         if not text:
             return None
+            
+        # Unified Routing Logic
+        if language == "wolof":
+            # Use Oolel for Wolof
+            audio = await oolel_client.synthesize(text)
+            # User specifically requested NO fallback to Edge TTS for Wolof
+            if not audio:
+                logger.warning("tts_wolof_synthesis_failed", reason="oolel_returned_none")
+            return audio
+            
+        # For non-Wolof, use Edge TTS
         
         # Voice selection
         if voice:

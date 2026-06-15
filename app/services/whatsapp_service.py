@@ -31,7 +31,6 @@ from app.services.audio.audio_validator import AudioValidator
 from app.services.audio.media_utils import download_media, upload_media, send_audio_message
 from app.services.audio.whisper_service import whisper
 from app.services.audio.tts_service import tts
-from app.services.audio.oolel_tts_service import oolel_tts
 from app.repositories.session_repository import SessionRepository
 from app.models.request.whatsapp import WhatsAppWebhookRequest, WhatsAppMessage
 
@@ -563,17 +562,9 @@ class WhatsAppService:
             response_text = "I'm not sure how to answer that. Please try again." if detected_language == "en" \
                 else "Je ne suis pas sûr de pouvoir répondre à cela. Veuillez réessayer."
 
-        # Synthesize voice response in the same language as the question
-        audio_response = None
-        if detected_language == "wolof":
-            if await oolel_tts.is_available():
-                audio_response = await oolel_tts.synthesize(response_text, language=detected_language)
-            # If Oolel TTS fails for Wolof (e.g. timeout), we DO NOT fallback to Edge TTS.
-            # Edge TTS sounds terrible in Wolof. We will just send the text response below.
-        else:
-            # For other languages (English, French, etc), use Edge TTS
-            audio_response = await tts.synthesize(response_text, language=detected_language)
-            
+        # Synthesize voice response using unified TTS service (which routes Wolof to Oolel)
+        audio_response = await tts.synthesize(response_text, language=detected_language)
+        
         if audio_response:
             media_id = await upload_media(
                 audio_bytes=audio_response,

@@ -416,8 +416,13 @@ class Settings(BaseSettings):
     )
     
     OOLEL_TTS_SPACE_ID: str = Field(
-        default="soynade-research/Oolel-Voices-Demo",
-        description="Gradio Space ID for Oolel Voices TTS"
+        default="SoynadeResearch/oolel-voices",
+        description="Gradio Space ID for Oolel TTS (Deprecated)"
+    )
+    
+    OOLEL_API_URL: str = Field(
+        default="http://100.110.197.46:8080",
+        description="Local Oolel TTS VM API URL"
     )
     
     OOLEL_CORRECTOR_ENDPOINT: str = Field(
