@@ -846,7 +846,7 @@ class ChatService:
                     try:
                         context, sources, confidence = await self._rag_service.retrieve_and_build_context(
                             query=search_query,
-                            filters={"language": "en"} if language in ["en", "fr", "wolof", "mandinka", "fular"] else None,
+                            filters=None,
                         )
                         
                         response_metadata["rag_confidence"] = confidence
