@@ -72,6 +72,25 @@ class WhisperTranscriber:
             # Consume the generator
             transcript = " ".join([segment.text for segment in segments]).strip()
             
+            # Post-correction STT
+            CORRECTIONS = {
+                "adam abel": "Adama Barrow",
+                "abel": "Barrow",
+                "atama barrow": "Adama Barrow",
+                "lu is": "who is",
+            }
+            # Need to do case-insensitive replace without losing original casing entirely,
+            # or just simple lower replacement since we just want it to match in RAG.
+            # But let's do a simple replace on the string for now.
+            lower_transcript = transcript.lower()
+            for wrong, correct in CORRECTIONS.items():
+                if wrong in lower_transcript:
+                    import re
+                    # Case-insensitive replace
+                    pattern = re.compile(re.escape(wrong), re.IGNORECASE)
+                    transcript = pattern.sub(correct, transcript)
+                    lower_transcript = transcript.lower()
+            
             duration = time.time() - start_time
             whisper_transcription_duration_seconds.observe(duration)
             

@@ -68,9 +68,11 @@ class EdgeTTSService:
         if language == "wolof":
             # Use Oolel for Wolof
             audio = await oolel_client.synthesize(text)
-            # User specifically requested NO fallback to Edge TTS for Wolof
+            # User specifically requested fallback to Edge TTS for Wolof (temporary)
             if not audio:
-                logger.warning("tts_wolof_synthesis_failed", reason="oolel_returned_none")
+                logger.warning("tts_wolof_synthesis_failed", reason="oolel_returned_none_falling_back_to_edge")
+                # Fallback to Nigerian voice, using recursion with the specific voice
+                return await self.synthesize(text, language="en", voice="en-NG-AbeoNeural")
             return audio
             
         # For non-Wolof, use Edge TTS
