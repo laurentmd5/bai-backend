@@ -23,7 +23,7 @@ class EdgeTTSService:
     
     # Male voices
     VOICES = {
-        "en": "en-US-GuyNeural",      # American male
+        "en": "en-NG-AbeoNeural",      # Nigerian male
         "fr": "fr-FR-HenriNeural",    # French male
     }
     
