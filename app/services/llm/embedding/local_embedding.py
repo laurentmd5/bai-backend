@@ -16,6 +16,8 @@ class LocalEmbeddingProvider(IEmbeddingProvider):
 
     def __init__(self):
         self._model: Optional[TextEmbedding] = None
+        # Eagerly load the model to avoid 30s latency on the very first query
+        self._get_model()
 
     def _get_model(self) -> TextEmbedding:
         if self._model is None:

@@ -31,7 +31,7 @@ class OolelTTSClient:
         """Get or create HTTP client with connection pooling and a long timeout."""
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(180.0),  # Long timeout as synthesis can take time
+                timeout=httpx.Timeout(15.0),  # Reduced to 15s to prevent WhatsApp blocking if VM is down
                 limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
             )
         return self._client

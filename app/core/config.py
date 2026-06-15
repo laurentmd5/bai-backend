@@ -301,7 +301,7 @@ class Settings(BaseSettings):
     )
     
     QDRANT_SIMILARITY_THRESHOLD: float = Field(
-        default=0.40,
+        default=0.20,
         ge=0.0,
         le=1.0,
         description="Minimum similarity score for RAG retrieval"

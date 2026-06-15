@@ -1150,7 +1150,8 @@ class ChatService:
             List of conversation dicts
         """
         try:
-            session_uuid = uuid.UUID(session_id)
+            # Handle asyncpg UUID objects that don't have .replace()
+            session_uuid = uuid.UUID(str(session_id))
             
             conversations = await self._conversation_repo.get_by_session(
                 session_id=session_uuid,

@@ -55,8 +55,8 @@ class WhisperTranscriber:
             # Wrap bytes in BytesIO
             audio_file = io.BytesIO(audio_bytes)
             
-            # Wolof code-switching prompt to guide Whisper with diverse vocabulary
-            wolof_prompt = "Salaamalekum, nanga def? Jërëjëf. Waaw, déedéet, loolu deug la. Lu xew? Numu tudd? Dama bëgg xam ndax mën nga ma dimbali. The National People's Party (NPP) and President Barrow are great."
+            # Wolof code-switching prompt to guide Whisper with diverse vocabulary and specific Gambian names
+            wolof_prompt = "Salaamalekum, nanga def? Jërëjëf. Waaw, déedéet, loolu deug la. Lu xew? Numu tudd? Dama bëgg xam ndax mën nga ma dimbali. The National People's Party (NPP), Adama Barrow, Kan moy, and President Barrow are great."
             
             # Run inference synchronously (we could use an executor but this is POC)
             segments, info = self.model.transcribe(
@@ -80,11 +80,9 @@ class WhisperTranscriber:
             
             # Whisper struggles with Wolof and usually outputs random languages with low confidence (e.g. 'ms' 0.36).
             # However, for English it will output 'en' with higher confidence (e.g. 0.55+ despite the Wolof prompt).
-            # We add a confidence threshold to avoid overriding legitimate English/French audio.
-            if detected_lang == "en" and prob >= 0.45:
+            # We add a confidence threshold to avoid overriding legitimate English audio.
+            if detected_lang == "en" and prob >= 0.30:
                 pass  # Keep 'en'
-            elif detected_lang == "fr" and prob >= 0.45:
-                pass  # Keep 'fr'
             else:
                 detected_lang = "wolof"
             
