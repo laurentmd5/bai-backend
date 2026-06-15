@@ -12,6 +12,7 @@ from app.core.exceptions import (
     LLMTimeoutException,
     LLMUnavailableException,
 )
+from app.services.llm.prompts import get_system_prompt
 
 logger = get_logger(__name__)
 
@@ -26,16 +27,7 @@ class GroqProvider(ILLMProvider):
     # offering GPT-4 class performance at ~700 tokens/s.
     MODEL_NAME = "llama-3.3-70b-versatile"
 
-    # Base system prompt to ensure consistent AI behavior
-    SYSTEM_PROMPT_BAKED = """You are Barrow-AI, an official, professional, and friendly AI assistant for the National People's Party (NPP) of The Gambia.
-Your goal is to answer questions politely and concisely using the provided context.
-You MUST follow these rules:
-1. Base your answer ONLY on the provided context. If the answer is not in the context, say politely that you don't have that information.
-2. Maintain a respectful, neutral, and helpful tone.
-3. Keep answers concise but complete.
-4. EXPLICITLY CITE THE SOURCE when using context, using the exact format: [Source: <document_name>, <section>]
-5. Conclude your responses with: "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-"""
+    # System prompt is now loaded dynamically from prompts.py
 
     def __init__(self):
         self.api_key = settings.GROQ_API_KEY.get_secret_value() if settings.GROQ_API_KEY else None
@@ -57,6 +49,7 @@ You MUST follow these rules:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         language: str = "en",
+        history: str = "",
     ) -> str:
         """
         Generate a response using Groq.
@@ -68,22 +61,23 @@ You MUST follow these rules:
             messages = []
             
             # System prompt
-            final_system_prompt = system_prompt if system_prompt else self.SYSTEM_PROMPT_BAKED
-            messages.append({"role": "system", "content": final_system_prompt})
-
-            # User prompt with context
-            full_prompt = prompt
-            if context:
-                full_prompt = (
-                    f"Context information is below.\n"
-                    f"---------------------\n"
-                    f"{context}\n"
-                    f"---------------------\n"
-                    f"Given the context information, answer the following query: {prompt}\n"
-                    f"Please answer in {language}."
-                )
+            final_system_prompt = system_prompt if system_prompt else get_system_prompt(language)
             
-            messages.append({"role": "user", "content": full_prompt})
+            context_text = context if context else "No specific context available."
+            history_text = history if history else "No previous conversation."
+            
+            full_system_prompt = final_system_prompt.replace("{context}", context_text).replace("{history}", history_text).replace("{question}", prompt)
+            
+            messages.append({"role": "system", "content": full_system_prompt})
+
+            # User prompt
+            # If the system prompt didn't contain {question}, append it to the user message
+            if "{question}" not in final_system_prompt:
+                user_msg = f"Context:\n{context_text}\n\nQuestion: {prompt}\nPlease answer in {language}."
+            else:
+                user_msg = prompt
+            
+            messages.append({"role": "user", "content": user_msg})
 
             response = await self.client.chat.completions.create(
                 model=self.MODEL_NAME,
@@ -130,6 +124,9 @@ You MUST follow these rules:
         Generate a response with automatic retry on failure.
         """
         last_error = None
+        history = kwargs.pop("history", "")
+        language = kwargs.pop("language", "en")
+        
         for attempt in range(max_retries + 1):
             try:
                 if attempt > 0:
@@ -138,6 +135,8 @@ You MUST follow these rules:
                     prompt=prompt,
                     context=context,
                     system_prompt=system_prompt,
+                    history=history,
+                    language=language,
                     **kwargs
                 )
             except (LLMTimeoutException, LLMUnavailableException) as e:

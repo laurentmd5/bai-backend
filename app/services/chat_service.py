@@ -935,10 +935,11 @@ class ChatService:
                     if await self._groq_provider.is_available():
                         try:
                             logger.info("using_groq_as_fallback_for_llm_generation", session_id=actual_session_id)
-                            groq_sys_prompt = "You are AskBarrow, the official AI assistant for President Adama Barrow. Answer the user's question based strictly on the provided context."
                             generated_response = await self._groq_provider.generate_with_retry(
-                                prompt=f"Context:\n{context}\n\nQuestion: {sanitized_message}\nPlease answer in {language}.",
-                                system_prompt=groq_sys_prompt,
+                                prompt=prompt_with_instructions,
+                                context=context,
+                                language=gemini_lang,
+                                history=history_text,
                                 max_retries=2
                             )
                             # Record LLM latency
