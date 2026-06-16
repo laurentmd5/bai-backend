@@ -430,6 +430,11 @@ class Settings(BaseSettings):
         description="Endpoint for Oolel Wolof Orthography Corrector"
     )
     
+    OOLEL_TTS_TIMEOUT: int = Field(
+        default=90,
+        description="Timeout for Oolel TTS API in seconds"
+    )
+    
     # =========================================================================
     # SECURITY SETTINGS
     # =========================================================================

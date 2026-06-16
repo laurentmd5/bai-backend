@@ -29,7 +29,7 @@ class OolelTTSClient:
         """Get or create HTTP client with connection pooling and a long timeout."""
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(45.0),  # Increased to 45s to allow processing of larger Wolof texts
+                timeout=httpx.Timeout(float(settings.OOLEL_TTS_TIMEOUT)),  # Configurable timeout for Oolel
                 limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
             )
         return self._client
