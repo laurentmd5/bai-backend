@@ -68,13 +68,14 @@ RUN mkdir -p $APP_HOME/app \
 USER barrowai
 WORKDIR $APP_HOME
 
-# Copy application code
-COPY --chown=barrowai:barrowai . $APP_HOME
-
 # Pre-download the fastembed model into the Docker image cache
 # This bakes the ~2GB model into the image, ensuring 0s latency on startup
 # and completely eliminates race conditions during deployment scripts.
+# We do this BEFORE copying the application code to prevent Docker cache invalidation!
 RUN python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='intfloat/multilingual-e5-large')"
+
+# Copy application code
+COPY --chown=barrowai:barrowai . $APP_HOME
 
 # Create __init__.py files if they don't exist
 RUN find $APP_HOME/app -type d -exec touch {}/__init__.py \; 2>/dev/null || true
