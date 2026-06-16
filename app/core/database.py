@@ -216,11 +216,17 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
         except SQLAlchemyError as e:
-            await session.rollback()
+            try:
+                await session.rollback()
+            except Exception:
+                pass
             logger.error("database_session_error", error=str(e))
             raise DatabaseError(f"Database operation failed: {str(e)}", e)
         except Exception:
-            await session.rollback()
+            try:
+                await session.rollback()
+            except Exception:
+                pass
             raise
         finally:
             await session.close()
@@ -236,11 +242,17 @@ async def get_session_context() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
         except SQLAlchemyError as e:
-            await session.rollback()
+            try:
+                await session.rollback()
+            except Exception:
+                pass
             logger.error("database_session_error", error=str(e))
             raise DatabaseError(f"Database operation failed: {str(e)}", e)
         except Exception:
-            await session.rollback()
+            try:
+                await session.rollback()
+            except Exception:
+                pass
             raise
         finally:
             await session.close()

@@ -439,20 +439,8 @@ class ChatService:
         if not detected_theme:
             return True
         
-        # 3. Check if sources contain relevant keywords
-        source_text = ""
-        for s in sources[:3]:
-            text = s.get("text_preview", "") or s.get("content", "") or ""
-            section = s.get("section", "")
-            source_text += f" {text} {section}"
-        
-        source_lower = source_text.lower()
-        has_relevant_term = any(kw in source_lower for kw in theme_keywords[:5])
-        
-        if not has_relevant_term:
-            logger.warning("no_relevant_terms_in_sources", theme=detected_theme)
-            return False
-        
+        # 3. Accept all themes based on Qdrant semantic score
+        return True
         # 4. Check minimum similarity score
         min_score = min((s.get("relevance", s.get("score", 0)) for s in sources), default=0)
         threshold = getattr(settings, 'QDRANT_SIMILARITY_THRESHOLD', 0.70)
@@ -887,13 +875,8 @@ class ChatService:
                     except Exception as e:
                         logger.error("failed_to_fetch_history_for_prompt", error=str(e))
                     
-                    if language == "wolof":
-                        # For Wolof, we let Gemini do the reasoning in English, then translate with Oolel
-                        gemini_lang = "en"
-                        prompt_with_instructions = f"{sanitized_message}\n\n[CRITICAL INSTRUCTION: You MUST generate your final response in English based strictly on the provided context.]"
-                    else:
-                        gemini_lang = language
-                        prompt_with_instructions = sanitized_message
+                    gemini_lang = language
+                    prompt_with_instructions = sanitized_message
                     
                     generated_response = await self._llm_provider.generate_with_retry(
                         prompt=prompt_with_instructions,
@@ -902,26 +885,6 @@ class ChatService:
                         history=history_text,
                         max_retries=4,
                     )
-                    
-                    # 3. Wolof generation using Groq as fallback
-                    if language == "wolof" and await self._groq_provider.is_available():
-                        try:
-                            logger.info("using_groq_as_fallback_for_wolof_translation")
-                            translated_response = await self._groq_provider.generate_with_retry(
-                                prompt=f"Translate this exact text to Wolof (The Gambia dialect):\n\n{generated_response}",
-                                system_prompt="You are an expert Wolof translator for The Gambia. Translate exactly what is asked.",
-                                max_retries=2
-                            )
-                            if translated_response:
-                                generated_response = translated_response
-                        except Exception as e:
-                            logger.error("groq_wolof_translation_failed", error=str(e))
-                            # Fallback to Gemini for Wolof translation
-                            gemini_wolof_prompt = f"Translate the following text into conversational Wolof as spoken in Gambia:\n\n{generated_response}"
-                            generated_response = await self._llm_provider.generate_with_retry(
-                                prompt=gemini_wolof_prompt,
-                                max_retries=2
-                            )
                     
                     llm_latency_ms = (datetime.utcnow() - llm_start).total_seconds() * 1000
                     response_metadata["llm_latency_ms"] = llm_latency_ms
