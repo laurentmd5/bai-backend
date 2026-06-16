@@ -10,6 +10,7 @@ from typing import Optional, Dict
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.services.cache.redis_cache import cache_service
 
 logger = get_logger(__name__)
 
@@ -20,10 +21,7 @@ class OolelTTSClient:
     Handles synthesis requests and base64 audio decoding.
     """
     
-    MAX_CACHE_SIZE = 100
-    
     def __init__(self):
-        self._cache: Dict[str, bytes] = {}
         self.api_url = settings.OOLEL_API_URL.rstrip('/')
         self._client: Optional[httpx.AsyncClient] = None
         
@@ -31,7 +29,7 @@ class OolelTTSClient:
         """Get or create HTTP client with connection pooling and a long timeout."""
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(15.0),  # Reduced to 15s to prevent WhatsApp blocking if VM is down
+                timeout=httpx.Timeout(45.0),  # Increased to 45s to allow processing of larger Wolof texts
                 limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
             )
         return self._client
@@ -60,11 +58,11 @@ class OolelTTSClient:
         if not text or not text.strip():
             return None
             
-        # Check cache
-        cache_key = f"wolof:{hash(text)}"
-        if cache_key in self._cache:
+        # Check persistent Redis cache
+        cached_audio = await cache_service.get_oolel_tts(text)
+        if cached_audio:
             logger.debug("oolel_tts_cache_hit")
-            return self._cache[cache_key]
+            return cached_audio
             
         try:
             client = await self._get_client()
@@ -89,10 +87,8 @@ class OolelTTSClient:
                 
             audio_bytes = base64.b64decode(audio_base64)
             
-            # Simple cache eviction
-            if len(self._cache) >= self.MAX_CACHE_SIZE:
-                self._cache.pop(next(iter(self._cache)))
-            self._cache[cache_key] = audio_bytes
+            # Save to persistent Redis cache
+            await cache_service.set_oolel_tts(text, audio_bytes)
             
             logger.info(
                 "oolel_tts_success", 

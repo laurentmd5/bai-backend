@@ -37,6 +37,7 @@ class CacheNamespace(str, Enum):
     ADMIN_SESSION = "admin:session"
     CSRF_TOKEN = "csrf"
     LOCK = "lock"
+    OOLEL_TTS = "oolel:tts"
 
 
 class RedisCacheService:
@@ -678,6 +679,53 @@ class RedisCacheService:
             CacheNamespace.RAG_EMBEDDING,
             text_hash,
             value=embedding,
+            ttl=ttl
+        )
+    
+    async def get_oolel_tts(self, text: str) -> Optional[bytes]:
+        """
+        Get cached Oolel TTS audio for text.
+        
+        Args:
+            text: Text that was spoken
+            
+        Returns:
+            bytes or None
+        """
+        import base64
+        text_hash = hashlib.sha256(text.encode()).hexdigest()
+        cached_b64 = await self.get(CacheNamespace.OOLEL_TTS, text_hash)
+        if cached_b64:
+            try:
+                return base64.b64decode(cached_b64)
+            except Exception as e:
+                logger.error("failed_to_decode_cached_oolel_audio", error=str(e))
+        return None
+    
+    async def set_oolel_tts(
+        self,
+        text: str,
+        audio_bytes: bytes,
+        ttl: Optional[int] = 2592000  # 30 days default
+    ) -> bool:
+        """
+        Cache Oolel TTS audio for text.
+        
+        Args:
+            text: Text that was spoken
+            audio_bytes: Raw audio bytes
+            ttl: Optional TTL override
+            
+        Returns:
+            bool: True if successful
+        """
+        import base64
+        text_hash = hashlib.sha256(text.encode()).hexdigest()
+        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+        return await self.set(
+            CacheNamespace.OOLEL_TTS,
+            text_hash,
+            value=audio_b64,
             ttl=ttl
         )
     
