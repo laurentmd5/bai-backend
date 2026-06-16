@@ -56,7 +56,7 @@ class WhisperTranscriber:
             audio_file = io.BytesIO(audio_bytes)
             
             # Wolof code-switching prompt to guide Whisper with diverse vocabulary and specific Gambian names
-            wolof_prompt = "Salaamalekum, nanga def? Jërëjëf. Waaw, déedéet, loolu deug la. Lu xew? Numu tudd? Dama bëgg xam ndax mën nga ma dimbali. The National People's Party (NPP), Adama Barrow, Kan moy, and President Barrow are great."
+            wolof_prompt = "Salaamalekum, nanga def? Jërëjëf. Waaw, déedéet, loolu deug la. Lu xew? Numu tudd? Dama bëgg xam ndax mën nga ma dimbali. The National People's Party (NPP), Adama Barrow, Kan moy, and President Barrow are great. We discuss health, medicine, hospital, doctor, healthcare, internet, infrastructure, road, and education."
             
             # Run inference synchronously (we could use an executor but this is POC)
             segments, info = self.model.transcribe(
@@ -78,7 +78,16 @@ class WhisperTranscriber:
                 "abel": "Barrow",
                 "atama barrow": "Adama Barrow",
                 "lu is": "who is",
+                "ilf": "health",
+                "elf": "health",
+                "in ilf": "in health",
+                "ilf and": "health and",
             }
+            
+            PROTECTED_KEYWORDS = [
+                "health", "hospital", "doctor", "medicine", "healthcare",
+                "internet", "infrastructure", "road", "education"
+            ]
             # Need to do case-insensitive replace without losing original casing entirely,
             # or just simple lower replacement since we just want it to match in RAG.
             # But let's do a simple replace on the string for now.
