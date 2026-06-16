@@ -513,9 +513,12 @@ class WhatsAppService:
         text_lang = self._input_validator.detect_language(transcribed_text)
         
         # CRITICAL FIX: The text-based detector (langdetect) does not support Wolof.
-        # If Whisper detected Wolof, we MUST trust Whisper and ignore the text detector,
-        # otherwise the text detector will hallucinate English or French.
-        if whisper_lang == "wolof":
+        # But Whisper is noisy and often mistakes African English/French for Wolof.
+        # If the text is at least 3 words and clearly English or French, trust the text.
+        if text_lang in ["en", "fr"] and len(transcribed_text.split()) >= 3:
+            detected_language = text_lang
+        # Otherwise, if Whisper detected Wolof (and text detector gives a random language), trust Whisper.
+        elif whisper_lang == "wolof":
             detected_language = "wolof"
         else:
             # Prefer text-based detection; fall back to Whisper if text is too short
