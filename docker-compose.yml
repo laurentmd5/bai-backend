@@ -212,6 +212,10 @@ services:
       HF_TOKEN: ${HF_TOKEN}
       GROQ_API_KEY: ${GROQ_API_KEY}
       
+      # Oolel TTS
+      OOLEL_API_URL: ${OOLEL_API_URL}
+      OOLEL_TTS_TIMEOUT: ${OOLEL_TTS_TIMEOUT:-90}
+      
       # Ollama (Phase 2)
       OLLAMA_HOST: ollama
       OLLAMA_PORT: 11434
