@@ -229,7 +229,10 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
                 pass
             raise
         finally:
-            await session.close()
+            try:
+                await session.close()
+            except Exception:
+                pass
 
 
 @asynccontextmanager
@@ -255,7 +258,10 @@ async def get_session_context() -> AsyncGenerator[AsyncSession, None]:
                 pass
             raise
         finally:
-            await session.close()
+            try:
+                await session.close()
+            except Exception:
+                pass
 
 
 async def execute_with_retry(
