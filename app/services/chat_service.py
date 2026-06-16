@@ -419,10 +419,8 @@ class ChatService:
             return False
             
         if len(unique_chunks) == 1:
-            top_score = sources[0].get("score", 0.0) if sources else 0.0
-            if top_score < 0.4:
-                logger.warning("low_confidence_unique_chunk", score=top_score)
-                return False
+            # We accept the unique chunk even if the score is low, because the RAG is not well-fed yet
+            pass
         
         # 2. Detect the theme of the query
         query_lower = query.lower()
