@@ -414,9 +414,15 @@ class ChatService:
             chunk_idx = s.get("chunk_index", s.get("index", 0))
             unique_chunks.add((doc_name, chunk_idx))
         
-        if len(unique_chunks) == 1:
+        if len(sources) > 1 and len(unique_chunks) == 1:
             logger.warning("all_sources_identical", chunks=len(sources))
             return False
+            
+        if len(unique_chunks) == 1:
+            top_score = sources[0].get("score", 0.0) if sources else 0.0
+            if top_score < 0.4:
+                logger.warning("low_confidence_unique_chunk", score=top_score)
+                return False
         
         # 2. Detect the theme of the query
         query_lower = query.lower()
