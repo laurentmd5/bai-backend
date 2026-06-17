@@ -890,7 +890,7 @@ class ChatService:
                         context=context,
                         language=gemini_lang,
                         history=history_text,
-                        max_retries=4,
+                        max_retries=settings.GEMINI_MAX_RETRIES,
                     )
                     
                     llm_latency_ms = (datetime.utcnow() - llm_start).total_seconds() * 1000

@@ -392,14 +392,14 @@ class Settings(BaseSettings):
     )
     
     GEMINI_TIMEOUT: int = Field(
-        default=10,
+        default=15,
         ge=5,
         le=60,
         description="API timeout in seconds"
     )
     
     GEMINI_MAX_RETRIES: int = Field(
-        default=2,
+        default=1,
         ge=0,
         le=5,
         description="Maximum retry attempts for API calls"
