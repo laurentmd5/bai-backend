@@ -215,6 +215,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async with _async_session_factory() as session:
         try:
             yield session
+            await session.commit()
         except SQLAlchemyError as e:
             try:
                 await session.rollback()
@@ -244,6 +245,7 @@ async def get_session_context() -> AsyncGenerator[AsyncSession, None]:
     async with _async_session_factory() as session:
         try:
             yield session
+            await session.commit()
         except SQLAlchemyError as e:
             try:
                 await session.rollback()
