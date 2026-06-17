@@ -611,10 +611,15 @@ class ChatService:
                     except ValueError:
                         pass
                 
+                external_id = None
+                if metadata:
+                    external_id = metadata.get("phone_number") or metadata.get("cookie_id")
+                
                 # Get or create session using the fresh repositories
                 session = await session_repo.get_or_create_session(
                     session_id=session_uuid,
                     channel=channel,
+                    external_id=external_id,
                     language=language,
                     user_agent=user_agent,
                     ip_address=ip_address,
@@ -745,7 +750,21 @@ class ChatService:
                 # ===============================================================
                 # STEP 5.5: Query Transformation & HyDE (Intelligence Layer)
                 # ===============================================================
-                transformer_result = await self._query_transformer.transform_query(sanitized_message)
+                # Fetch conversation history early for context
+                history_text = ""
+                try:
+                    history_list = await self.get_conversation_history(session.id, limit=4)
+                    if history_list:
+                        history_lines = []
+                        # history_list is returned newest first, we want oldest first
+                        for msg in reversed(history_list):
+                            history_lines.append(f"User: {msg.get('user_message', '')}")
+                            history_lines.append(f"Assistant: {msg.get('bot_response', '')}")
+                        history_text = "\n".join(history_lines)
+                except Exception as e:
+                    logger.error("failed_to_fetch_history", error=str(e))
+                
+                transformer_result = await self._query_transformer.transform_query(sanitized_message, history=history_text)
                 
                 # Update language based on the smart LLM detection (better than basic input_validator)
                 if transformer_result.get("detected_language") and transformer_result.get("detected_language") != "unknown":
@@ -861,19 +880,7 @@ class ChatService:
                 try:
                     llm_start = datetime.utcnow()
                     
-                    # Fetch conversation history
-                    history_text = ""
-                    try:
-                        history_list = await self.get_conversation_history(session.id, limit=4)
-                        if history_list:
-                            history_lines = []
-                            # history_list is returned newest first, we want oldest first
-                            for msg in reversed(history_list):
-                                history_lines.append(f"User: {msg.get('user_message', '')}")
-                                history_lines.append(f"Assistant: {msg.get('bot_response', '')}")
-                            history_text = "\n".join(history_lines)
-                    except Exception as e:
-                        logger.error("failed_to_fetch_history_for_prompt", error=str(e))
+                    # Use previously fetched conversation history
                     
                     gemini_lang = language
                     prompt_with_instructions = sanitized_message

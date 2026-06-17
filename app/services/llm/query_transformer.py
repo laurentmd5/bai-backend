@@ -1,5 +1,5 @@
 import json
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 from app.services.interfaces.llm_provider import ILLMProvider
 from app.core.logging import get_logger
 
@@ -15,7 +15,7 @@ class QueryTransformer:
         self._llm = llm_provider
         self._groq_provider = groq_provider
         
-    async def transform_query(self, raw_query: str) -> Dict[str, Any]:
+    async def transform_query(self, raw_query: str, history: Optional[str] = None) -> Dict[str, Any]:
         """
         Analyzes the user's raw query to detect language, rewrite it into an optimal search query,
         and optionally generate a hypothetical answer for HyDE.
@@ -37,14 +37,17 @@ class QueryTransformer:
         1. "detected_language": Detect the language of the user's input. STRICTLY USE ONLY "en" OR "wolof". Pay special attention to Gambian Wolof phrasing, phonetics, and code-switching (e.g., mixing English and Wolof like "The NPP mo gën"). If Wolof words are present in a mixed sentence, classify it as "wolof". Do NOT output "fr".
         2. "is_casual_conversation": true if the input is just a greeting, chit-chat, or clearly doesn't require searching a document database. false otherwise.
         3. "optimized_search_query": Translate the query to standard English, fix any spelling/grammar errors, and expand it with highly relevant keywords that might appear in official documents. 
+           CRITICAL: If conversation history is provided, and the user's input is short (e.g., "Yes", "And?", "What about health?"), use the context from the history to formulate a complete, standalone search query.
            CRITICAL: DO NOT DROP OR REPLACE SPECIFIC NOUNS, NAMES, OR TECHNICAL TERMS FROM THE ORIGINAL QUERY (e.g., "internet", "infrastructure", "Adama Barrow", etc.). ALWAYS preserve the core entities the user asked about. If it's a casual conversation, leave this empty.
         
         CRITICAL: Your output MUST be valid JSON, with no markdown formatting blocks like ```json around it. Just the raw JSON object.
         """
         
+        prompt = f"Context:\n{history if history else 'No specific context available.'}\n\nQuestion: Raw User Input: {raw_query}"
+        
         try:
             response = await self._llm.generate(
-                prompt=f"Raw User Input: {raw_query}",
+                prompt=prompt,
                 system_prompt=system_prompt,
                 temperature=0.1, # Keep it deterministic
             )
@@ -91,7 +94,7 @@ class QueryTransformer:
                 try:
                     logger.info("using_groq_as_fallback_for_query_transformer", query=raw_query)
                     response = await self._groq_provider.generate_with_retry(
-                        prompt=f"Raw User Input: {raw_query}",
+                        prompt=prompt,
                         system_prompt=system_prompt,
                         max_retries=2
                     )

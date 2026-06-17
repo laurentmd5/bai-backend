@@ -134,6 +134,13 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
             if existing and existing.is_active and not existing.opted_out:
                 await self.touch_session(session_id)
                 return existing
+                
+        if external_id:
+            existing = await self.get_by_external_id(external_id, channel)
+            if existing and existing.is_active and not existing.opted_out:
+                logger.info("session_recovered_by_external_id", external_id=external_id, channel=channel, session_id=str(existing.id))
+                await self.touch_session(existing.id)
+                return existing
         
         return await self.create_session(
             channel=channel,
