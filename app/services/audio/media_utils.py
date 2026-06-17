@@ -81,17 +81,25 @@ async def download_media(
             logger.error("media_url_missing", data=data)
             return None
         
-        # Download actual media
-        media_resp = await client.get(media_url)
-        if media_resp.status_code != 200:
-            logger.error("media_download_failed", status=media_resp.status_code)
-            return None
+        # Download actual media with retries
+        import asyncio
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                media_resp = await client.get(media_url, timeout=20.0)
+                if media_resp.status_code == 200:
+                    logger.info("media_downloaded", media_id=media_id, size=len(media_resp.content))
+                    return media_resp.content
+                logger.warning("media_download_status_failed", status=media_resp.status_code, attempt=attempt+1)
+            except httpx.TimeoutException as e:
+                logger.warning("media_download_timeout", attempt=attempt+1, error=str(e))
+            except Exception as e:
+                logger.warning("media_download_error", attempt=attempt+1, error=str(e))
+            
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)  # 1s, 2s...
         
-        logger.info("media_downloaded", media_id=media_id, size=len(media_resp.content))
-        return media_resp.content
-        
-    except Exception as e:
-        logger.error("media_download_exception", error=str(e))
+        logger.error("media_download_failed_all_retries", media_id=media_id)
         return None
 
 
