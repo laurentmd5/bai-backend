@@ -123,6 +123,32 @@ services:
     logging: *default-logging
 
   # ===========================================================================
+  # RABBITMQ - Message Broker
+  # ===========================================================================
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: barrow-rabbitmq
+    restart: unless-stopped
+    networks:
+      barrow-net:
+        ipv4_address: 172.20.0.34
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-barrowai}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-secret}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *default-logging
+
+  # ===========================================================================
   # OLLAMA - Local LLM (Phase 2)
   # ===========================================================================
   ollama:
@@ -251,6 +277,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
       qdrant:
         condition: service_started
     
@@ -261,6 +289,92 @@ services:
       retries: 3
       start_period: 30s
     
+    logging: *default-logging
+
+  # ===========================================================================
+  # WORKER - Async Queue Consumer
+  # ===========================================================================
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${BACKEND_IMAGE:-barrow-ai-backend:latest}
+    container_name: barrow-worker
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    networks:
+      barrow-net:
+        ipv4_address: 172.20.0.21
+    command: python worker.py
+    volumes:
+      - uploads_data:/app/uploads
+      - logs_data:/app/logs
+      - ./data:/app/data:ro
+    environment:
+      # Application
+      APP_NAME: ${APP_NAME:-BARROW.AI POC Worker}
+      APP_VERSION: ${APP_VERSION:-4.0.0}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DEBUG: ${DEBUG:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      
+      # Database
+      POSTGRES_USER: ${POSTGRES_USER:-barrowai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-barrowai_poc}
+      
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DB: 0
+      
+      # RabbitMQ
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-barrowai}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-secret}
+      
+      # Qdrant
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-npp_documents_poc}
+      QDRANT_SIMILARITY_THRESHOLD: ${QDRANT_SIMILARITY_THRESHOLD:-0.70}
+      
+      # LLM
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-tunedModels/askbarrow-npp-v3}
+      GEMINI_TEMPERATURE: ${GEMINI_TEMPERATURE:-0.1}
+      GEMINI_MAX_TOKENS: ${GEMINI_MAX_TOKENS:-512}
+      GEMINI_TIMEOUT: ${GEMINI_TIMEOUT:-10}
+      HF_TOKEN: ${HF_TOKEN}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      
+      # Oolel TTS
+      OOLEL_API_URL: ${OOLEL_API_URL}
+      OOLEL_TTS_TIMEOUT: ${OOLEL_TTS_TIMEOUT:-90}
+      
+      # WhatsApp
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+        
     logging: *default-logging
 
 

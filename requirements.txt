@@ -21,6 +21,9 @@ psycopg2-binary==2.9.10
 redis==5.2.1
 aioredis==2.0.1
 
+# Queue
+aio-pika==9.4.1
+
 # Security
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4

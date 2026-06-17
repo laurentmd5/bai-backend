@@ -276,6 +276,42 @@ class Settings(BaseSettings):
         return f"redis://:{password}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
     
     # =========================================================================
+    # RABBITMQ SETTINGS
+    # =========================================================================
+    RABBITMQ_HOST: str = Field(
+        default="rabbitmq",
+        description="RabbitMQ host"
+    )
+    
+    RABBITMQ_PORT: int = Field(
+        default=5672,
+        ge=1,
+        le=65535,
+        description="RabbitMQ port"
+    )
+    
+    RABBITMQ_USER: str = Field(
+        default="barrowai",
+        description="RabbitMQ username"
+    )
+    
+    RABBITMQ_PASSWORD: SecretStr = Field(
+        default=SecretStr("secret"),
+        description="RabbitMQ password"
+    )
+    
+    RABBITMQ_WEBHOOK_QUEUE: str = Field(
+        default="whatsapp_webhooks",
+        description="Queue name for WhatsApp webhooks"
+    )
+
+    @property
+    def rabbitmq_url(self) -> str:
+        """Construct RabbitMQ connection URL."""
+        password = self.RABBITMQ_PASSWORD.get_secret_value()
+        return f"amqp://{self.RABBITMQ_USER}:{password}@{self.RABBITMQ_HOST}:{self.RABBITMQ_PORT}/"
+    
+    # =========================================================================
     # QDRANT SETTINGS
     # =========================================================================
     QDRANT_HOST: str = Field(

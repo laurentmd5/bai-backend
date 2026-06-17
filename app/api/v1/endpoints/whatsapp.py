@@ -15,6 +15,7 @@ from app.services.chat_service import ChatService
 from app.repositories.session_repository import SessionRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.services.llm.factory import get_llm_provider
+from app.services.queue.rabbitmq_service import rabbitmq_service
 
 logger = get_logger(__name__)
 
@@ -93,7 +94,6 @@ async def verify_webhook(
 @router.post("/webhook")
 async def receive_webhook(
     request: Request,
-    background_tasks: BackgroundTasks,
 ) -> JSONResponse:
     """
     Receive incoming WhatsApp webhook.
@@ -125,12 +125,11 @@ async def receive_webhook(
         # Return 200 — Meta must receive 200 or it will retry repeatedly
         return JSONResponse(content={"status": "received"}, status_code=200)
 
-    background_tasks.add_task(
-        process_webhook_task,
+    # Publish to RabbitMQ queue
+    await rabbitmq_service.publish_webhook_event(
         payload=payload,
         raw_body=raw_body,
         signature=signature,
-        app_state=request.app.state,
     )
 
     return JSONResponse(content={"status": "received"}, status_code=200)

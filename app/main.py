@@ -21,6 +21,7 @@ from app.services.llm.factory import get_llm_provider, get_embedding_provider, c
 from app.services.vector.qdrant_store import QdrantVectorStore
 from app.services.rag_service import RAGService
 from app.services.cache.redis_cache import cache_service
+from app.services.queue.rabbitmq_service import rabbitmq_service
 import app.core.metrics
 from app.core.metrics import metrics_endpoint
 
@@ -108,6 +109,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await rag_service.initialize()
     logger.info("rag_service_initialized")
     
+    # Initialize RabbitMQ
+    try:
+        await rabbitmq_service.connect()
+        logger.info("rabbitmq_service_initialized")
+    except Exception as e:
+        logger.error("rabbitmq_initialization_failed", error=str(e))
+        # Don't raise here if we want the backend to start without RabbitMQ
+        
     logger.info("application_startup_complete")
     
     # Store singletons in app state for access by endpoints
@@ -127,6 +136,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.error("llm_shutdown_error", error=str(e))
     
+    # Close RabbitMQ
+    try:
+        await rabbitmq_service.close()
+        logger.info("rabbitmq_service_closed")
+    except Exception as e:
+        logger.error("rabbitmq_shutdown_error", error=str(e))
+        
     # Close Redis
     try:
         await close_redis()
