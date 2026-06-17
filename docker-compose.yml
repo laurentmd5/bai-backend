@@ -136,7 +136,7 @@ services:
       - rabbitmq_data:/var/lib/rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-barrowai}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-secret}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -221,6 +221,12 @@ services:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_DB: 0
+      
+      # RabbitMQ
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-barrowai}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       
       # Qdrant
       QDRANT_HOST: qdrant
@@ -337,7 +343,7 @@ services:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER:-barrowai}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-secret}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       
       # Qdrant
       QDRANT_HOST: qdrant
