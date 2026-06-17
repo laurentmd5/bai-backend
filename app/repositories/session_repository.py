@@ -137,7 +137,12 @@ class SessionRepository(BaseRepository[Session, Dict[str, Any], Dict[str, Any]])
                 
         if external_id:
             existing = await self.get_by_external_id(external_id, channel)
-            if existing and existing.is_active and not existing.opted_out:
+            if existing:
+                if not existing.is_active or existing.opted_out:
+                    logger.warning("session_found_but_inactive_reactivating", external_id=external_id, session_id=str(existing.id))
+                    existing.is_active = True
+                    existing.opted_out = False
+                    
                 logger.info("session_recovered_by_external_id", external_id=external_id, channel=channel, session_id=str(existing.id))
                 await self.touch_session(existing.id)
                 return existing

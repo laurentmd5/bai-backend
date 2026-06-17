@@ -243,6 +243,11 @@ class WhatsAppService:
             logger.warning("whatsapp_webhook_invalid_signature")
             return {"status": "error", "reason": "invalid_signature"}
         
+        # SÉCURITÉ : Déballer le payload s'il est doublement encapsulé (ex: via RabbitMQ)
+        if "payload" in payload and "object" not in payload:
+            logger.info("unwrapping_nested_payload")
+            payload = payload["payload"]
+        
         try:
             webhook_request = WhatsAppWebhookRequest(**payload)
         except Exception as e:

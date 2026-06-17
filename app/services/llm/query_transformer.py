@@ -43,7 +43,14 @@ class QueryTransformer:
         CRITICAL: Your output MUST be valid JSON, with no markdown formatting blocks like ```json around it. Just the raw JSON object.
         """
         
-        prompt = f"Context:\n{history if history else 'No specific context available.'}\n\nQuestion: Raw User Input: {raw_query}"
+        prompt = f"""
+        Historique de la conversation :
+        {history if history else 'Aucun historique récent.'}
+
+        Question actuelle de l'utilisateur : {raw_query}
+
+        INSTRUCTION CRITIQUE : Si la question actuelle est une réponse courte (ex: "Yes", "No", "Tell me more") ou fait référence à un sujet précédent, vous DEVEZ utiliser l'historique pour reformuler la question de manière complète et indépendante.
+        """
         
         try:
             response = await self._llm.generate(

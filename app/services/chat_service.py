@@ -269,7 +269,9 @@ class ChatService:
                     return intent, keyword
         
         # Ultra-short messages (< 5 chars) trigger help intent (lower priority)
-        if len(message_lower) < 5 and message_lower not in ['npp', 'np']:
+        # Exclude conversational short answers
+        conversational_short_words = ['yes', 'no', 'why', 'who', 'how', 'what', 'more', 'npp', 'np', 'oui', 'non', 'waw', 'waaw', 'déedéet', 'dedet']
+        if len(message_lower) < 5 and message_lower not in conversational_short_words:
             return "help", "ultra_short"
         
         return None, None
@@ -373,20 +375,21 @@ class ChatService:
         
         return None
     
-    def _get_cache_key(self, message: str, language: str) -> str:
+    def _get_cache_key(self, message: str, language: str, session_id: str = "global") -> str:
         """
         Generate cache key for RAG response.
         
         Args:
             message: User message
-            language: Message language
+            language: Detected language
+            session_id: The session ID to make cache contextual
             
         Returns:
-            Cache key string
+            Cache key
         """
         import hashlib
-        normalized = f"{message.lower().strip()}:{language}"
-        return hashlib.sha256(normalized.encode()).hexdigest()
+        hashed_message = hashlib.sha256(message.lower().strip().encode()).hexdigest()
+        return f"rag:response:{session_id}:{hashed_message}:{language}"
     
     def _is_response_relevant(
         self, 
@@ -615,6 +618,14 @@ class ChatService:
                 if metadata:
                     external_id = metadata.get("phone_number") or metadata.get("cookie_id")
                 
+                # NOUVEAU LOG POUR GARANTIR LE DEBUG
+                logger.info(
+                    "attempting_session_retrieval", 
+                    passed_session_id=str(session_uuid) if session_uuid else None, 
+                    passed_external_id=external_id, 
+                    channel=channel
+                )
+                
                 # Get or create session using the fresh repositories
                 session = await session_repo.get_or_create_session(
                     session_id=session_uuid,
@@ -719,8 +730,8 @@ class ChatService:
                 # ===============================================================
                 # STEP 5: Check Cache
                 # ===============================================================
-                cache_key = self._get_cache_key(sanitized_message, language)
-                cached_response = await cache_service.get_rag_response(sanitized_message)
+                cache_key = self._get_cache_key(sanitized_message, language, actual_session_id)
+                cached_response = await cache_service.get_rag_response(sanitized_message, actual_session_id)
                 
                 if cached_response:
                     logger.debug("cache_hit", session_id=actual_session_id, cache_key=cache_key[:16])
@@ -993,6 +1004,7 @@ class ChatService:
                     await cache_service.set_rag_response(
                         question=sanitized_message,
                         response=response_to_cache,
+                        session_id=actual_session_id,
                         ttl=settings.CACHE_RAG_TTL_SECONDS,
                     )
                 

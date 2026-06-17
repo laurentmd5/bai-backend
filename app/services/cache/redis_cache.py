@@ -604,23 +604,25 @@ class RedisCacheService:
         normalized = ''.join(c for c in normalized if c.isalnum() or c.isspace())
         return hashlib.sha256(normalized.encode()).hexdigest()
     
-    async def get_rag_response(self, question: str) -> Optional[Dict[str, Any]]:
+    async def get_rag_response(self, question: str, session_id: str = "global") -> Optional[Dict[str, Any]]:
         """
         Get cached RAG response for a question.
         
         Args:
             question: User question
+            session_id: Contextual session ID
             
         Returns:
             Cached response dict or None
         """
         question_hash = self._hash_question(question)
-        return await self.get(CacheNamespace.RAG_RESPONSE, question_hash)
+        return await self.get(CacheNamespace.RAG_RESPONSE, session_id, question_hash)
     
     async def set_rag_response(
         self,
         question: str,
         response: Dict[str, Any],
+        session_id: str = "global",
         ttl: Optional[int] = None
     ) -> bool:
         """
@@ -629,6 +631,7 @@ class RedisCacheService:
         Args:
             question: User question
             response: Response dict to cache
+            session_id: Contextual session ID
             ttl: Optional TTL override
             
         Returns:
@@ -638,6 +641,7 @@ class RedisCacheService:
         question_hash = self._hash_question(question)
         return await self.set(
             CacheNamespace.RAG_RESPONSE,
+            session_id,
             question_hash,
             value=response,
             ttl=ttl
