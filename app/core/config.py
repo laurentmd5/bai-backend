@@ -296,7 +296,7 @@ class Settings(BaseSettings):
     )
     
     RABBITMQ_PASSWORD: SecretStr = Field(
-        default=SecretStr("secret"),
+        ...,
         description="RabbitMQ password"
     )
     
