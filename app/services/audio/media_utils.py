@@ -101,6 +101,10 @@ async def download_media(
         
         logger.error("media_download_failed_all_retries", media_id=media_id)
         return None
+        
+    except Exception as e:
+        logger.error("media_download_exception", error=str(e))
+        return None
 
 
 async def upload_media(
