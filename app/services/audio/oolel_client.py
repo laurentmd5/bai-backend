@@ -67,19 +67,26 @@ class OolelTTSClient:
         try:
             client = await self._get_client()
             
-            logger.info("oolel_tts_api_request", text_length=len(text), url=f"{self.api_url}/synthesize")
+            is_hf = "huggingface.cloud" in self.api_url or "hf.space" in self.api_url
+            endpoint_url = self.api_url if is_hf else f"{self.api_url}/synthesize"
             
-            payload = {"text": text}
+            logger.info("oolel_tts_api_request", text_length=len(text), url=endpoint_url)
+            
+            payload = {"inputs": text} if is_hf else {"text": text}
+            headers = {"Content-Type": "application/json"}
+            
+            if is_hf and settings.HF_TOKEN:
+                headers["Authorization"] = f"Bearer {settings.HF_TOKEN.get_secret_value()}"
             
             response = await client.post(
-                f"{self.api_url}/synthesize",
+                endpoint_url,
                 json=payload,
-                headers={"Content-Type": "application/json"}
+                headers=headers
             )
             response.raise_for_status()
             
             data = response.json()
-            audio_base64 = data.get("audio_base64")
+            audio_base64 = data.get("audio") if is_hf else data.get("audio_base64")
             
             if not audio_base64:
                 logger.error("oolel_tts_no_audio_in_response")
