@@ -72,7 +72,7 @@ class OolelTTSClient:
             
             logger.info("oolel_tts_api_request", text_length=len(text), url=endpoint_url)
             
-            payload = {"inputs": text} if is_hf else {"text": text}
+            payload = {"inputs": text, "max_new_tokens": 4096} if is_hf else {"text": text, "max_new_tokens": 4096}
             headers = {"Content-Type": "application/json"}
             
             if is_hf and settings.HF_TOKEN:
