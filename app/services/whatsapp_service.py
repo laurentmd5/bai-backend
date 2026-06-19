@@ -28,7 +28,7 @@ from app.services.chat_service import ChatService
 from app.services.validation.input_validator import InputValidator
 from app.services.validation.security_validator import SecurityValidator
 from app.services.audio.audio_validator import AudioValidator
-from app.services.audio.media_utils import download_media, upload_media, send_audio_message
+from app.services.audio.media_utils import download_media, upload_media, send_audio_message, convert_to_ogg_opus
 from app.services.audio.whisper_service import whisper
 from app.services.audio.tts_service import tts
 from app.repositories.session_repository import SessionRepository
@@ -576,12 +576,20 @@ class WhatsAppService:
         audio_response = await tts.synthesize(response_text, language=detected_language)
         
         if audio_response:
+            # Check if it's a WAV file (RIFF header) and convert to OGG Opus if needed
+            mime_type = "audio/mpeg"
+            if audio_response.startswith(b"RIFF"):
+                logger.info("converting_wav_to_ogg", phone=phone_number[-4:])
+                audio_response = await convert_to_ogg_opus(audio_response)
+                mime_type = "audio/ogg"
+
             media_id = await upload_media(
                 audio_bytes=audio_response,
                 access_token=self._access_token,
                 api_version=self._api_version,
                 phone_number_id=self._phone_number_id,
-                client=client
+                client=client,
+                mime_type=mime_type
             )
             if media_id:
                 await send_audio_message(
