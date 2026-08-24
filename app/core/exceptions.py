@@ -1,5 +1,5 @@
-"""
-Custom exception classes for BARROW.AI backend.
+﻿"""
+Custom exception classes for Company Bot backend.
 Provides structured error handling across the application.
 """
 
@@ -51,8 +51,8 @@ class ErrorCode(str, Enum):
     DUPLICATE_DOCUMENT = "DUPLICATE_DOCUMENT"
 
 
-class BarrowAIException(Exception):
-    """Base exception class for BARROW.AI application."""
+class BotException(Exception):
+    """Base exception class for Company Bot application."""
     
     def __init__(
         self,
@@ -68,7 +68,7 @@ class BarrowAIException(Exception):
         super().__init__(self.message)
 
 
-class ValidationException(BarrowAIException):
+class ValidationException(BotException):
     """Raised when input validation fails."""
     
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
@@ -80,7 +80,7 @@ class ValidationException(BarrowAIException):
         )
 
 
-class AuthenticationException(BarrowAIException):
+class AuthenticationException(BotException):
     """Raised when authentication fails."""
     
     def __init__(self, message: str, code: ErrorCode = ErrorCode.INVALID_CREDENTIALS):
@@ -91,7 +91,7 @@ class AuthenticationException(BarrowAIException):
         )
 
 
-class AuthorizationException(BarrowAIException):
+class AuthorizationException(BotException):
     """Raised when user lacks required permissions."""
     
     def __init__(self, message: str = "Insufficient permissions"):
@@ -102,7 +102,7 @@ class AuthorizationException(BarrowAIException):
         )
 
 
-class RateLimitException(BarrowAIException):
+class RateLimitException(BotException):
     """Raised when rate limit is exceeded."""
     
     def __init__(self, retry_after: int):
@@ -115,7 +115,7 @@ class RateLimitException(BarrowAIException):
         self.retry_after = retry_after
 
 
-class NotFoundException(BarrowAIException):
+class NotFoundException(BotException):
     """Raised when a resource is not found."""
     
     def __init__(self, resource: str, identifier: str):
@@ -127,7 +127,7 @@ class NotFoundException(BarrowAIException):
         )
 
 
-class HostileContentException(BarrowAIException):
+class HostileContentException(BotException):
     """Raised when hostile or inappropriate content is detected."""
     
     def __init__(self, message: str = "Inappropriate content detected"):
@@ -138,7 +138,7 @@ class HostileContentException(BarrowAIException):
         )
 
 
-class PromptInjectionException(BarrowAIException):
+class PromptInjectionException(BotException):
     """Raised when prompt injection attempt is detected."""
     
     def __init__(self):
@@ -149,7 +149,7 @@ class PromptInjectionException(BarrowAIException):
         )
 
 
-class LLMException(BarrowAIException):
+class LLMException(BotException):
     """Base exception for LLM-related errors."""
     pass
 
@@ -178,7 +178,7 @@ class LLMUnavailableException(LLMException):
         )
 
 
-class LowConfidenceException(BarrowAIException):
+class LowConfidenceException(BotException):
     """Raised when RAG confidence is below threshold."""
     
     def __init__(self, score: float, threshold: float):
@@ -212,7 +212,7 @@ class TwoFactorRequiredException(AuthenticationException):
         self.session_token = session_token
 
 
-class DatabaseError(BarrowAIException):
+class DatabaseError(BotException):
     """Raised when a database operation fails."""
     
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
@@ -223,7 +223,7 @@ class DatabaseError(BarrowAIException):
             details=details
         )
 
-class RedisException(BarrowAIException):
+class RedisException(BotException):
     """Raised when a Redis operation fails."""
 
     def __init__(self, message: str, code: Optional[str] = None, original_error: Optional[Exception] = None):
@@ -235,7 +235,7 @@ class RedisException(BarrowAIException):
         )
 
 
-class QdrantException(BarrowAIException):
+class QdrantException(BotException):
     """Raised when a Qdrant operation fails."""
 
     def __init__(self, message: str, original_error: Optional[Exception] = None):
@@ -247,7 +247,7 @@ class QdrantException(BarrowAIException):
         )
 
 
-class WhatsAppException(BarrowAIException):
+class WhatsAppException(BotException):
     """Raised when a WhatsApp operation fails."""
 
     def __init__(self, message: str, code: Optional[int] = None, original_error: Optional[Exception] = None):
@@ -257,3 +257,4 @@ class WhatsAppException(BarrowAIException):
             status_code=503,
             details={"whatsapp_code": code, "original_error": str(original_error)} if original_error else None
         )
+

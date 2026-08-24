@@ -1,5 +1,5 @@
-"""
-Rate limiting middleware for BARROW.AI.
+﻿"""
+Rate limiting middleware for Company Bot.
 Provides IP-based and endpoint-based rate limiting.
 """
 

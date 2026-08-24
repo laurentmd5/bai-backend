@@ -1,5 +1,5 @@
-"""
-Service dependencies for BARROW.AI FastAPI endpoints.
+﻿"""
+Service dependencies for Company Bot FastAPI endpoints.
 """
 
 from fastapi import Depends

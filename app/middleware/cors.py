@@ -1,5 +1,5 @@
-"""
-CORS configuration for BARROW.AI.
+﻿"""
+CORS configuration for Company Bot.
 """
 
 from fastapi import FastAPI

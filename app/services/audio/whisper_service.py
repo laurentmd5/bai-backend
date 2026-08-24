@@ -1,4 +1,4 @@
-"""
+﻿"""
 Whisper transcription service with Redis caching using local faster-whisper.
 """
 
@@ -47,7 +47,7 @@ class WhisperTranscriber:
     ) -> tuple[Optional[str], str]:
         """
         Core transcription logic using local faster-whisper.
-        Uses aggressive Wolof/English initial prompt to force code-switching.
+        Uses an IT-domain prompt to guide transcription vocabulary.
         """
         start_time = time.time()
         
@@ -55,15 +55,15 @@ class WhisperTranscriber:
             # Wrap bytes in BytesIO
             audio_file = io.BytesIO(audio_bytes)
             
-            # Wolof code-switching prompt to guide Whisper with diverse vocabulary and specific Gambian names
-            wolof_prompt = "Salaamalekum, nanga def? Jërëjëf. Waaw, déedéet, loolu deug la. Lu xew? Numu tudd? Dama bëgg xam ndax mën nga ma dimbali. The National People's Party (NPP), Adama Barrow, Kan moy, and President Barrow are great. We discuss health, medicine, hospital, doctor, healthcare, internet, infrastructure, road, and education."
+            # Generic IT prompt to guide transcription vocabulary
+            it_prompt = "network, server, firewall, router, cloud, cybersecurity, support, maintenance, infrastructure, backup, VPN, incident, troubleshoot, configuration, NETSYSTEME"
             
             # Run inference synchronously (we could use an executor but this is POC)
             segments, info = self.model.transcribe(
                 audio_file,
                 beam_size=beam_size,
                 language=language,
-                initial_prompt=wolof_prompt,
+                initial_prompt=it_prompt,
                 condition_on_previous_text=False, # Prevent hallucination loops
                 vad_filter=True,
                 vad_parameters=dict(min_silence_duration_ms=500)
@@ -72,25 +72,6 @@ class WhisperTranscriber:
             # Consume the generator
             transcript = " ".join([segment.text for segment in segments]).strip()
             
-            # Post-correction STT
-            CORRECTIONS = {
-                "adam abel": "Adama Barrow",
-                "abel": "Barrow",
-                "atama barrow": "Adama Barrow",
-                "lu is": "who is",
-                "ilf": "health",
-                "elf": "health",
-                "in ilf": "in health",
-                "ilf and": "health and",
-            }
-            
-            PROTECTED_KEYWORDS = [
-                "health", "hospital", "doctor", "medicine", "healthcare",
-                "internet", "infrastructure", "road", "education"
-            ]
-            # Need to do case-insensitive replace without losing original casing entirely,
-            # or just simple lower replacement since we just want it to match in RAG.
-            # But let's do a simple replace on the string for now.
             lower_transcript = transcript.lower()
             for wrong, correct in CORRECTIONS.items():
                 if wrong in lower_transcript:
@@ -106,13 +87,13 @@ class WhisperTranscriber:
             detected_lang = info.language
             prob = info.language_probability
             
-            # Whisper struggles with Wolof and usually outputs random languages with low confidence (e.g. 'ms' 0.36).
-            # However, for English it will output 'en' with higher confidence (e.g. 0.55+ despite the Wolof prompt).
-            # We add a confidence threshold to avoid overriding legitimate English audio.
-            if detected_lang == "en" and prob >= 0.30:
-                pass  # Keep 'en'
+            # Language detection: keep "en" and "fr"; default to "en" for other languages
+            if detected_lang == "fr" and prob >= 0.30:
+                pass  # Keep "fr"
+            elif detected_lang == "en" and prob >= 0.30:
+                pass  # Keep "en"
             else:
-                detected_lang = "wolof"
+                detected_lang = "en"  # Default to English
             
             if transcript:
                 logger.info(
@@ -124,11 +105,11 @@ class WhisperTranscriber:
                 return transcript, detected_lang
             else:
                 logger.warning("empty_transcript_from_whisper")
-                return None, "wolof"
+                return None, "en"
 
         except Exception as e:
             logger.error("whisper_local_failed", error=str(e))
-            return None, "wolof"
+            return None, "en"
 
     async def transcribe(
         self,
@@ -168,7 +149,7 @@ class WhisperTranscriber:
         
         if cached and isinstance(cached, dict):
             logger.debug("audio_transcript_detect_cache_hit", hash=audio_hash[:8])
-            return cached.get("text"), cached.get("lang", "wolof")
+            return cached.get("text"), cached.get("lang", "en")
 
         transcript, detected_lang = await self._run_transcription(audio_bytes, beam_size)
         if transcript:
@@ -182,3 +163,4 @@ class WhisperTranscriber:
 
 # Global singleton
 whisper = WhisperTranscriber()
+

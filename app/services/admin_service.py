@@ -1,5 +1,5 @@
-"""
-Admin Service for BARROW.AI.
+﻿"""
+Admin Service for Company Bot.
 Handles admin authentication, 2FA, user management, and audit logging.
 """
 
@@ -52,7 +52,7 @@ logger = get_logger(__name__)
 
 class AdminService:
     """
-    Admin service for BARROW.AI dashboard.
+    Admin service for Company Bot dashboard.
     
     Handles:
     - Admin authentication (login, logout, refresh)

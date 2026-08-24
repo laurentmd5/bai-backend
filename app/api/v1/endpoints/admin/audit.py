@@ -1,5 +1,5 @@
-"""
-Admin audit log endpoints for BARROW.AI.
+﻿"""
+Admin audit log endpoints for Company Bot.
 Complete endpoints for viewing and managing audit logs with filtering and search.
 """
 
@@ -495,3 +495,4 @@ async def delete_audit_log(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete audit log"
         )
+

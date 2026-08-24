@@ -1,5 +1,5 @@
-"""
-WhatsApp Service for BARROW.AI.
+﻿"""
+WhatsApp Service for Company Bot.
 Integrates with Meta WhatsApp Cloud API for bidirectional messaging.
 """
 
@@ -21,7 +21,7 @@ from tenacity import (
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.exceptions import BarrowAIException, ErrorCode
+from app.core.exceptions import BotException, ErrorCode
 from app.core.metrics import whatsapp_messages_received_total, voice_message_processed_total
 from app.services.cache.redis_cache import cache_service, CacheNamespace
 from app.services.chat_service import ChatService
@@ -37,7 +37,7 @@ from app.models.request.whatsapp import WhatsAppWebhookRequest, WhatsAppMessage
 logger = get_logger(__name__)
 
 
-class WhatsAppException(BarrowAIException):
+class WhatsAppException(BotException):
     """WhatsApp-specific exception."""
     
     def __init__(self, message: str, code: Optional[int] = None, original_error: Optional[Exception] = None):
@@ -77,7 +77,7 @@ class WhatsAppInvalidPhoneException(WhatsAppException):
 
 class WhatsAppService:
     """
-    WhatsApp Cloud API service for BARROW.AI.
+    WhatsApp Cloud API service for Company Bot.
     
     Handles:
     - Webhook verification
@@ -421,9 +421,9 @@ class WhatsAppService:
         await self.send_text_message(
             to_number=phone_number,
             text=(
-                "You have been unsubscribed from AskBarrow.ai messages. "
+                "You have been unsubscribed from AskCompany Bot messages. "
                 "You can restart the conversation anytime by sending 'START'.\n\n"
-                "Ask. Know. Decide. - One Gambia. One People. One Barrow."
+                ""
             ),
         )
         
@@ -448,9 +448,9 @@ class WhatsAppService:
         await self.send_text_message(
             to_number=phone_number,
             text=(
-                "Welcome back to AskBarrow.ai! You are now resubscribed. "
+                "Welcome back to AskCompany Bot! You are now resubscribed. "
                 "How can I help you today?\n\n"
-                "Ask. Know. Decide. - One Gambia. One People. One Barrow."
+                ""
             ),
         )
         
@@ -518,11 +518,8 @@ class WhatsAppService:
         text_lang = self._input_validator.detect_language(transcribed_text)
         
         # CRITICAL FIX: The text-based detector (langdetect) defaults to English when it doesn't know.
-        # Whisper's transcription of Wolof often produces garbage English words (no Wolof keywords), 
-        # which causes text_lang to falsely return "en".
-        # Therefore, if either the text validator OR Whisper detects Wolof, we MUST trust it.
-        if text_lang == "wolof" or whisper_lang == "wolof":
-            detected_language = "wolof"
+        # Language detection from Whisper
+            detected_language = whisper_lang or text_lang or "en"
         elif text_lang == "mandinka" or whisper_lang == "mandinka":
             detected_language = "mandinka"
         elif text_lang in ["en", "fr"] and len(transcribed_text.split()) >= 3:
@@ -572,7 +569,7 @@ class WhatsAppService:
             response_text = "I'm not sure how to answer that. Please try again." if detected_language == "en" \
                 else "Je ne suis pas sûr de pouvoir répondre à cela. Veuillez réessayer."
 
-        # Synthesize voice response using unified TTS service (which routes Wolof to Oolel)
+        # Synthesize voice response using unified TTS service
         audio_response = await tts.synthesize(response_text, language=detected_language)
         
         if audio_response:
@@ -903,8 +900,7 @@ class WhatsAppService:
         Returns:
             Truncated text
         """
-        slogan = "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        
+                
         if len(text) <= self.MAX_MESSAGE_LENGTH:
             return text
         
@@ -1054,3 +1050,6 @@ class WhatsAppService:
         except Exception as e:
             logger.error("get_business_profile_failed", error=str(e))
             return {"status": "error", "error": str(e)}
+
+
+

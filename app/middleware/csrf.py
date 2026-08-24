@@ -1,5 +1,5 @@
-"""
-CSRF (Cross-Site Request Forgery) Protection Middleware for BARROW.AI.
+﻿"""
+CSRF (Cross-Site Request Forgery) Protection Middleware for Company Bot.
 
 Implements double-submit cookie pattern with SameSite cookie attribute.
 
@@ -158,3 +158,4 @@ def add_csrf_cookie(response: Response, token: str) -> Response:
         max_age=3600,  # 1 hour expiration
     )
     return response
+

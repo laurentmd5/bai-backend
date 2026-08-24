@@ -1,5 +1,5 @@
-"""
-Qdrant Vector Store implementation for BARROW.AI.
+﻿"""
+Qdrant Vector Store implementation for Company Bot.
 Provides semantic search capabilities for RAG pipeline.
 """
 
@@ -14,12 +14,12 @@ from qdrant_client.http.exceptions import UnexpectedResponse, ResponseHandlingEx
 from app.services.interfaces.vector_store import IVectorStore
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.exceptions import BarrowAIException, ErrorCode
+from app.core.exceptions import BotException, ErrorCode
 
 logger = get_logger(__name__)
 
 
-class QdrantException(BarrowAIException):
+class QdrantException(BotException):
     """Qdrant-specific exception."""
     
     def __init__(self, message: str, original_error: Optional[Exception] = None):
@@ -618,3 +618,4 @@ class QdrantVectorStore(IVectorStore):
         except Exception as e:
             logger.error("qdrant_snapshot_failed", error=str(e))
             raise QdrantException(f"Failed to create snapshot: {str(e)}", e)
+

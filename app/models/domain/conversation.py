@@ -1,5 +1,5 @@
-"""
-Conversation domain model for BARROW.AI.
+﻿"""
+Conversation domain model for Company Bot.
 Stores chat conversations with full metadata for analytics and auditing.
 """
 

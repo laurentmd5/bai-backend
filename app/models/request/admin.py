@@ -1,5 +1,5 @@
-"""
-Admin request models for BARROW.AI.
+﻿"""
+Admin request models for Company Bot.
 Validates authentication, 2FA, and admin operations.
 """
 

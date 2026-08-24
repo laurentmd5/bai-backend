@@ -1,5 +1,5 @@
-"""
-Admin knowledge base management endpoints for BARROW.AI.
+﻿"""
+Admin knowledge base management endpoints for Company Bot.
 
 Endpoints for managing knowledge documents used in the RAG pipeline.
 Supports uploading, listing, updating, and deleting documents.
@@ -567,3 +567,4 @@ async def delete_knowledge_document(
         "document_id": str(doc.id),
         "message": "Document deleted successfully"
     }
+

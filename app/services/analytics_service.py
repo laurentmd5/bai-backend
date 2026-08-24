@@ -1,5 +1,5 @@
-"""
-Analytics Service for BARROW.AI.
+﻿"""
+Analytics Service for Company Bot.
 Provides comprehensive analytics, metrics aggregation, and reporting.
 """
 
@@ -30,7 +30,7 @@ class TimePeriod(str, Enum):
 
 class AnalyticsService:
     """
-    Analytics service for BARROW.AI dashboard.
+    Analytics service for Company Bot dashboard.
     
     Provides:
     - Overview metrics (KPIs)

@@ -1,5 +1,5 @@
-"""
-Core configuration module for BARROW.AI backend.
+﻿"""
+Core configuration module for Company Bot backend.
 Uses Pydantic Settings for robust environment variable management.
 All sensitive values are loaded from environment variables only.
 """
@@ -34,7 +34,7 @@ class LogLevel(str, Enum):
 
 class Settings(BaseSettings):
     """
-    Central configuration settings for BARROW.AI.
+    Central configuration settings for Company Bot.
     All values are loaded from environment variables with validation.
     """
     model_config = SettingsConfigDict(
@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     # APPLICATION SETTINGS
     # =========================================================================
     APP_NAME: str = Field(
-        default="BARROW.AI POC",
+        default="Company Bot",
         description="Application name for logging and headers"
     )
     
@@ -100,9 +100,6 @@ class Settings(BaseSettings):
     # =========================================================================
     CORS_ORIGINS: List[str] = Field(
         default_factory=lambda: [
-            "https://widget.barrow-ai.poc",
-            "https://admin.barrow-ai.poc",
-            "https://npp.gm",
             "http://localhost:5173",
             "http://localhost:3000",
         ],
@@ -327,7 +324,7 @@ class Settings(BaseSettings):
     )
     
     QDRANT_COLLECTION: str = Field(
-        default="npp_documents_poc_v2",
+        default="company_knowledge_v1",
         description="Qdrant collection name"
     )
     

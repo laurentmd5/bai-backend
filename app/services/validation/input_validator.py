@@ -1,5 +1,5 @@
-"""
-Input validation service for BARROW.AI.
+﻿"""
+Input validation service for Company Bot.
 Validates all incoming user messages for security, length, and content.
 """
 
@@ -48,7 +48,7 @@ class InputValidator:
     """
     
     # Allowed languages
-    ALLOWED_LANGUAGES = {"en", "mandinka", "wolof"}
+    ALLOWED_LANGUAGES = {"en", "fr"}  # From company.yaml
     
     # Maximum message length
     MAX_MESSAGE_LENGTH = 2000
@@ -98,17 +98,8 @@ class InputValidator:
     
     # Local acronyms expansion for low-literacy users
     LOCAL_ACRONYMS = {
-        "npp": "National People's Party",
-        "pace": "Presidential Agency for Community Empowerment",
-        "gamtel": "Gambia Telecommunications Company",
-        "gamcel": "Gambia Cellular Company",
-        "mygov": "My Government platform",
         "it": "information technology",
         "ict": "information and communication technology",
-        "ngs": "National Gambia Scholarship",
-        "gba": "Greater Banjul Area",
-        "nawec": "National Water and Electricity Company",
-        "pura": "Public Utilities Regulatory Authority",
         "ecowas": "Economic Community of West African States",
     }
     
@@ -120,7 +111,6 @@ class InputValidator:
         "lasante": "health", "sante": "health", "mezin": "medicine",
         "gouv": "governance", "govern": "governance", "gov": "governance",
         "jenes": "youth", "jenn": "youth", "yout": "youth",
-        "barow": "barrow", "barrows": "barrow",
         "digita": "digital", "digi": "digital",
         "infrastrukture": "infrastructure", "infra": "infrastructure",
         "ekonomi": "economy", "ekonomie": "economy",
@@ -131,7 +121,7 @@ class InputValidator:
     _COMMON_WORDS = [
         "internet", "agriculture", "education", "health", "governance",
         "youth", "digital", "infrastructure", "economy", "security",
-        "npp", "barrow", "gambia", "development", "project", "program",
+        , "development", "project", "program",
         "job", "work", "business", "farmer", "school", "hospital",
         "road", "bridge", "water", "electricity", "internet",
     ]
@@ -171,7 +161,7 @@ class InputValidator:
         """
         if not message or len(message.strip()) < 2:
             # Very short messages - return a help prompt
-            return "I am here to inform you about President Barrow and the NPP's achievements. You can ask me about internet, agriculture, health, education, or roads."
+            return "I'm here to help. Could you please ask a complete question?. You can ask me about internet, agriculture, health, education, or roads."
         
         # Convert to lowercase and normalize
         normalized = message.lower().strip()
@@ -205,15 +195,7 @@ class InputValidator:
         
         # Map single keywords to full questions
         keyword_map = {
-            "internet": "What has NPP done for internet and connectivity?",
-            "agriculture": "What are NPP plans for agriculture and food security?",
-            "health": "What healthcare reforms does NPP propose?",
-            "education": "What is NPP plan for education and skills?",
-            "youth": "What are NPP programs for youth empowerment?",
-            "governance": "What is NPP plan for good governance?",
-            "digital": "What has NPP done for digital transformation?",
-            "infrastructure": "What infrastructure projects has NPP completed?",
-            "economy": "What has NPP done for the economy and jobs?",
+            # Single-keyword expansion removed (NPP-specific hardcoded content deleted)
             "security": "What has NPP done for national security?",
         }
         
@@ -690,7 +672,7 @@ class InputValidator:
         
         # Check common passwords
         common_passwords = [
-            "password", "password123", "admin123", "barrow2024", "npp2024",
+            "password", "password123", "admin123", "admin2024",
             "12345678", "qwerty123", "gambia2024", "president2024"
         ]
         
@@ -739,9 +721,7 @@ class InputValidator:
         Detect the language of a text.
 
         Strategy (layered):
-        1. Check for Gambian local languages (Mandinka, Wolof) via keyword matching
-           — langdetect doesn't know these.
-        2. Use langdetect (statistical model, ~200 languages) for fr/en.
+        1. Use langdetect (statistical model, ~200 languages) for fr/en.
         3. Fallback to keyword-based French detection if langdetect unavailable.
         4. Default to "en".
 
@@ -749,7 +729,7 @@ class InputValidator:
             text: Text to analyze
 
         Returns:
-            Language code: "en", "mandinka", or "wolof"
+            Language code: "en" or "fr"
         """
         if not text or len(text.strip()) < 3:
             return "en"
@@ -817,3 +797,5 @@ class InputValidator:
             return "en"
 
         return "en"
+
+

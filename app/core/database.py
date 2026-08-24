@@ -1,5 +1,5 @@
-"""
-Database configuration module for BARROW.AI backend.
+﻿"""
+Database configuration module for Company Bot backend.
 Provides async SQLAlchemy engine, session management, and connection pooling.
 Implements clean architecture principles with proper separation of concerns.
 """
@@ -22,7 +22,7 @@ from sqlalchemy.exc import SQLAlchemyError, OperationalError, DisconnectionError
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.exceptions import BarrowAIException, ErrorCode
+from app.core.exceptions import BotException, ErrorCode
 
 logger = get_logger(__name__)
 
@@ -36,7 +36,7 @@ _is_initialized: bool = False
 _init_lock = asyncio.Lock()
 
 
-class DatabaseError(BarrowAIException):
+class DatabaseError(BotException):
     """Database-specific exception."""
     
     def __init__(self, message: str, original_error: Optional[Exception] = None):
@@ -396,3 +396,4 @@ def setup_database_hooks(app):
     @app.on_event("shutdown")
     async def shutdown_database():
         await close_database()
+

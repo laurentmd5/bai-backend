@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 from typing import Optional
 
 from groq import AsyncGroq
@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 
 class GroqProvider(ILLMProvider):
     """
-    Groq LLM Provider implementation for BARROW.AI POC.
+    Groq LLM Provider implementation for Company Bot.
     Used as the ultra-fast fallback provider (Llama 3.3 70B).
     """
 
@@ -166,3 +166,4 @@ class GroqProvider(ILLMProvider):
         as Groq doesn't provide a direct token counting endpoint.
         """
         return len(text) // 4
+

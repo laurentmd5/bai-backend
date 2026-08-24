@@ -1,4 +1,4 @@
-import json
+﻿import json
 from typing import Dict, Any, Tuple, Optional
 from app.services.interfaces.llm_provider import ILLMProvider
 from app.core.logging import get_logger
@@ -8,7 +8,7 @@ logger = get_logger(__name__)
 class QueryTransformer:
     """
     Handles Query Rewriting, Language Detection, and HyDE (Hypothetical Document Embeddings)
-    to bridge the lexical and semantic gap for poorly structured or Wolof queries.
+    to bridge the lexical and semantic gap for poorly structured queries.
     """
     
     def __init__(self, llm_provider: ILLMProvider, groq_provider: ILLMProvider = None):
@@ -22,7 +22,7 @@ class QueryTransformer:
         
         Returns a dict:
         {
-            "detected_language": "wolof", # or "en", "fr", "francolof"
+            "detected_language": "en",  # or "fr"
             "optimized_search_query": "The rewritten question in English/French with good keywords",
             "hypothetical_document": "A theoretical answer to help semantic matching (HyDE)",
             "is_casual_conversation": false
@@ -31,14 +31,14 @@ class QueryTransformer:
         
         system_prompt = """
         You are an expert Search Query Transformer and Linguist for a Retrieval-Augmented Generation (RAG) system.
-        The system has a knowledge base consisting of official documents about government policies, infrastructure, youth programs, and digital transformation for the NPP (National People's Party) in The Gambia.
+        The system has a knowledge base consisting of official company documents about products, services, technical documentation, and support information.
         
         Your task is to analyze the user's raw input and output a JSON object with the following fields:
-        1. "detected_language": Detect the language of the user's input. STRICTLY USE ONLY "en" OR "wolof". Pay special attention to Gambian Wolof phrasing, phonetics, and code-switching (e.g., mixing English and Wolof like "The NPP mo gën"). If Wolof words are present in a mixed sentence, classify it as "wolof". Do NOT output "fr".
+        1. "detected_language": Detect the language of the user's input. Detect the primary language. Output "en" for English or "fr" for French. If uncertain, default to "en".
         2. "is_casual_conversation": true if the input is just a greeting, chit-chat, or clearly doesn't require searching a document database. false otherwise.
         3. "optimized_search_query": Translate the query to standard English, fix any spelling/grammar errors, and expand it with highly relevant keywords that might appear in official documents. 
            CRITICAL: If conversation history is provided, and the user's input is short (e.g., "Yes", "And?", "What about health?"), use the context from the history to formulate a complete, standalone search query.
-           CRITICAL: DO NOT DROP OR REPLACE SPECIFIC NOUNS, NAMES, OR TECHNICAL TERMS FROM THE ORIGINAL QUERY (e.g., "internet", "infrastructure", "Adama Barrow", etc.). ALWAYS preserve the core entities the user asked about. If it's a casual conversation, leave this empty.
+           CRITICAL: DO NOT DROP OR REPLACE SPECIFIC NOUNS, NAMES, OR TECHNICAL TERMS FROM THE ORIGINAL QUERY (e.g., "product name", "service name", etc.). ALWAYS preserve the core entities the user asked about. If it's a casual conversation, leave this empty.
         
         CRITICAL: Your output MUST be valid JSON, with no markdown formatting blocks like ```json around it. Just the raw JSON object.
         """
@@ -138,8 +138,10 @@ class QueryTransformer:
                     logger.error("groq_fallback_for_query_transformer_failed", error=str(groq_e))
                     
             return {
-                "detected_language": "en", # Fallback to English
+                "detected_language": "en", # Fallback
                 "is_casual_conversation": False,
                 "optimized_search_query": raw_query,
                 "hypothetical_document": None
             }
+
+

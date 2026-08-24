@@ -1,5 +1,5 @@
-"""
-Admin conversations management endpoints for BARROW.AI.
+﻿"""
+Admin conversations management endpoints for Company Bot.
 Complete endpoints for viewing, filtering, and managing user conversations.
 """
 
@@ -484,4 +484,5 @@ async def delete_conversation(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete conversation"
         )
+
 

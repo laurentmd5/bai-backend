@@ -1,5 +1,5 @@
-"""
-WhatsApp webhook endpoints for BARROW.AI.
+﻿"""
+WhatsApp webhook endpoints for Company Bot.
 Handles incoming webhooks from Meta WhatsApp Cloud API.
 """
 

@@ -1,19 +1,19 @@
-"""
-Application-wide constants for BARROW.AI.
+﻿"""
+Application-wide constants for Company Bot.
 Central place for all hardcoded values.
 """
 
 # =============================================================================
 # BRANDING
 # =============================================================================
-SLOGAN = "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-APP_URL = "https://www.npp.gm"
+SLOGAN = ""  # Set via company.yaml
+APP_URL = ""  # Set via company.yaml
 PACE_CONTACT = "contact the nearest PACE office"
 
 # =============================================================================
 # LANGUAGES
 # =============================================================================
-SUPPORTED_LANGUAGES = {"en", "mandinka", "wolof"}
+SUPPORTED_LANGUAGES = {"en", "fr"}  # Configured in company.yaml
 DEFAULT_LANGUAGE = "en"
 
 # =============================================================================
@@ -41,7 +41,9 @@ DEFAULT_CHUNK_OVERLAP = 80
 # =============================================================================
 # FALLBACK MESSAGES
 # =============================================================================
-FALLBACK_NOT_FOUND_EN = "I do not have this information in my campaign database. Please visit www.npp.gm or contact the nearest PACE office."
-FALLBACK_NOT_FOUND_FR = "Je ne dispose pas de cette information dans ma base de campagne. Veuillez visiter www.npp.gm ou contacter le bureau PACE le plus proche."
+FALLBACK_NOT_FOUND_EN = ""  # Set via company.yaml
+FALLBACK_NOT_FOUND_FR = ""  # Set via company.yaml
 FALLBACK_TECHNICAL_EN = "I am experiencing a temporary technical issue. Please try again in a few moments."
 FALLBACK_TECHNICAL_FR = "Je rencontre une difficulté technique momentanée. Veuillez réessayer dans quelques instants."
+
+

@@ -1,5 +1,5 @@
-"""
-Admin authentication endpoints for BARROW.AI.
+﻿"""
+Admin authentication endpoints for Company Bot.
 """
 
 from fastapi import APIRouter, Request, Depends, HTTPException, status
@@ -251,3 +251,4 @@ async def change_password(
     )
 
     return JSONResponse(content={"message": "Password changed successfully"})
+

@@ -1,5 +1,5 @@
-"""
-Admin analytics endpoints for BARROW.AI.
+﻿"""
+Admin analytics endpoints for Company Bot.
 
 Provides comprehensive analytics and metrics for:
 - Dashboard overview (key metrics, summary stats)

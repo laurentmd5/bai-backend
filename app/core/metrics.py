@@ -1,6 +1,6 @@
-# app/core/metrics.py
+﻿# app/core/metrics.py
 """
-Prometheus metrics module for BARROW.AI.
+Prometheus metrics module for Company Bot.
 Comprehensive observability with structured metrics for all components.
 """
 
@@ -13,19 +13,19 @@ import time
 # Existing chat metrics (preserved for compatibility)
 # =========================================================================
 chat_messages_total = Counter(
-    'barrow_chat_messages_total',
+    'bot_chat_messages_total',
     'Total number of chat messages',
     ['channel', 'language', 'cache_hit']
 )
 
 chat_errors_total = Counter(
-    'barrow_chat_errors_total',
+    'bot_chat_errors_total',
     'Total number of chat errors',
     ['error_type']
 )
 
 chat_latency_ms = Histogram(
-    'barrow_chat_latency_ms',
+    'bot_chat_latency_ms',
     'Chat response latency in milliseconds',
     ['channel'],
     buckets=(50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000)
@@ -33,19 +33,19 @@ chat_latency_ms = Histogram(
 
 # RAG metrics
 rag_fallbacks_total = Counter(
-    'barrow_rag_fallbacks_total',
+    'bot_rag_fallbacks_total',
     'Total number of RAG fallbacks'
 )
 
 rag_search_duration_ms = Histogram(
-    'barrow_rag_search_duration_ms',
+    'bot_rag_search_duration_ms',
     'Qdrant search duration',
     buckets=(1, 5, 10, 25, 50, 100, 250, 500)
 )
 
 # LLM metrics
 llm_generation_duration_ms = Histogram(
-    'barrow_llm_generation_duration_ms',
+    'bot_llm_generation_duration_ms',
     'LLM generation duration',
     ['provider'],
     buckets=(100, 250, 500, 1000, 2500, 5000, 10000, 15000)
@@ -53,32 +53,32 @@ llm_generation_duration_ms = Histogram(
 
 # Session metrics
 active_sessions_total = Gauge(
-    'barrow_active_sessions_total',
+    'bot_active_sessions_total',
     'Number of active sessions',
     ['channel']
 )
 
 # Cache metrics
 cache_hit_ratio = Gauge(
-    'barrow_cache_hit_ratio',
+    'bot_cache_hit_ratio',
     'Cache hit ratio (0-100)'
 )
 
 # WhatsApp metrics
 whatsapp_messages_total = Counter(
-    'barrow_whatsapp_messages_total',
+    'bot_whatsapp_messages_total',
     'Total WhatsApp messages',
     ['direction']
 )
 
 whatsapp_optouts_total = Counter(
-    'barrow_whatsapp_optouts_total',
+    'bot_whatsapp_optouts_total',
     'Total WhatsApp opt-outs'
 )
 
 # Admin metrics
 admin_logins_total = Counter(
-    'barrow_admin_logins_total',
+    'bot_admin_logins_total',
     'Total admin login attempts',
     ['result']
 )
@@ -87,13 +87,13 @@ admin_logins_total = Counter(
 # New HTTP metrics for comprehensive observability
 # =========================================================================
 http_requests_total = Counter(
-    'barrow_http_requests_total',
+    'bot_http_requests_total',
     'Total HTTP requests by method, endpoint, and status',
     ['method', 'endpoint', 'status']
 )
 
 http_request_duration_seconds = Histogram(
-    'barrow_http_request_duration_seconds',
+    'bot_http_request_duration_seconds',
     'HTTP request latency in seconds',
     ['method', 'endpoint'],
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
@@ -103,13 +103,13 @@ http_request_duration_seconds = Histogram(
 # New WhatsApp audio/voice metrics
 # =========================================================================
 whatsapp_messages_received_total = Counter(
-    'barrow_whatsapp_messages_received_total',
+    'bot_whatsapp_messages_received_total',
     'Total WhatsApp messages received by type',
     ['type']  # text, voice, image, etc.
 )
 
 voice_message_processed_total = Counter(
-    'barrow_voice_message_processed_total',
+    'bot_voice_message_processed_total',
     'Voice message processing outcome',
     ['status']  # success, transcription_failed, tts_failed, upload_failed
 )
@@ -118,19 +118,19 @@ voice_message_processed_total = Counter(
 # New audio processing metrics
 # =========================================================================
 whisper_transcription_duration_seconds = Histogram(
-    'barrow_whisper_transcription_duration_seconds',
+    'bot_whisper_transcription_duration_seconds',
     'Whisper transcription latency in seconds',
     buckets=(0.5, 1, 2, 3, 5, 8, 10, 15, 20)
 )
 
 tts_synthesis_duration_seconds = Histogram(
-    'barrow_tts_synthesis_duration_seconds',
+    'bot_tts_synthesis_duration_seconds',
     'Edge TTS synthesis latency in seconds',
     buckets=(0.5, 1, 2, 3, 5, 8, 10)
 )
 
 rag_retrieval_duration_seconds = Histogram(
-    'barrow_rag_retrieval_duration_seconds',
+    'bot_rag_retrieval_duration_seconds',
     'RAG retrieval latency in seconds (Qdrant search)',
     buckets=(0.1, 0.25, 0.5, 1, 2, 5)
 )
@@ -139,7 +139,7 @@ rag_retrieval_duration_seconds = Histogram(
 # Error tracking
 # =========================================================================
 error_total = Counter(
-    'barrow_error_total',
+    'bot_error_total',
     'Total errors by type and endpoint',
     ['error_type', 'endpoint']
 )
@@ -239,3 +239,4 @@ class MetricsContext:
             rag_search_duration_ms.observe(duration_ms)
         elif self.metric_name == 'chat':
             chat_latency_ms.labels(channel='unknown').observe(duration_ms)
+

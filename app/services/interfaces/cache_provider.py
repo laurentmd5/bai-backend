@@ -1,5 +1,5 @@
-"""
-Cache provider interface for BARROW.AI.
+﻿"""
+Cache provider interface for Company Bot.
 Defines the abstract base class for cache implementations.
 """
 
@@ -29,3 +29,4 @@ class ICacheProvider(ABC):
     async def clear(self) -> None:
         """Clear all cache."""
         pass
+

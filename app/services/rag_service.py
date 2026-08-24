@@ -1,5 +1,5 @@
-"""
-RAG (Retrieval-Augmented Generation) Service for BARROW.AI.
+﻿"""
+RAG (Retrieval-Augmented Generation) Service for Company Bot.
 Orchestrates the complete RAG pipeline from embedding to context building.
 """
 

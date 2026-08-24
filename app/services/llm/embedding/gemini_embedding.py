@@ -1,5 +1,5 @@
-"""
-Gemini Embedding Provider implementation for BARROW.AI.
+﻿"""
+Gemini Embedding Provider implementation for Company Bot.
 Integrates with Google text-embedding-004 model.
 """
 
@@ -14,12 +14,12 @@ from app.services.interfaces.embedding_provider import IEmbeddingProvider
 from app.services.cache.redis_cache import cache_service, CacheNamespace
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.exceptions import BarrowAIException, ErrorCode
+from app.core.exceptions import BotException, ErrorCode
 
 logger = get_logger(__name__)
 
 
-class EmbeddingException(BarrowAIException):
+class EmbeddingException(BotException):
     """Embedding generation exception."""
     
     def __init__(self, message: str, original_error: Optional[Exception] = None):
@@ -208,3 +208,4 @@ class GeminiEmbeddingProvider(IEmbeddingProvider):
     def get_model_name(self) -> str:
         """Get model name."""
         return self._model
+

@@ -1,5 +1,5 @@
-"""
-API v1 router for BARROW.AI.
+﻿"""
+API v1 router for Company Bot.
 Aggregates all endpoint routers.
 """
 

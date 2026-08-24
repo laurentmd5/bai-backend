@@ -1,5 +1,5 @@
-"""
-Ollama LLM Provider implementation for BARROW.AI.
+﻿"""
+Ollama LLM Provider implementation for Company Bot.
 Phase 2 provider for sovereign, local LLM inference.
 """
 
@@ -65,7 +65,7 @@ class OllamaProvider(ILLMProvider):
         "en": (
             "I am experiencing a temporary technical issue. "
             "Please try again in a few moments.\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
+            ""
         ),
     }
     
@@ -229,7 +229,7 @@ class OllamaProvider(ILLMProvider):
             
             # Ensure slogan is present
             if "Ask. Know. Decide." not in generated_text:
-                generated_text += "\n\nAsk. Know. Decide. - One Gambia. One People. One Barrow."
+                generated_text += "\n\n"
             
             logger.debug(
                 "ollama_request_completed",
@@ -344,3 +344,4 @@ class OllamaProvider(ILLMProvider):
         For Llama models, roughly 4 characters per token.
         """
         return len(text) // 4
+

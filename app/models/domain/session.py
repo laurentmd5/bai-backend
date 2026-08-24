@@ -1,5 +1,5 @@
-"""
-Session domain model for BARROW.AI.
+﻿"""
+Session domain model for Company Bot.
 Tracks user sessions across web and WhatsApp channels.
 """
 

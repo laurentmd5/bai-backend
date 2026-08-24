@@ -1,5 +1,5 @@
-"""
-Admin repository for BARROW.AI.
+﻿"""
+Admin repository for Company Bot.
 Handles admin user and audit log database operations.
 """
 

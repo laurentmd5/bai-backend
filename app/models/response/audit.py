@@ -1,5 +1,5 @@
-"""
-Audit log response models for BARROW.AI.
+﻿"""
+Audit log response models for Company Bot.
 """
 
 from typing import Optional, List, Dict, Any

@@ -1,5 +1,5 @@
-"""
-Conversation response models for BARROW.AI.
+﻿"""
+Conversation response models for Company Bot.
 Serializes conversation history and exports.
 """
 
@@ -49,8 +49,8 @@ class ConversationResponse(BaseModel):
             "example": {
                 "id": "550e8400-e29b-41d4-a716-446655440000",
                 "session_id": "550e8400-e29b-41d4-a716-446655440001",
-                "user_message": "What has NPP done for internet?",
-                "bot_response": "Under the NPP administration...",
+                "user_message": "What services does NETSYSTEME offer?",
+                "bot_response": "NETSYSTEME offers networking, cybersecurity and IT support services.",
                 "sources": [],
                 "confidence": 0.94,
                 "feedback": 1,
@@ -58,7 +58,7 @@ class ConversationResponse(BaseModel):
                 "latency_ms": 1243,
                 "cache_hit": False,
                 "fallback_triggered": False,
-                "llm_model": "tunedModels/askbarrow-npp-v3",
+                "llm_model": "gemini-2.5-flash-lite",
                 "created_at": "2026-04-17T10:30:45Z"
             }
         }
@@ -136,3 +136,4 @@ class ConversationExportResponse(BaseModel):
     total_records: Optional[int] = Field(None, description="Total records exported")
     
     created_at: datetime = Field(default_factory=datetime.utcnow)
+

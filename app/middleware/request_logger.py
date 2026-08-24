@@ -1,5 +1,5 @@
-"""
-Request logging middleware for BARROW.AI.
+﻿"""
+Request logging middleware for Company Bot.
 Logs all incoming requests with structured data.
 """
 

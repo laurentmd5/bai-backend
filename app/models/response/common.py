@@ -1,5 +1,5 @@
-"""
-Common response models for BARROW.AI.
+﻿"""
+Common response models for Company Bot.
 Includes error responses, health checks, pagination, and metrics.
 """
 

@@ -1,4 +1,4 @@
-"""Admin health check endpoint for BARROW.AI.
+﻿"""Admin health check endpoint for Company Bot.
 
 Monitors the health of all services: PostgreSQL, Redis, Qdrant.
 """
@@ -141,3 +141,4 @@ async def health_check(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=results
         )
+

@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # BARROW.AI POC - Docker Compose Configuration
 # Complete stack with all services
 # =============================================================================
@@ -233,13 +233,13 @@ services:
       # Qdrant
       QDRANT_HOST: qdrant
       QDRANT_PORT: 6333
-      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-npp_documents_poc}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-netsysteme_knowledge_v1}
       QDRANT_SIMILARITY_THRESHOLD: ${QDRANT_SIMILARITY_THRESHOLD:-0.70}
       
       # LLM
       LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-      GEMINI_MODEL: ${GEMINI_MODEL:-tunedModels/askbarrow-npp-v3}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash-lite}
       GEMINI_TEMPERATURE: ${GEMINI_TEMPERATURE:-0.1}
       GEMINI_MAX_TOKENS: ${GEMINI_MAX_TOKENS:-512}
       GEMINI_TIMEOUT: ${GEMINI_TIMEOUT:-15}
@@ -269,7 +269,7 @@ services:
       WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
       
       # CORS
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://bai.sse.sn,http://localhost,http://localhost:8000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://netsysteme.sn,http://localhost,http://localhost:8000}
       
       # Rate Limiting
       RATE_LIMIT_CHAT_PER_MINUTE: ${RATE_LIMIT_CHAT_PER_MINUTE:-30}
@@ -350,13 +350,13 @@ services:
       # Qdrant
       QDRANT_HOST: qdrant
       QDRANT_PORT: 6333
-      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-npp_documents_poc}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-netsysteme_knowledge_v1}
       QDRANT_SIMILARITY_THRESHOLD: ${QDRANT_SIMILARITY_THRESHOLD:-0.70}
       
       # LLM
       LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-      GEMINI_MODEL: ${GEMINI_MODEL:-tunedModels/askbarrow-npp-v3}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash-lite}
       GEMINI_TEMPERATURE: ${GEMINI_TEMPERATURE:-0.1}
       GEMINI_MAX_TOKENS: ${GEMINI_MAX_TOKENS:-512}
       GEMINI_TIMEOUT: ${GEMINI_TIMEOUT:-15}
@@ -431,3 +431,4 @@ services:
       GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-piechart-panel
     profiles:
       - monitoring
+

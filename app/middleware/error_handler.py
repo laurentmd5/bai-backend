@@ -1,5 +1,5 @@
-"""
-Error handling middleware for BARROW.AI.
+﻿"""
+Error handling middleware for Company Bot.
 Provides consistent error responses across the application.
 """
 
@@ -13,7 +13,7 @@ from starlette.types import ASGIApp
 
 from app.core.logging import get_logger
 from app.core.exceptions import (
-    BarrowAIException,
+    BotException,
     ValidationException,
     AuthenticationException,
     AuthorizationException,
@@ -79,7 +79,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         request_id = getattr(request.state, "request_id", None)
         
         # BarrowAI custom exceptions
-        if isinstance(exc, BarrowAIException):
+        if isinstance(exc, BotException):
             return self._create_error_response(
                 status_code=exc.status_code,
                 error=exc.message,
@@ -277,3 +277,4 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             content=response_content,
             headers=response_headers,
         )
+

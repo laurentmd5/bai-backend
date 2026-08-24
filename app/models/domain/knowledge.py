@@ -1,5 +1,5 @@
-"""
-Knowledge document domain model for BARROW.AI.
+﻿"""
+Knowledge document domain model for Company Bot.
 Tracks documents indexed in the RAG vector store.
 """
 

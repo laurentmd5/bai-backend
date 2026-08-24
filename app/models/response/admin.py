@@ -1,5 +1,5 @@
-"""
-Admin response models for BARROW.AI.
+﻿"""
+Admin response models for Company Bot.
 Serializes authentication tokens, user data, and 2FA setup.
 """
 
@@ -91,7 +91,7 @@ class TwoFactorSetupResponse(BaseModel):
         "json_schema_extra": {
             "example": {
                 "secret": "JBSWY3DPEHPK3PXP",
-                "qr_code_uri": "otpauth://totp/BARROW.AI%20Admin:admin@pace.gm?secret=JBSWY3DPEHPK3PXP&issuer=BARROW.AI%20Admin",
+                "qr_code_uri": "otpauth://totp/Company Bot%20Admin:admin@pace.gm?secret=JBSWY3DPEHPK3PXP&issuer=Company Bot%20Admin",
                 "backup_codes": ["A1B2C3D4", "E5F6G7H8", "I9J0K1L2"],
                 "message": "Scan QR code with Google Authenticator or Authy"
             }

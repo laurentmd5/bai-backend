@@ -1,5 +1,5 @@
-"""
-Chat Service for BARROW.AI - Main orchestrator for the chatbot engine.
+﻿"""
+Chat Service — Main orchestrator for the chatbot engine.
 Coordinates all components: validation, RAG, LLM, caching, and persistence.
 """
 
@@ -22,10 +22,11 @@ from app.services.cache.redis_cache import cache_service, CacheNamespace
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.session_repository import SessionRepository
 from app.core.config import settings
+from app.core.company_config import company
 from app.core.logging import get_logger
 from app.core.metrics import llm_generation_duration_ms
 from app.core.exceptions import (
-    BarrowAIException,
+    BotException,
     LowConfidenceException,
     LLMTimeoutException,
     LLMUnavailableException,
@@ -40,7 +41,7 @@ logger = get_logger(__name__)
 
 class ChatService:
     """
-    Main orchestrator for the BARROW.AI chatbot.
+    Main orchestrator for the company chatbot.
     
     Coordinates the complete conversation flow:
     1. Input validation and security checks
@@ -52,137 +53,6 @@ class ChatService:
     7. Output validation
     8. Persistence and analytics
     
-    Implements SOLID principles with dependency injection for all components.
-    
-    NOTE: This service is instantiated once at application startup
-    and stored in app.state.chat_service. All endpoints access the same
-    singleton instance via FastAPI dependency injection.
-    """
-    
-    # Special intents that bypass RAG+LLM pipeline
-    SPECIAL_INTENTS = {
-        "greeting": ["hello", "hi", "hey", "bonjour", "salut", "salaam", "salaam aleikum", "nna tang", "nanga def", "nanga dëf", "naga def", "naga dëf"],
-        "help": ["help", "aide", "menu", "what can you do", "capabilities"],
-        "thanks": ["thank", "merci", "thanks", "thank you", "je vous remercie"],
-        "stop": ["stop", "unsubscribe", "désabonner", "opt out", "opt-out"],
-        "start": ["start", "subscribe", "réabonner", "opt in", "opt-in"],
-        "status": ["status", "health", "ping", "test"],
-    }
-    
-    # Pre-defined responses for special intents
-    GREETING_RESPONSES = {
-        "en": (
-            "Hello! Welcome to AskBarrow.ai — your official source for information about "
-            "President Adama Barrow's achievements and NPP programmes.\n\n"
-            "You can ask me about:\n"
-            "• Development in your area\n"
-            "• Government programmes (Digital Transformation, Infrastructure, Youth)\n"
-            "• NPP plans for 2027-2031\n"
-            "• Digital addressing and connectivity\n\n"
-            "How can I help you today?\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
-        "mandinka": (
-            "Salaam Aleikum! I ye AskBarrow.ai la. Nte le mu i la kuntaalaa ti "
-            "President Adama Barrow ni NPP la waleeroolu la.\n\n"
-            "I si n ñininkaa:\n"
-            "• I la dulaa yiriwaa\n"
-            "• Gobiroomu porogaramoolu\n"
-            "• NPP la feeroolu 2027-2031\n"
-            "• Adireesu nimberoolu ani konekitiviti\n\n"
-            "M be i la jaabiroo la?\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
-        "wolof": (
-            "Nanga dëf! Dalal ak jàmm ci AskBarrow.ai — sa barabu xibaar ci mbiri "
-            "liggéeyi President Adama Barrow ak programi NPP.\n\n"
-            "Mën nga ma laaj ci mbir yii:\n"
-            "• Nataal ci sa gox\n"
-            "• Programi nguur gi (Digital Transformation, Infrastructure, Ndaw ñi)\n"
-            "• Yéeney NPP ngir 2027-2031\n"
-            "• Digital addressing ak jokkoo\n\n"
-            "Naka laa la mën a jappale tey?\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
-    }
-    
-    HELP_RESPONSES = {
-        "en": (
-            "I'm AskBarrow.ai, here to inform you about President Barrow's achievements.\n\n"
-            "**Topics I can discuss:**\n"
-            "• Internet and mobile connectivity (113% penetration, GAMTEL upgrade)\n"
-            "• Digital addressing (194,000+ properties mapped)\n"
-            "• E-Government services (MYGOV platform)\n"
-            "• Youth and ICT programmes\n"
-            "• NPP's Way Forward 2027-2031\n\n"
-            "**Example questions:**\n"
-            "• 'What has NPP done for internet?'\n"
-            "• 'Tell me about digital addressing'\n"
-            "• 'What are the plans for 5G?'\n\n"
-            "What would you like to know?\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
-    }
-    
-    STOP_RESPONSE = {
-        "en": (
-            "You have been unsubscribed from AskBarrow.ai messages. "
-            "You can restart the conversation anytime by sending 'START'.\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
-    }
-    
-    START_RESPONSE = {
-        "en": (
-            "Welcome back to AskBarrow.ai! You are now resubscribed. "
-            "How can I help you today?\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
-    }
-    
-    FALLBACK_RESPONSES = {
-        "en": (
-            "I do not have this specific information in my campaign database. "
-            "Please visit www.npp.gm or contact your nearest PACE office for more details.\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
-        "wolof": (
-            "Dafa amul loolu ci sama xam-xam ci campagne bi. "
-            "Jëkkël www.npp.gm walla dem ci birou PACE bi jeex ci sa àll.\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
-        "mandinka": (
-            "N be fen kang bora i fono la ka ñininka soto. "
-            "Teng www.npp.gm walima ye PACE ofisi kelen kelen di.\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
-        "fular": (
-            "Ngal woodaaki hol ko ndaartaten e ngootaaku am. "
-            "Yah www.npp.gm walla PACE to fetel maa.\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
-    }
-    
-    TECHNICAL_ERROR_RESPONSE = {
-        "en": (
-            "I'm experiencing a temporary technical issue. "
-            "Please try again in a few moments.\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
-    }
-    
-    HOSTILE_CONTENT_RESPONSE = {
-        "en": (
-            "I'm AskBarrow.ai, the official assistant for President Adama Barrow and the NPP. "
-            "I'm here to provide information about the President's achievements and the party's programs. "
-            "How can I help you with that?\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        ),
-    }
-    
-    # Relevance keywords for filtering
-    RELEVANCE_KEYWORDS = {
-        "internet": ["internet", "connectivity", "broadband", "wifi", "4g", "5g", "mobile data", "online", "digital service", "gamcel", "gamtel"],
         "digital": ["digital", "digitization", "e-service", "online platform", "mygov", "portal", "e-government", "digital address", "smart"],
         "infrastructure": ["road", "bridge", "highway", "infrastructure", "construction", "development", "port", "airport"],
         "youth": ["youth", "young", "employment", "job", "entrepreneurship", "startup", "training", "skill", "empowerment"],
@@ -270,7 +140,7 @@ class ChatService:
         
         # Ultra-short messages (< 5 chars) trigger help intent (lower priority)
         # Exclude conversational short answers
-        conversational_short_words = ['yes', 'no', 'why', 'who', 'how', 'what', 'more', 'npp', 'np', 'oui', 'non', 'waw', 'waaw', 'déedéet', 'dedet']
+        conversational_short_words = ['yes', 'no', 'why', 'who', 'how', 'what', 'more', 'oui', 'non']
         if len(message_lower) < 5 and message_lower not in conversational_short_words:
             return "help", "ultra_short"
         
@@ -294,27 +164,22 @@ class ChatService:
             Response string or None if not a special intent
         """
         if intent == "greeting":
-            # Check if keyword indicates specific language
-            if matched_keyword in ["salaam", "salaam aleikum", "nna tang"]:
-                return self.GREETING_RESPONSES.get("mandinka", self.GREETING_RESPONSES["en"])
-            if matched_keyword in ["nanga def", "nanga dëf", "naga def", "naga dëf"]:
-                return self.GREETING_RESPONSES.get("wolof", self.GREETING_RESPONSES["en"])
-            return self.GREETING_RESPONSES.get(language, self.GREETING_RESPONSES["en"])
+            return company.get_response("greeting", language)
         
         if intent == "help":
-            return self.HELP_RESPONSES.get(language, self.HELP_RESPONSES["en"])
+            return company.get_response("help", language)
         
         if intent == "thanks":
             return None  # Let LLM handle naturally, but with positive tone
         
         if intent == "stop":
-            return self.STOP_RESPONSE.get(language, self.STOP_RESPONSE["en"])
+            return company.get_response("stop", language)
         
         if intent == "start":
-            return self.START_RESPONSE.get(language, self.START_RESPONSE["en"])
+            return company.get_response("start", language)
         
         if intent == "status":
-            return "AskBarrow.ai is operational and ready to assist you."
+            return f"{company.bot_name} is operational and ready to assist you."
         
         return None
     
@@ -324,57 +189,9 @@ class ChatService:
         language: str,
         session_id: str
     ) -> Optional[Dict[str, Any]]:
-        """
-        Handle very short keyword-only queries.
-        Returns a response directly without RAG if the keyword is recognized.
-        """
-        keyword_map = {
-            "internet": {
-                "en": "NPP increased mobile penetration to 113%, upgraded GAMTEL backbone to 800G, launched a $25M submarine cable project, and completed 100% digital addressing in Banjul and Kanifing. Would you like more details?",
-            },
-            "agriculture": {
-                "en": "NPP plans include rice self-sufficiency by 2031, support for farmers, irrigation projects, training for youth, and making Gambia food secure. Ask me for specific details!",
-            },
-            "health": {
-                "en": "NPP is strengthening hospitals, expanding health insurance, building new clinics, and training more doctors and nurses. We want every Gambian to have access to quality healthcare.",
-            },
-            "education": {
-                "en": "NPP is building new schools, training more teachers, providing scholarships, and expanding technical training centers so youth can learn skills for jobs.",
-            },
-            "youth": {
-                "en": "NPP creates jobs for youth through skills training, entrepreneurship programs, and support for young farmers and digital workers. We believe empowered youth build a stronger Gambia.",
-            },
-            "governance": {
-                "en": "NPP is fighting corruption, strengthening transparency, improving public services, and making government more accountable to citizens. We believe government must serve the people.",
-            },
-            "digital": {
-                "en": "NPP is bringing internet to all regions, digitizing government services, training youth in digital skills, and building a modern digital economy for Gambia.",
-            },
-            "npp": {
-                "en": "NPP is the National People's Party, led by President Adama Barrow. Our 9-point Lahido plan focuses on jobs, digital transformation, agriculture, health, education, youth empowerment, infrastructure, good governance, and environment.",
-            },
-            "barrow": {
-                "en": "President Adama Barrow has led Gambia since 2017, strengthening democracy, building roads, expanding internet, and improving healthcare under the NPP government.",
-            },
-        }
-        
-        message_lower = message.lower().strip()
-        
-        for keyword, responses in keyword_map.items():
-            # Exact match or starts with keyword
-            if message_lower == keyword or message_lower.startswith(keyword):
-                return {
-                    "message": responses.get(language, responses["en"]),
-                    "session_id": session_id,
-                    "sources": [],
-                    "confidence": 0.95,
-                    "cache_hit": False,
-                    "fallback_triggered": False,
-                    "timestamp": datetime.utcnow().isoformat(),
-                }
-        
+        """Keyword shortcutting removed: all queries go through RAG for accuracy."""
         return None
-    
+
     def _get_cache_key(self, message: str, language: str, session_id: str = "global") -> str:
         """
         Generate cache key for RAG response.
@@ -471,7 +288,7 @@ class ChatService:
         Args:
             message: User's message
             session_id: Optional existing session ID
-            language: Preferred language (en, fr, mandinka, wolof)
+            language: Preferred language (en, fr)
             channel: Message channel (web, whatsapp)
             ip_address: Client IP address
             user_agent: Client user agent
@@ -1200,3 +1017,6 @@ class ChatService:
             health["error"] = str(e)
         
         return health
+
+
+

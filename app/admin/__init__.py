@@ -1,1 +1,2 @@
-"""Admin interface module for BARROW.AI."""
+﻿"""Admin interface module for Company Bot."""
+

@@ -1,5 +1,5 @@
-"""
-Security validation service for BARROW.AI.
+﻿"""
+Security validation service for Company Bot.
 Validates security aspects including rate limiting, IP checks, and attack detection.
 """
 

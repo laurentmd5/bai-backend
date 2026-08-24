@@ -1,5 +1,5 @@
-"""
-Chat request models for BARROW.AI.
+﻿"""
+Chat request models for Company Bot.
 Validates incoming chat messages and feedback.
 """
 
@@ -38,7 +38,7 @@ class ChatMessageRequest(BaseModel):
         Field(
             ...,
             description="User message to the chatbot",
-            examples=["What has NPP done for internet connectivity?"]
+            examples=["What IT services does NETSYSTEME offer?"]
         )
     ]
     
@@ -135,7 +135,7 @@ class ChatMessageRequest(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "message": "What has NPP done for internet connectivity?",
+                "message": "What IT services does NETSYSTEME offer?",
                 "session_id": "550e8400-e29b-41d4-a716-446655440000",
                 "language": "en",
                 "channel": "web",
@@ -199,3 +199,4 @@ class ChatFeedbackRequest(BaseModel):
             }
         }
     }
+

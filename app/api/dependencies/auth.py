@@ -1,5 +1,5 @@
-"""
-Authentication dependencies for BARROW.AI FastAPI endpoints.
+﻿"""
+Authentication dependencies for Company Bot FastAPI endpoints.
 """
 
 from typing import Optional

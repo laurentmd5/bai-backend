@@ -1,5 +1,5 @@
-"""
-Gemini LLM Provider implementation for BARROW.AI.
+﻿"""
+Gemini LLM Provider implementation for Company Bot.
 Integrates with Google Gemini 3.0 Flash fine-tuned model.
 """
 
@@ -23,7 +23,7 @@ from app.core.exceptions import (
     LLMException,
     LLMTimeoutException,
     LLMUnavailableException,
-    BarrowAIException,
+    BotException,
     ErrorCode,
 )
 from app.services.llm.prompts import get_system_prompt
@@ -70,7 +70,7 @@ class GeminiProvider(ILLMProvider):
     """
     Google Gemini 3.0 Flash LLM provider implementation.
     
-    Uses the fine-tuned model askbarrow-npp-v3 for campaign-specific responses.
+    Generates responses using the configured Gemini model.
     Implements retry logic, circuit breaker pattern, and graceful degradation.
     """
     
@@ -79,8 +79,8 @@ class GeminiProvider(ILLMProvider):
     FALLBACK_MESSAGES = {
         "en": (
             "I am experiencing a temporary technical issue. "
-            "Please try again in a few moments or visit www.npp.gm for more information.\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
+            "Please try again in a few moments.\n\n"
+            "" 
         ),
     }
     
@@ -311,8 +311,6 @@ class GeminiProvider(ILLMProvider):
                 generated_text = candidate["content"]["parts"][0]["text"]
                 
                 # Ensure slogan is present
-                if "Ask. Know. Decide." not in generated_text:
-                    generated_text += "\n\nAsk. Know. Decide. - One Gambia. One People. One Barrow."
                 
                 self._record_success()
                 
@@ -472,3 +470,6 @@ class GeminiProvider(ILLMProvider):
         """
         # Rough estimate: 4 chars per token for English
         return len(text) // 4
+
+
+

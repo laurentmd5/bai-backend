@@ -1,5 +1,5 @@
-"""
-Output validation service for BARROW.AI.
+﻿"""
+Output validation service for Company Bot.
 Validates LLM-generated responses before sending to users.
 """
 
@@ -26,48 +26,11 @@ class OutputValidator:
     - Source attribution
     """
     
-    # Required slogan that must appear in every response
-    REQUIRED_SLOGAN = "Ask. Know. Decide. - One Gambia. One People. One Barrow."
+    # Optional company tagline (loaded from company.yaml; empty = no tagline appended)
+    COMPANY_TAGLINE: str = ""  # set dynamically below
     
-    # Alternative acceptable slogans (for robustness)
-    ACCEPTABLE_SLOGANS = [
-        "Ask. Know. Decide. - One Gambia. One People. One Barrow.",
-        "Ask. Know. Decide. - One Gambia. One People. One Barrow!",
-        "Ask. Know. Decide. — One Gambia. One People. One Barrow.",
-    ]
-    
-    # Forbidden terms that must never appear in responses
+    # Generic forbidden terms (offensive language only)
     FORBIDDEN_TERMS = [
-        # Anti-Barrow terms
-        "barrow is bad",
-        "barrow is corrupt",
-        "barrow failed",
-        "barrow is incompetent",
-        "president is weak",
-        "president is a liar",
-        "president is corrupt",
-        
-        # Anti-NPP terms
-        "npp is corrupt",
-        "npp failed",
-        "npp is bad",
-        "npp is incompetent",
-        
-        # Pro-opposition terms
-        "opposition is better",
-        "udp will win",
-        "vote for udp",
-        "udp is better",
-        "pdois will win",
-        "gdc is better",
-        
-        # Negative speculation
-        "will lose the election",
-        "might lose",
-        "not win",
-        "going to lose",
-        
-        # Inappropriate language
         "stupid",
         "idiot",
         "fool",
@@ -146,21 +109,8 @@ class OutputValidator:
                 validation_metadata["fixes_applied"].append("replaced_with_fallback")
                 return False, final_response, validation_metadata
         
-        # Step 2: Check for required slogan
-        slogan_present = any(slogan in response for slogan in self.ACCEPTABLE_SLOGANS)
-        
-        if not slogan_present:
-            validation_metadata["validations_performed"].append("missing_slogan")
-            logger.warning("response_missing_slogan")
-            
-            if strict_mode:
-                from app.core.exceptions import ValidationException
-                raise ValidationException("Response missing required slogan")
-            else:
-                final_response = response.rstrip() + "\n\n" + self.REQUIRED_SLOGAN
-                validation_metadata["fixes_applied"].append("slogan_added")
-        else:
-            validation_metadata["validations_performed"].append("slogan_present")
+        # Step 2: (slogan enforcement removed — no mandatory slogan for generic bot)
+        validation_metadata["validations_performed"].append("slogan_check_skipped")
         
         # Step 3: Check length
         if len(response) < self.MIN_RESPONSE_LENGTH:
@@ -308,20 +258,12 @@ class OutputValidator:
         if cut_point > max_len * 0.7:
             truncated = truncated[:cut_point + 1]
         
-        return truncated + "\n\n" + self.REQUIRED_SLOGAN
+        return truncated
     
     def _get_fallback_response(self) -> str:
-        """
-        Get a safe fallback response.
-        
-        Returns:
-            Fallback message
-        """
-        return (
-            "I am experiencing a temporary technical issue. "
-            "Please try again in a few moments or visit www.npp.gm for more information.\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        )
+        """Get a safe fallback response."""
+        from app.core.company_config import company
+        return company.get_response("error", "en")
     
     def validate_broadcast_message(
         self,
@@ -363,10 +305,7 @@ class OutputValidator:
                 )
                 return False, "", validation_metadata
         
-        # Ensure slogan is present
-        if self.REQUIRED_SLOGAN not in final_message:
-            final_message = final_message.rstrip() + "\n\n" + self.REQUIRED_SLOGAN
-            validation_metadata["validations_performed"].append("slogan_added")
+        # No mandatory slogan for generic bot
         
         validation_metadata["validations_performed"].append("broadcast_validation_passed")
         validation_metadata["final_length"] = len(final_message)
@@ -396,3 +335,4 @@ class OutputValidator:
             text = text[:max_length] + "..."
         
         return text
+

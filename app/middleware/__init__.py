@@ -1,5 +1,5 @@
-"""
-Middleware package for BARROW.AI.
+﻿"""
+Middleware package for Company Bot.
 Contains security, logging, error handling, and metrics middleware.
 """
 

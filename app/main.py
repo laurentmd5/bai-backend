@@ -1,5 +1,5 @@
-"""
-Main FastAPI application for BARROW.AI.
+﻿"""
+Main FastAPI application for Company Bot.
 Entry point for the entire backend service.
 """
 
@@ -170,7 +170,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
-        description="Official AI-powered campaign platform for President Adama Barrow and the NPP of The Gambia.",
+        description="AI-powered conversational assistant platform for companies.",
         docs_url=None if settings.ENVIRONMENT == "production" else "/docs",
         redoc_url=None if settings.ENVIRONMENT == "production" else "/redoc",
         openapi_url="/openapi.json" if settings.ENVIRONMENT != "production" else None,
@@ -205,7 +205,7 @@ def create_app() -> FastAPI:
         openapi_schema = get_openapi(
             title=settings.APP_NAME,
             version=settings.APP_VERSION,
-            description="BARROW.AI - Official campaign intelligence platform for President Adama Barrow and the NPP.",
+            description="Company Bot - AI-powered customer assistant platform.",
             routes=app.routes,
         )
         
@@ -383,3 +383,4 @@ if __name__ == "__main__":
         loop="uvloop",
         reload=settings.DEBUG,
     )
+

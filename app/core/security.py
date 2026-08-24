@@ -1,5 +1,5 @@
-"""
-Security module for BARROW.AI backend.
+﻿"""
+Security module for Company Bot backend.
 Provides JWT handling, password hashing, AES encryption, 2FA, CSRF protection,
 and input validation utilities.
 """
@@ -296,7 +296,7 @@ def generate_totp_uri(secret: str, email: str) -> str:
     """
     return pyotp.totp.TOTP(secret).provisioning_uri(
         name=email,
-        issuer_name="BARROW.AI Admin"
+        issuer_name="Company Bot Admin"
     )
 
 
@@ -649,7 +649,7 @@ def detect_prompt_injection(text: str) -> bool:
 
 def detect_hostile_content(text: str) -> Tuple[bool, Optional[str]]:
     """
-    Detect hostile or inappropriate content towards Barrow/NPP.
+    Detect hostile or inappropriate content.
     
     Args:
         text: User input to check
@@ -666,8 +666,7 @@ def detect_hostile_content(text: str) -> Tuple[bool, Optional[str]]:
             return True, match.group()
     
     # Check for isolated hostile keywords near Barrow/NPP references
-    has_barrow_ref = any(ref in text_lower for ref in ["barrow", "president", "npp"])
-    if has_barrow_ref:
+        if has_barrow_ref:
         for keyword in _HOSTILE_KEYWORDS:
             if keyword in text_lower:
                 return True, keyword
@@ -840,8 +839,8 @@ def validate_password_strength(password: str) -> Tuple[bool, List[str]]:
     
     # Check common passwords
     common_passwords = [
-        "password", "password123", "admin123", "barrow2024", "npp2024",
-        "12345678", "qwerty123", "gambia2024", "president2024"
+        "password", "password123", "admin123", , ,
+        "12345678", "qwerty123", , 
     ]
     
     if password.lower() in common_passwords:
@@ -861,3 +860,5 @@ def validate_password_strength(password: str) -> Tuple[bool, List[str]]:
             break
     
     return len(issues) == 0, issues
+
+

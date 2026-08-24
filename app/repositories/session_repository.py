@@ -1,5 +1,5 @@
-"""
-Session repository for BARROW.AI.
+﻿"""
+Session repository for Company Bot.
 Handles chat session database operations.
 """
 

@@ -1,5 +1,5 @@
-"""
-Security headers middleware for BARROW.AI.
+﻿"""
+Security headers middleware for Company Bot.
 Adds OWASP recommended security headers to all responses.
 """
 

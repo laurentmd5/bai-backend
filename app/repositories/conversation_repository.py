@@ -1,5 +1,5 @@
-"""
-Conversation repository for BARROW.AI.
+﻿"""
+Conversation repository for Company Bot.
 Handles conversation-specific database operations.
 """
 

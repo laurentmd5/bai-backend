@@ -1,5 +1,5 @@
-"""
-Knowledge document repository for BARROW.AI.
+﻿"""
+Knowledge document repository for Company Bot.
 Handles knowledge document database operations.
 """
 

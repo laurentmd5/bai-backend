@@ -1,4 +1,4 @@
-"""
+﻿"""
 Edge TTS service – free, no API key required.
 """
 
@@ -10,15 +10,13 @@ import edge_tts
 from app.core.logging import get_logger
 from app.core.config import settings
 from app.core.metrics import tts_synthesis_duration_seconds
-from app.services.audio.oolel_client import oolel_client
 
 logger = get_logger(__name__)
 
 
 class EdgeTTSService:
     """
-    Unified TTS Service.
-    Routes Wolof to Oolel TTS, and other languages to Edge TTS.
+    Unified TTS Service using Edge TTS.
     """
     
     # Male voices
@@ -64,18 +62,7 @@ class EdgeTTSService:
         if not text:
             return None
             
-        # Unified Routing Logic
-        if language == "wolof":
-            # Use Oolel for Wolof
-            audio = await oolel_client.synthesize(text)
-            # User specifically requested fallback to Edge TTS for Wolof (temporary)
-            if not audio:
-                logger.warning("tts_wolof_synthesis_failed", reason="oolel_returned_none_falling_back_to_edge")
-                # Fallback to Nigerian voice, using recursion with the specific voice
-                return await self.synthesize(text, language="en", voice="en-NG-AbeoNeural")
-            return audio
-            
-        # For non-Wolof, use Edge TTS
+            # Edge TTS for all supported languages
         
         # Voice selection
         if voice:

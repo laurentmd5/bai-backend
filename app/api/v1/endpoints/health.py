@@ -1,5 +1,5 @@
-"""
-Health check endpoints for BARROW.AI.
+﻿"""
+Health check endpoints for Company Bot.
 """
 
 from fastapi import APIRouter

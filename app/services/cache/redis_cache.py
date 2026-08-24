@@ -1,5 +1,5 @@
-"""
-Redis cache service for BARROW.AI.
+﻿"""
+Redis cache service for Company Bot.
 Provides comprehensive caching strategies for RAG responses, embeddings, sessions, and rate limiting.
 Implements cache stampede prevention, TTL management, and serialization.
 """

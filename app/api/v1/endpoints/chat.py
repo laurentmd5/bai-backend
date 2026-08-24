@@ -1,5 +1,5 @@
-"""
-Chat endpoints for BARROW.AI.
+﻿"""
+Chat endpoints for Company Bot.
 """
 
 from fastapi import APIRouter, Request, HTTPException, status, Depends

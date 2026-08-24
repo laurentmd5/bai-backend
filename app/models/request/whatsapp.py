@@ -1,5 +1,5 @@
-"""
-WhatsApp webhook request models for BARROW.AI.
+﻿"""
+WhatsApp webhook request models for Company Bot.
 Models the Meta WhatsApp Cloud API webhook payload structure.
 """
 

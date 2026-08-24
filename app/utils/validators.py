@@ -1,5 +1,5 @@
-"""
-Validators for BARROW.AI.
+﻿"""
+Validators for Company Bot.
 Provides email, phone, UUID, and other input validators.
 """
 
@@ -62,3 +62,4 @@ def validate_uuid(uuid_string: str) -> bool:
         return True
     except (ValueError, AttributeError):
         return False
+

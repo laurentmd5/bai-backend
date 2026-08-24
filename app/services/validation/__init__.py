@@ -1,5 +1,5 @@
-"""
-Validation services package for BARROW.AI.
+﻿"""
+Validation services package for Company Bot.
 Provides comprehensive input validation, output validation, and security checks.
 """
 

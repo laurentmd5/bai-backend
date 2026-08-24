@@ -1,5 +1,5 @@
-"""
-Admin user domain models for BARROW.AI.
+﻿"""
+Admin user domain models for Company Bot.
 Manages administrative users, roles, authentication, and audit logging.
 """
 
