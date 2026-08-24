@@ -1,590 +1,441 @@
-# BARROW.AI Backend
+﻿# Company Bot — Plateforme IA Conversationnelle Multi-Entreprise
 
-A high-performance FastAPI chatbot backend supporting WhatsApp integration with advanced NLP capabilities.
-
-**Version:** 1.0.0  
-**Status:** Production-Ready with Enhanced Analytics  
-**Last Updated:** 2026-05-18
+> **Version :** 4.0.0 | **Stack :** FastAPI · PostgreSQL · Qdrant · Redis · RabbitMQ · Gemini · WhatsApp
+> Plateforme de chatbot d entreprise basee sur RAG (Retrieval-Augmented Generation), deployable en 30 minutes pour n importe quelle organisation.
 
 ---
 
-## 📋 Table of Contents
+## Fonctionnalites
 
-- [Project Overview](#project-overview)
-- [Quick Start](#quick-start)
-- [System Architecture](#system-architecture)
-- [API Documentation](#api-documentation)
-- [Development Guide](#development-guide)
-- [Deployment](#deployment)
-- [Contributing](#contributing)
-
----
-
-## 📌 Project Overview
-
-BARROW.AI is a sophisticated conversational AI system designed to provide intelligent responses across multiple channels (web, WhatsApp). The backend implements:
-
-- **Multi-channel Support**: Web and WhatsApp integration
-- **Advanced RAG Pipeline**: Vector-based document retrieval with Qdrant
-- **Dual LLM Strategy**: Google Gemini 3.0 Flash with Ollama fallback
-- **Enterprise Security**: Role-based access control (RBAC), 2FA, token management
-- **Real-time Analytics**: Dashboard metrics with sentiment analysis
-- **Scalable Architecture**: Async/await with Redis caching and database indexing
-
-### Key Features
-
-✅ **Authentication & Authorization**
-- JWT Bearer tokens with HttpOnly cookies
-- Two-Factor Authentication (TOTP + backup codes)
-- Four-role RBAC system (SUPERADMIN, ADMIN, AUDITOR, VIEWER)
-- Rate limiting per endpoint (5-30 requests/min based on operation)
-
-✅ **Knowledge Management**
-- Document ingestion and processing
-- Automatic chunking and embedding generation
-- Vector similarity search via Qdrant
-- Deduplication and quality assurance
-
-✅ **Admin Dashboard**
-- 26+ management endpoints
-- Conversation analytics (trends, sentiment, latency)
-- User and session management
-- Audit logging and compliance reporting
-
-✅ **WhatsApp Integration**
-- Message transcription via Faster-Whisper
-- Text-to-speech synthesis via Edge-TTS
-- Message routing and session tracking
+| Categorie | Fonctionnalite |
+|-----------|---------------|
+| **IA & RAG** | Pipeline RAG complet (Qdrant + embeddings multilingues `intfloat/multilingual-e5-large`) |
+| **IA & RAG** | LLM Gemini (principal) avec fallback Groq automatique |
+| **IA & RAG** | Reecri ture de requetes + detection de langue automatique |
+| **IA & RAG** | Cache Redis des reponses RAG (TTL configurable) |
+| **Multi-entreprise** | Configuration complete via `company.yaml` (zero code) |
+| **Canaux** | API REST + WhatsApp Cloud API |
+| **Vocal** | Speech-to-Text via Whisper (faster-whisper) + TTS via Edge TTS |
+| **Admin** | Interface d administration avec RBAC et 2FA |
+| **Securite** | JWT + refresh tokens, AES-256, CSRF, rate limiting |
+| **Observabilite** | Prometheus + Grafana, logs JSON structures |
+| **Infrastructure** | Docker Compose, migrations Alembic, healthchecks |
 
 ---
 
-## 🚀 Quick Start
+## Architecture
 
-### Prerequisites
-
-- Python 3.8+
-- Docker & Docker Compose (recommended)
-- PostgreSQL 13+
-- Redis 6+
-- 4GB RAM minimum
-
-### Installation
-
-#### Option 1: Docker (Recommended)
-
-```bash
-# Clone repository
-git clone https://github.com/your-org/barrow-ai-backend.git
-cd barrow-ai-backend
-
-# Build and start services
-docker-compose up -d
-
-# Run database migrations
-docker exec barrow-ai-backend alembic upgrade head
-
-# Verify health
-curl http://localhost:8000/health
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     CLIENTS                                      │
+│              WhatsApp │ Widget Web │ API REST                    │
+└──────────────┬────────┴────────────┴──────────┬─────────────────┘
+               │                                │
+    ┌──────────▼──────────┐        ┌────────────▼────────┐
+    │   FastAPI Backend    │        │  RabbitMQ Worker    │
+    │  (app/main.py:8000) │        │  (worker.py)        │
+    └──────────┬──────────┘        └────────────┬────────┘
+               │                                │
+    ┌──────────▼────────────────────────────────▼─────────┐
+    │                   ChatService                        │
+    │  1. Validation entree    5. Retrieval RAG (Qdrant)  │
+    │  2. Detection langue     6. Generation LLM (Gemini) │
+    │  3. Detection intent     7. Validation sortie       │
+    │  4. Cache Redis          8. Persistance (PostgreSQL) │
+    └──────────┬──────────────────────────────────────────┘
+               │
+    ┌──────────▼──────────────────────────────────────────┐
+    │              Services Infrastruc ture                │
+    │  PostgreSQL │ Redis │ Qdrant │ RabbitMQ │ Whisper    │
+    └─────────────────────────────────────────────────────┘
 ```
 
-#### Option 2: Local Development
+### Pipeline de traitement d un message
+
+```
+Message utilisateur
+       │
+       ▼
+[1] Validation entree (securite, longueur, injection)
+       │
+       ▼
+[2] Detection d intent (salutation, aide, stop...)
+       │ (si intent detecte → reponse instantanee depuis company.yaml)
+       │ (sinon → continue)
+       ▼
+[3] Cache Redis (reponse deja calculee ?)
+       │ (cache hit → reponse immediate)
+       │ (cache miss → continue)
+       ▼
+[4] QueryTransformer (detection langue + reecri ture optimale)
+       │
+       ▼
+[5] RAG Retrieval (Qdrant vector search)
+       │
+       ▼
+[6] Generation LLM (Gemini → fallback Groq)
+       │
+       ▼
+[7] Validation sortie (longueur, contenu interdit)
+       │
+       ▼
+[8] Cache + Persistance
+       │
+       ▼
+Reponse a l utilisateur
+```
+
+---
+
+## Demarrage Rapide
+
+### Prerequis
+
+- Docker + Docker Compose
+- Cle API Google Gemini ([obtenir ici](https://ai.google.dev))
+- (Optionnel) Compte WhatsApp Business API
+
+### Installation en 5 etapes
 
 ```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# 1. Cloner
+git clone https://github.com/laurentmd5/bai-backend.git mon-bot
+cd mon-bot
 
-# Install dependencies
-pip install -r requirements.txt
+# 2. Configurer l identite de l entreprise
+nano company.yaml
 
-# Configure environment
+# 3. Configurer les secrets
 cp .env.example .env
-# Edit .env with your settings
+nano .env
 
-# Run migrations
-alembic upgrade head
+# 4. Lancer
+docker compose up -d
 
-# Start server
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# 5. Verifier
+curl http://localhost:8000/health/live
 ```
 
-### First Request
+### Configuration minimale `.env`
 
 ```bash
-# Create admin user
-python scripts/create_admin.py --username admin --email admin@barrow.ai
+# Secrets (generer avec: openssl rand -hex 32)
+JWT_SECRET=changeme_minimum_32_chars
+JWT_REFRESH_SECRET=changeme_minimum_32_chars
+ENCRYPTION_KEY=changeme_base64_32_bytes==
+CSRF_SECRET=changeme_minimum_32_chars
 
-# Login and get JWT token
-curl -X POST http://localhost:8000/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "your_password"}'
-
-# Use token in subsequent requests
-TOKEN="eyJhbGciOiJIUzI1NiIs..."
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/admin/users
-```
-
----
-
-## 🏗️ System Architecture
-
-### Technology Stack
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        Frontend Layer                        │
-│  (Web UI, WhatsApp Bot, Admin Dashboard)                    │
-└────────────────────┬────────────────────────────────────────┘
-                     │ HTTPS/WebSocket
-┌────────────────────▼────────────────────────────────────────┐
-│                   Traefik Reverse Proxy                      │
-│  (SSL, Load Balancing, Route Management)                    │
-└────────────────────┬────────────────────────────────────────┘
-                     │
-┌────────────────────▼────────────────────────────────────────┐
-│                     FastAPI Application                      │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ Middleware Stack (6 layers)                         │   │
-│  │ • Rate Limiting  • Security Headers • Logging       │   │
-│  │ • Error Handling • CORS • Metrics                   │   │
-│  └─────────────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ Admin API (26 endpoints)                            │   │
-│  │ • Auth (login, 2FA, token refresh)                  │   │
-│  │ • Users (CRUD, role assignment)                     │   │
-│  │ • Knowledge (docs, chunks, embeddings)              │   │
-│  │ • Analytics (trends, sentiment, latency)            │   │
-│  └─────────────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ Core Services                                       │   │
-│  │ • ChatService (conversation management)             │   │
-│  │ • RAGService (document retrieval)                   │   │
-│  │ • AdminService (user/session management)            │   │
-│  │ • WhatsAppService (message routing)                 │   │
-│  └─────────────────────────────────────────────────────┘   │
-└────────┬──────────┬──────────────┬──────────┬────────────────┘
-         │          │              │          │
-┌────────▼─┐  ┌─────▼──┐  ┌───────▼──┐  ┌────▼─────┐
-│PostgreSQL│  │ Redis  │  │ Qdrant   │  │ Gemini   │
-│(Primary) │  │(Cache) │  │(Vectors) │  │API       │
-└──────────┘  └────────┘  └──────────┘  └──────────┘
-```
-
-### Database Schema
-
-**Core Tables:**
-- `admin_users`: User accounts with roles and authentication
-- `conversations`: Chat sessions with metadata (status, source, feedback)
-- `knowledge_documents`: Uploaded documents with metadata
-- `knowledge_chunks`: Document segments with embeddings
-- `audit_logs`: Admin actions for compliance
-
-**Indexes (Performance Optimization):**
-```sql
--- Conversations
-idx_conversations_status              -- Filtering by status
-idx_conversations_created_at_range    -- Time-based queries
-idx_conversations_session_created     -- Combined queries
-idx_conversations_feedback_nonnull    -- Feedback analysis
-
--- Audit Logs
-idx_audit_logs_admin_id               -- User audit trails
-idx_audit_logs_admin_severity         -- Security alerts
-idx_audit_logs_created_at             -- Time-based queries
-```
-
-### Caching Strategy
-
-- **Session Cache**: 15-minute TTL via Redis
-- **Token Blacklist**: Immediate revocation on logout
-- **Rate Limiting**: Per-endpoint sliding window algorithm
-- **Namespace**: Isolation via CacheNamespace enum (sessions, tokens, blacklist, etc.)
-
-### Vector Database (Qdrant)
-
-- **Embedding Model**: BGE Base v1.5 (384 dims, ~300MB)
-- **Similarity Metric**: Cosine distance
-- **Search Parameters**: threshold=0.7, top_k=5
-- **Auto-indexed**: Collection created on first document upload
-
----
-
-## 📚 API Documentation
-
-### Authentication Endpoints
-
-#### Login
-```http
-POST /api/v1/auth/login
-Content-Type: application/json
-
-{
-  "username": "admin",
-  "password": "your_password"
-}
-
-Response: 200
-{
-  "access_token": "eyJhbGciOiJIUzI1NiIs...",
-  "token_type": "bearer",
-  "expires_in": 3600,
-  "requires_2fa": false
-}
-```
-
-#### Two-Factor Authentication
-```http
-POST /api/v1/auth/2fa/verify
-Authorization: Bearer {token}
-Content-Type: application/json
-
-{
-  "code": "123456"
-}
-
-Response: 200
-{
-  "access_token": "eyJhbGciOiJIUzI1NiIs...",
-  "verified_at": "2026-05-18T14:30:00Z"
-}
-```
-
-### Admin Endpoints
-
-#### Get Overview Dashboard
-```http
-GET /api/v1/admin/analytics/overview?period=7d
-Authorization: Bearer {token}
-
-Response: 200
-{
-  "period": "7d",
-  "conversations": {
-    "total_conversations": 1,
-    "conversations_by_channel": {"web": 1, "whatsapp": 0},
-    "conversations_by_status": {"active": 1},
-    "average_messages_per_conversation": 4.5
-  },
-  "sentiment": {
-    "positive": {"count": 1, "percentage": 100.0},
-    "neutral": {"count": 0, "percentage": 0.0},
-    "negative": {"count": 0, "percentage": 0.0},
-    "total_analyzed": 1
-  },
-  "latency_metrics": {
-    "p50_ms": 285,
-    "p95_ms": 892,
-    "p99_ms": 2156
-  }
-}
-```
-
-#### Get Conversation Trends
-```http
-GET /api/v1/admin/analytics/trends?period=30d&granularity=day
-Authorization: Bearer {token}
-
-Response: 200
-{
-  "period": "30d",
-  "granularity": "day",
-  "data_points": [
-    {
-      "timestamp": "2026-05-18T00:00:00",
-      "conversations": 42,
-      "messages": 168,
-      "avg_response_time_ms": 450,
-      "sentiment": {"positive": 23, "neutral": 13, "negative": 6}
-    }
-  ]
-}
-```
-
-#### Get Sentiment Analysis
-```http
-GET /api/v1/admin/analytics/sentiment?period=7d
-Authorization: Bearer {token}
-
-Response: 200
-{
-  "overall_sentiment": {
-    "positive": {"count": 89, "percentage": 58.5},
-    "neutral": {"count": 45, "percentage": 29.6},
-    "negative": {"count": 18, "percentage": 11.8}
-  },
-  "by_channel": {...},
-  "user_satisfaction": {
-    "average_score": 4.2,
-    "scale": "1-5"
-  }
-}
-```
-
-**Full API documentation**: See `docs/API.md` or visit `/docs` endpoint when server is running
-
----
-
-## 🛠️ Development Guide
-
-### Project Structure
-
-```
-barrow-ai-backend/
-├── app/
-│   ├── main.py                    # FastAPI app initialization
-│   ├── api/
-│   │   ├── v1/endpoints/
-│   │   │   └── admin/             # Admin endpoints (8 files)
-│   │   └── dependencies/          # Shared dependencies (auth, etc)
-│   ├── models/
-│   │   ├── domain/                # SQLAlchemy ORM models
-│   │   ├── request/               # Request schemas
-│   │   └── response/              # Response schemas
-│   ├── services/
-│   │   ├── chat_service.py        # Conversation management
-│   │   ├── rag_service.py         # RAG pipeline
-│   │   ├── admin_service.py       # Admin operations
-│   │   ├── whatsapp_service.py    # WhatsApp integration
-│   │   └── [subdirs]/             # Specialized services
-│   ├── repositories/              # Database access layer
-│   ├── middleware/                # Request/response processing
-│   ├── core/                      # Configuration & utilities
-│   └── utils/                     # Helper functions
-├── alembic/
-│   ├── versions/                  # Database migrations
-│   └── env.py                     # Migration environment
-├── tests/
-│   ├── unit/                      # Unit tests
-│   └── integration/               # Integration tests
-├── scripts/
-│   ├── create_admin.py            # Admin user creation
-│   ├── seed_data.py               # Sample data loading
-│   └── init_qdrant.py             # Vector DB initialization
-├── docs/
-│   ├── archive/                   # Archived reports
-│   ├── API.md                     # API reference
-│   ├── ARCHITECTURE.md            # System design
-│   └── DEPLOYMENT.md              # Deployment guide
-├── docker-compose.yml             # Production stack
-├── docker-compose.dev.yml         # Development stack
-└── requirements.txt               # Python dependencies
-```
-
-### Running Tests
-
-```bash
-# Run all tests with coverage
-pytest tests/ --cov=app --cov-report=html
-
-# Run specific test file
-pytest tests/unit/test_auth.py -v
-
-# Run with markers
-pytest tests/ -m "not slow" -v
-
-# Run integration tests
-pytest tests/integration/ --timeout=30
-```
-
-### Database Migrations
-
-```bash
-# Create new migration (auto-detect model changes)
-alembic revision --autogenerate -m "Add new table"
-
-# Apply migrations
-alembic upgrade head
-
-# Rollback one revision
-alembic downgrade -1
-
-# View migration history
-alembic history
-```
-
-### Logging
-
-Structured logging via `app.core.logging`:
-
-```python
-from app.core.logging import get_logger
-
-logger = get_logger(__name__)
-
-logger.info("User login successful", user_id=user.id, source="web")
-logger.warning("High latency detected", endpoint="/chat", latency_ms=5000)
-logger.error("Database connection failed", error=str(e), retry_count=3)
-```
-
-### Environment Variables
-
-Key configuration (see `.env.example`):
-
-```env
-# Server
-ENVIRONMENT=production
-DEBUG=false
-LOG_LEVEL=info
-
-# Database
-DATABASE_URL=postgresql+asyncpg://user:pass@db:5432/barrow_ai
-SQLALCHEMY_ECHO=false
-
-# Redis
-REDIS_URL=redis://redis:6379/0
-SESSION_TIMEOUT=900
-
-# Qdrant
-QDRANT_HOST=qdrant
-QDRANT_PORT=6333
+# Mots de passe
+POSTGRES_PASSWORD=mot_de_passe_fort
+REDIS_PASSWORD=mot_de_passe_fort
+RABBITMQ_PASSWORD=mot_de_passe_fort
 
 # LLM
-GEMINI_API_KEY=your_key_here
-OLLAMA_BASE_URL=http://ollama:11434
+GEMINI_API_KEY=votre_cle_gemini
 
-# Security
-JWT_SECRET_KEY=your_secret
-JWT_ALGORITHM=HS256
-JWT_EXPIRATION=3600
-
-# WhatsApp
-WHATSAPP_BUSINESS_PHONE_ID=your_phone_id
-WHATSAPP_BUSINESS_ACCESS_TOKEN=your_token
+# Entreprise
+APP_NAME=VOTRE_ENTREPRISE Bot
+QDRANT_COLLECTION=votre_entreprise_knowledge_v1
 ```
 
 ---
 
-## 📦 Deployment
+## Adapter pour une Nouvelle Entreprise
 
-### Production Deployment
+> Voir le guide complet : [ADAPTATION_GUIDE.md](./ADAPTATION_GUIDE.md)
 
-#### Docker Compose (Recommended)
+**En resume (3 actions) :**
+
+1. **Modifier `company.yaml`** — nom, bot_name, prompts, reponses pre-construites
+2. **Modifier `.env`** — `APP_NAME`, `QDRANT_COLLECTION`, `CORS_ORIGINS`
+3. **Reinitialiser Qdrant** et uploader les nouveaux documents via l interface admin
+
+**Aucun fichier Python a modifier.**
+
+---
+
+## Structure du Projet
+
+```
+mon-bot/
+├── company.yaml                    # ← IDENTITE ENTREPRISE (seul fichier metier)
+├── .env                            # ← Secrets + variables infra
+├── docker-compose.yml              # Orchestration des services
+├── Dockerfile                      # Image Docker multi-stage
+├── worker.py                       # Worker RabbitMQ (WhatsApp async)
+│
+├── app/
+│   ├── main.py                     # Point d entree FastAPI
+│   ├── core/
+│   │   ├── company_config.py       # ← Singleton: charge company.yaml
+│   │   ├── config.py               # Configuration Pydantic (variables .env)
+│   │   ├── security.py             # JWT, CSRF, rate limiting
+│   │   ├── metrics.py              # Metriques Prometheus
+│   │   └── exceptions.py          # Exceptions typees
+│   │
+│   ├── services/
+│   │   ├── chat_service.py         # Orchestrateur principal (pipeline complet)
+│   │   ├── rag_service.py          # Retrieval-Augmented Generation
+│   │   ├── whatsapp_service.py     # WhatsApp Cloud API
+│   │   │
+│   │   ├── llm/
+│   │   │   ├── prompts.py          # Deleguant company_config
+│   │   │   ├── gemini_provider.py  # Provider Gemini (principal)
+│   │   │   ├── groq_provider.py    # Provider Groq (fallback)
+│   │   │   └── query_transformer.py # Reecri ture de requetes + HyDE
+│   │   │
+│   │   ├── audio/
+│   │   │   ├── whisper_service.py  # Speech-to-Text (faster-whisper)
+│   │   │   └── tts_service.py      # Text-to-Speech (Edge TTS)
+│   │   │
+│   │   └── validation/
+│   │       ├── input_validator.py  # Securite + normalisation entree
+│   │       └── output_validator.py # Validation sortie LLM
+│   │
+│   ├── api/v1/endpoints/
+│   │   ├── chat.py                 # POST /chat/message
+│   │   ├── whatsapp.py             # GET|POST /whatsapp/webhook
+│   │   └── admin/                  # Endpoints admin (auth, knowledge, analytics)
+│   │
+│   └── models/                     # Modeles SQLAlchemy + schemas Pydantic
+│
+└── alembic/                        # Migrations base de donnees
+```
+
+---
+
+## API Reference
+
+### Chat
+
+```http
+POST /api/v1/chat/message
+Content-Type: application/json
+
+{
+  "message": "Quels services proposez-vous ?",
+  "language": "fr",          # Optionnel (auto-detec te si absent)
+  "session_id": "uuid"       # Optionnel (cree automatiquement)
+}
+```
+
+**Reponse :**
+```json
+{
+  "message": "Nous proposons des solutions reseaux...",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "sources": [{"document": "catalogue.pdf", "page": 3}],
+  "confidence": 0.87,
+  "cache_hit": false
+}
+```
+
+### Feedback
+
+```http
+POST /api/v1/chat/feedback
+{
+  "conversation_id": "uuid",
+  "feedback": 1              # 1 = positif, -1 = negatif
+}
+```
+
+### Sante
+
+```http
+GET /health/live    # Liveness probe
+GET /health/ready   # Readiness probe (verifie DB, Redis, Qdrant)
+```
+
+### Admin (JWT requis)
+
+```http
+POST   /api/v1/admin/auth/login
+POST   /api/v1/admin/knowledge         # Upload document
+GET    /api/v1/admin/knowledge         # Lister documents
+DELETE /api/v1/admin/knowledge/{id}    # Supprimer document
+GET    /api/v1/admin/analytics/overview
+GET    /api/v1/admin/conversations
+```
+
+---
+
+## Base de Connaissances (RAG)
+
+### Formats acceptes
+- PDF (`.pdf`) — recommande
+- Word (`.docx`, `.doc`)
+- Texte brut (`.txt`)
+- Markdown (`.md`)
+- Taille max : 50 MB par fichier
+
+### Comment indexer des documents
+
+**Via l API :**
+```bash
+curl -X POST https://votre-domaine.com/api/v1/admin/knowledge \
+  -H "Authorization: Bearer [token]" \
+  -F "file=@catalogue-services.pdf" \
+  -F "title=Catalogue Services 2026" \
+  -F "language=fr"
+```
+
+**Via l interface admin :** `https://votre-domaine.com/admin/knowledge`
+
+### Parametres RAG
+
+| Parametre | Description | Defaut |
+|-----------|-------------|--------|
+| `QDRANT_SIMILARITY_THRESHOLD` | Score minimum pour qu un document soit utilise | `0.70` |
+| `QDRANT_TOP_K` | Nombre de chunks recuperes par requete | `10` |
+| `RAG_CHUNK_SIZE` | Taille max d un chunk (tokens) | `400` |
+| `RAG_CHUNK_OVERLAP` | Chevauchement entre chunks | `80` |
+
+> **Conseil :** Si le bot repond souvent "Je n ai pas d information",
+> baissez `QDRANT_SIMILARITY_THRESHOLD` a `0.40`.
+
+---
+
+## Variables d Environnement
+
+### Obligatoires
+
+| Variable | Description |
+|----------|-------------|
+| `JWT_SECRET` | Secret JWT (min 32 chars, generer: `openssl rand -hex 32`) |
+| `JWT_REFRESH_SECRET` | Secret JWT refresh |
+| `ENCRYPTION_KEY` | Cle AES-256 en base64 (`openssl rand -base64 32`) |
+| `CSRF_SECRET` | Secret CSRF |
+| `POSTGRES_PASSWORD` | Mot de passe PostgreSQL |
+| `REDIS_PASSWORD` | Mot de passe Redis |
+| `RABBITMQ_PASSWORD` | Mot de passe RabbitMQ |
+| `GEMINI_API_KEY` | Cle API Google Gemini |
+
+### Importantes
+
+| Variable | Description | Defaut |
+|----------|-------------|--------|
+| `APP_NAME` | Nom de l application (logs) | `Company Bot` |
+| `ENVIRONMENT` | `development` / `staging` / `production` | `development` |
+| `GEMINI_MODEL` | Modele Gemini | `gemini-2.5-flash-lite` |
+| `QDRANT_COLLECTION` | Nom de la collection vectorielle | `company_knowledge_v1` |
+| `CORS_ORIGINS` | Origines CORS autorisees | `["http://localhost:5173"]` |
+| `QDRANT_SIMILARITY_THRESHOLD` | Seuil de similarite RAG | `0.70` |
+| `COMPANY_CONFIG_PATH` | Chemin vers company.yaml | `company.yaml` |
+| `WHATSAPP_VERIFY_TOKEN` | Token de verification WhatsApp | — |
+| `WHATSAPP_ACCESS_TOKEN` | Token d acces WhatsApp | — |
+
+---
+
+## Infrastructure
+
+### Services Docker
+
+| Service | Image | Port | Role |
+|---------|-------|------|------|
+| `backend` | custom | 8000 | API FastAPI |
+| `worker` | custom | — | Worker RabbitMQ |
+| `postgres` | postgres:16-alpine | 5432 | Base de donnees |
+| `redis` | redis:7-alpine | 6379 | Cache + sessions |
+| `qdrant` | qdrant/qdrant | 6333 | Vecteurs (RAG) |
+| `rabbitmq` | rabbitmq:3-management | 5672/15672 | File de messages |
+
+### Commandes utiles
 
 ```bash
-# Start all services
-docker-compose up -d
+# Logs en temps reel
+docker compose logs -f backend
+docker compose logs -f worker
 
-# Check service health
-docker-compose ps
+# Redemarrage propre
+docker compose down && docker compose up -d
 
-# View logs
-docker-compose logs -f app
+# Migration base de donnees
+docker compose exec backend alembic upgrade head
 
-# Stop services
-docker-compose down
+# Sauvegarder la base de donnees
+docker compose exec postgres pg_dump -U $POSTGRES_USER $POSTGRES_DB > backup.sql
+
+# Vider le cache Redis
+docker compose exec redis redis-cli FLUSHDB
 ```
 
-#### Environment Setup
+---
+
+## Securite
+
+- **Authentification :** JWT access (15 min) + refresh (7 jours)
+- **2FA :** TOTP (Google Authenticator compatible) pour les admins
+- **Chiffrement :** AES-256 pour les donnees sensibles (numeros de telephone)
+- **Rate Limiting :** 30 msg/min (chat), 60/min (admin), 10/min (WhatsApp)
+- **Anti-injection :** Detection de prompt injection, XSS, SQLi
+- **CORS :** Origines configurables via `CORS_ORIGINS`
+- **CSRF :** Protection CSRF sur toutes les mutations
+
+> **Important :** Ne committez jamais le fichier `.env` avec de vrais secrets.
+> Utilisez des gestionnaires de secrets (Vault, GitHub Secrets, etc.) en production.
+
+---
+
+## Observabilite
+
+### Metriques Prometheus
+
+Disponibles sur `/metrics` (protege en production) :
+
+```
+bot_chat_messages_total        # Messages traites par canal/langue
+bot_chat_latency_ms            # Latence bout-en-bout
+bot_llm_generation_duration_ms # Temps de generation LLM
+bot_rag_retrieval_duration_seconds # Temps de recherche vectorielle
+bot_cache_hit_ratio            # Taux de cache
+bot_whatsapp_messages_total    # Messages WhatsApp
+bot_error_total                # Erreurs par type
+```
+
+### Activer Grafana
 
 ```bash
-# Create production environment file
-cp .env.example .env
-# Edit .env with production credentials
-
-# Pull latest images
-docker-compose pull
-
-# Run migrations
-docker-compose exec app alembic upgrade head
-
-# Create admin user
-docker-compose exec app python scripts/create_admin.py
+docker compose --profile monitoring up -d
+# Grafana disponible sur http://localhost:3000
 ```
 
-### Monitoring
+---
 
-**Health Check Endpoint:**
-```bash
-curl http://localhost:8000/health
-# Response:
-# {
-#   "status": "healthy",
-#   "timestamp": "2026-05-18T14:30:00Z",
-#   "database": "connected",
-#   "redis": "connected",
-#   "qdrant": "connected"
-# }
+## Modeles de Donnees (PostgreSQL)
+
+| Table | Description |
+|-------|-------------|
+| `admin_users` | Comptes administrateurs avec RBAC et 2FA |
+| `sessions` | Sessions utilisateurs (web + WhatsApp) |
+| `conversations` | Historique des echanges (message + reponse + sources) |
+| `knowledge_docs` | Metadata des documents indexes |
+| `audit_logs` | Journal des actions admin |
+| `whatsapp_optouts` | Numeros desabonnes |
+| `jwt_blacklist` | Tokens revoques |
+
+---
+
+## Contribuer
+
+1. Fork le depot
+2. Creer une branche : `git checkout -b feature/ma-fonctionnalite`
+3. Committer : `git commit -m "feat: ma nouvelle fonctionnalite"`
+4. Pusher : `git push origin feature/ma-fonctionnalite`
+5. Creer une Pull Request
+
+### Conventions de commits
+
+```
+feat:     Nouvelle fonctionnalite
+fix:      Correction de bug
+refactor: Refactoring sans changement de comportement
+docs:     Documentation uniquement
+chore:    Maintenance (deps, CI, config)
 ```
 
-**Metrics Endpoint:**
-```bash
-curl http://localhost:8000/metrics
-# Prometheus-compatible metrics for monitoring
-```
-
-**Logs:**
-- Centralized via Docker volumes at `/var/log/barrow-ai/`
-- Structured JSON format for parsing
-- Retention policy: 30 days
-
-### Performance Tuning
-
-**Database:**
-- Connection pool size: 20 (default)
-- Indexes optimized for analytics queries
-- Query timeout: 30 seconds
-
-**Caching:**
-- Session TTL: 15 minutes
-- Rate limit window: 60 seconds per endpoint
-- Cache hit target: 75%+
-
-**LLM:**
-- Embedding model loaded on startup (8 seconds)
-- Response timeout: 30 seconds
-- Retry policy: 3 attempts with exponential backoff
-
 ---
 
-## 🤝 Contributing
+## License
 
-### Code Guidelines
-
-- Follow PEP 8 style (enforced via Black formatter)
-- Type hints required for all functions
-- Docstrings for modules, classes, and public methods
-- Tests required for all new features (minimum 80% coverage)
-
-### Pull Request Process
-
-1. Create feature branch: `git checkout -b feature/your-feature`
-2. Make changes and test: `pytest tests/`
-3. Format code: `black app/ tests/`
-4. Commit with conventional commits: `git commit -m "feat: add analytics endpoint"`
-5. Push and create PR: `git push origin feature/your-feature`
-6. Code review and CI/CD checks must pass
-
-### Reporting Issues
-
-- Security issues: Email security@barrow.ai (do not create public issues)
-- Bugs: Create issue with reproduction steps and logs
-- Features: Describe use case and acceptance criteria
-
----
-
-## 📄 License
-
-Proprietary - All rights reserved
-
----
-
-## 📞 Support
-
-- **Documentation**: See `docs/` directory
-- **Issues**: GitHub Issues tracker
-- **Email**: support@barrow.ai
-- **Slack**: #barrow-ai-dev channel
-
----
-
-## 🔄 Version History
-
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.0.0 | 2026-05-18 | Initial release with analytics, improved indexes, real query implementation |
-| 0.9.0 | 2026-05-15 | Beta release with core features |
-
----
-
-**Last Reviewed:** 2026-05-18  
-**Next Review:** 2026-06-18
+Proprietaire — Tous droits reserves.
