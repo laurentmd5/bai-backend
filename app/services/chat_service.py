@@ -24,7 +24,17 @@ from app.repositories.session_repository import SessionRepository
 from app.core.config import settings
 from app.core.company_config import company
 from app.core.logging import get_logger
-from app.core.metrics import llm_generation_duration_ms
+from app.core.metrics import (
+    llm_generation_duration_ms,
+    record_chat_message,
+    record_chat_latency,
+    record_chat_error,
+    record_rag_fallback,
+    record_llm_duration,
+    record_llm_tokens,
+    record_security_violation,
+)
+
 from app.core.exceptions import (
     BotException,
     LowConfidenceException,
@@ -583,6 +593,10 @@ class ChatService:
                     cached_response["cache_hit"] = True
                     cached_response["timestamp"] = datetime.utcnow().isoformat()
                     
+                    total_latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+                    record_chat_message(channel=channel, language=language, cache_hit=True)
+                    record_chat_latency(channel=channel, latency_ms=total_latency_ms)
+                    
                     return cached_response
                 
                 # ===============================================================
@@ -739,6 +753,17 @@ class ChatService:
                         provider=self._llm_provider.get_provider_name()
                     ).observe(llm_latency_ms)
                     
+                    if generated_response:
+                        prompt_toks = int(len(prompt_with_instructions.split()) * 1.5 + len(context.split()) * 1.5)
+                        comp_toks = int(len(generated_response.split()) * 1.5)
+                        record_llm_tokens(
+                            provider=self._llm_provider.get_provider_name(),
+                            model=self._llm_provider.get_model_name(),
+                            prompt_tokens=prompt_toks,
+                            completion_tokens=comp_toks
+                        )
+
+                    
                 except LLMException as e:
                     logger.error("llm_generation_failed", error=str(e), session_id=actual_session_id)
                     
@@ -858,6 +883,10 @@ class ChatService:
                 # ===============================================================
                 # STEP 10: Return Response
                 # ===============================================================
+                record_chat_message(channel=channel, language=language, cache_hit=False)
+                record_chat_latency(channel=channel, latency_ms=total_latency_ms)
+                if response_metadata.get("fallback_triggered", False):
+                    record_rag_fallback()
                 
                 logger.info(
                     "message_processed",
@@ -882,6 +911,7 @@ class ChatService:
                 }
             
         except Exception as e:
+            record_chat_error(error_type=type(e).__name__)
             logger.error(
                 "chat_service_unexpected_error",
                 error=str(e),

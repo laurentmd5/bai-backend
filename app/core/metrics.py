@@ -1,4 +1,4 @@
-﻿# app/core/metrics.py
+# app/core/metrics.py
 """
 Prometheus metrics module for Company Bot.
 Comprehensive observability with structured metrics for all components.
@@ -145,6 +145,40 @@ error_total = Counter(
 )
 
 
+# =========================================================================
+# SRE Golden Signals & Capacity Metrics
+# =========================================================================
+http_requests_in_flight = Gauge(
+    'bot_http_requests_in_flight',
+    'Current in-flight HTTP requests being processed',
+    ['method']
+)
+
+llm_tokens_total = Counter(
+    'bot_llm_tokens_total',
+    'Total LLM tokens consumed by provider, model and type (prompt/completion)',
+    ['provider', 'model', 'type']
+)
+
+rag_chunks_retrieved = Histogram(
+    'bot_rag_chunks_retrieved',
+    'Number of chunks retrieved per RAG vector search query',
+    buckets=(0, 1, 2, 3, 5, 8, 10, 15, 20)
+)
+
+security_violations_total = Counter(
+    'bot_security_violations_total',
+    'Total security guardrail violations detected by type',
+    ['violation_type']
+)
+
+db_pool_connections = Gauge(
+    'bot_db_pool_connections',
+    'Database connection pool status',
+    ['state']
+)
+
+
 def get_metrics() -> Dict[str, Any]:
     """Get current metrics in Prometheus format."""
     return {
@@ -155,61 +189,122 @@ def get_metrics() -> Dict[str, Any]:
 
 def record_chat_message(channel: str, language: str, cache_hit: bool):
     """Record a chat message."""
-    chat_messages_total.labels(
-        channel=channel,
-        language=language,
-        cache_hit=str(cache_hit).lower()
-    ).inc()
+    try:
+        chat_messages_total.labels(
+            channel=channel,
+            language=language,
+            cache_hit=str(cache_hit).lower()
+        ).inc()
+    except Exception:
+        pass
 
 
 def record_chat_latency(channel: str, latency_ms: float):
     """Record chat latency."""
-    chat_latency_ms.labels(channel=channel).observe(latency_ms)
+    try:
+        chat_latency_ms.labels(channel=channel).observe(latency_ms)
+    except Exception:
+        pass
 
 
 def record_chat_error(error_type: str):
     """Record a chat error."""
-    chat_errors_total.labels(error_type=error_type).inc()
+    try:
+        chat_errors_total.labels(error_type=error_type).inc()
+    except Exception:
+        pass
 
 
 def record_rag_fallback():
     """Record a RAG fallback."""
-    rag_fallbacks_total.inc()
+    try:
+        rag_fallbacks_total.inc()
+    except Exception:
+        pass
 
 
 def record_rag_search_duration(duration_ms: float):
     """Record RAG search duration."""
-    rag_search_duration_ms.observe(duration_ms)
+    try:
+        rag_search_duration_ms.observe(duration_ms)
+        rag_retrieval_duration_seconds.observe(duration_ms / 1000.0)
+    except Exception:
+        pass
+
+
+def record_rag_chunks_retrieved(chunks_count: int):
+    """Record number of chunks retrieved."""
+    try:
+        rag_chunks_retrieved.observe(chunks_count)
+    except Exception:
+        pass
 
 
 def record_llm_duration(provider: str, duration_ms: float):
     """Record LLM generation duration."""
-    llm_generation_duration_ms.labels(provider=provider).observe(duration_ms)
+    try:
+        llm_generation_duration_ms.labels(provider=provider).observe(duration_ms)
+    except Exception:
+        pass
+
+
+def record_llm_tokens(provider: str, model: str, prompt_tokens: int, completion_tokens: int):
+    """Record prompt and completion tokens for LLM usage tracking."""
+    try:
+        if prompt_tokens > 0:
+            llm_tokens_total.labels(provider=provider, model=model, type='prompt').inc(prompt_tokens)
+        if completion_tokens > 0:
+            llm_tokens_total.labels(provider=provider, model=model, type='completion').inc(completion_tokens)
+    except Exception:
+        pass
+
+
+def record_security_violation(violation_type: str):
+    """Record security violation in guardrails."""
+    try:
+        security_violations_total.labels(violation_type=violation_type).inc()
+    except Exception:
+        pass
 
 
 def update_active_sessions(channel: str, count: int):
     """Update active sessions gauge."""
-    active_sessions_total.labels(channel=channel).set(count)
+    try:
+        active_sessions_total.labels(channel=channel).set(count)
+    except Exception:
+        pass
 
 
 def update_cache_hit_ratio(ratio: float):
     """Update cache hit ratio."""
-    cache_hit_ratio.set(ratio)
+    try:
+        cache_hit_ratio.set(ratio)
+    except Exception:
+        pass
 
 
 def record_whatsapp_message(direction: str):
     """Record WhatsApp message."""
-    whatsapp_messages_total.labels(direction=direction).inc()
+    try:
+        whatsapp_messages_total.labels(direction=direction).inc()
+    except Exception:
+        pass
 
 
 def record_whatsapp_optout():
     """Record WhatsApp opt-out."""
-    whatsapp_optouts_total.inc()
+    try:
+        whatsapp_optouts_total.inc()
+    except Exception:
+        pass
 
 
 def record_admin_login(result: str):
     """Record admin login attempt."""
-    admin_logins_total.labels(result=result).inc()
+    try:
+        admin_logins_total.labels(result=result).inc()
+    except Exception:
+        pass
 
 
 # =========================================================================
@@ -236,7 +331,8 @@ class MetricsContext:
         duration_ms = (time.time() - self.start_time) * 1000
         # Record to appropriate metric based on name
         if self.metric_name == 'rag_search':
-            rag_search_duration_ms.observe(duration_ms)
+            record_rag_search_duration(duration_ms)
         elif self.metric_name == 'chat':
-            chat_latency_ms.labels(channel='unknown').observe(duration_ms)
+            record_chat_latency('unknown', duration_ms)
+
 

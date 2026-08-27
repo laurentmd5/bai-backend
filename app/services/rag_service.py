@@ -1,4 +1,4 @@
-﻿"""
+"""
 RAG (Retrieval-Augmented Generation) Service for Company Bot.
 Orchestrates the complete RAG pipeline from embedding to context building.
 """
@@ -15,9 +15,14 @@ from app.services.cache.redis_cache import cache_service, CacheNamespace
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.exceptions import LowConfidenceException
-from app.core.metrics import rag_retrieval_duration_seconds
+from app.core.metrics import (
+    rag_retrieval_duration_seconds,
+    record_rag_search_duration,
+    record_rag_chunks_retrieved,
+)
 
 logger = get_logger(__name__)
+
 
 
 class RAGService:
@@ -163,7 +168,8 @@ class RAGService:
         vector_results, keyword_results = await asyncio.gather(vector_search_task, keyword_task)
         
         duration = time.time() - start_time
-        rag_retrieval_duration_seconds.observe(duration)
+        record_rag_search_duration(duration * 1000.0)
+
         
         # Combine results, removing duplicates based on document and chunk_index
         combined_results = []
@@ -185,6 +191,9 @@ class RAGService:
                 seen_chunks.add(chunk_id)
                 combined_results.append(res)
         
+        # Record chunk metrics
+        record_rag_chunks_retrieved(len(combined_results))
+        
         if not combined_results:
             logger.info(
                 "rag_no_results",
@@ -192,6 +201,7 @@ class RAGService:
                 threshold=threshold,
             )
             raise LowConfidenceException(0.0, threshold)
+
         
         # Top score is the highest vector score
         top_score = vector_results[0]["score"] if vector_results else 0.8

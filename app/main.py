@@ -1,4 +1,4 @@
-﻿"""
+"""
 Main FastAPI application for Company Bot.
 Entry point for the entire backend service.
 """
@@ -293,10 +293,15 @@ def create_app() -> FastAPI:
         
         # Check Qdrant
         try:
-            qdrant = QdrantVectorStore()
-            await qdrant.initialize()
+            rag_srv = getattr(app.state, "rag_service", None)
+            if rag_srv and getattr(rag_srv, "_vector_store", None):
+                qdrant = rag_srv._vector_store
+            else:
+                qdrant = QdrantVectorStore()
+                await qdrant.initialize()
+                
             qdrant_available = await qdrant.is_available()
-            collection_info = await qdrant.get_collection_info()
+            collection_info = await qdrant.get_collection_info() if qdrant_available else {}
             health_status["services"]["qdrant"] = {
                 "status": "healthy" if qdrant_available else "unhealthy",
                 "points_count": collection_info.get("points_count", 0),
@@ -306,6 +311,7 @@ def create_app() -> FastAPI:
         except Exception as e:
             health_status["services"]["qdrant"] = {"status": "unhealthy", "error": str(e)}
             health_status["status"] = "degraded"
+
         
         # Check cache
         try:

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Request logging middleware for Company Bot.
 Logs all incoming requests with structured data.
 """
@@ -93,11 +93,16 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
         Returns:
             Response
         """
-        # Generate request ID
-        request_id = str(uuid.uuid4())
+        # Extract existing correlation ID or generate request ID
+        incoming_id = (
+            request.headers.get("X-Request-ID")
+            or request.headers.get("X-Correlation-ID")
+            or request.headers.get("traceparent")
+        )
+        request_id = incoming_id.strip() if incoming_id else str(uuid.uuid4())
         request.state.request_id = request_id
-        # BUG #2 FIX: Set request_id in module-level ContextVar for correlation across logs
         set_request_id(request_id)
+
         
         # Skip logging for excluded paths
         if not self._should_log(request.url.path):
