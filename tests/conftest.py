@@ -18,8 +18,9 @@ from fastapi.testclient import TestClient
 from httpx import AsyncClient
 
 # Add app to path
-app_root = Path(__file__).parent.parent.parent
+app_root = Path(__file__).parent.parent
 sys.path.insert(0, str(app_root))
+
 
 # Set test environment BEFORE importing app
 os.environ["ENVIRONMENT"] = "development"

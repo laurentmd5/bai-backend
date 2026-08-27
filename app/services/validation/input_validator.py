@@ -1,4 +1,4 @@
-﻿"""
+"""
 Input validation service for Company Bot.
 Validates all incoming user messages for security, length, and content.
 """
@@ -121,10 +121,11 @@ class InputValidator:
     _COMMON_WORDS = [
         "internet", "agriculture", "education", "health", "governance",
         "youth", "digital", "infrastructure", "economy", "security",
-        , "development", "project", "program",
+        "development", "project", "program",
         "job", "work", "business", "farmer", "school", "hospital",
-        "road", "bridge", "water", "electricity", "internet",
+        "road", "bridge", "water", "electricity",
     ]
+
     
     def __init__(self):
         self._blocked_phrases = self._load_blocked_phrases()
@@ -161,7 +162,7 @@ class InputValidator:
         """
         if not message or len(message.strip()) < 2:
             # Very short messages - return a help prompt
-            return "I'm here to help. Could you please ask a complete question?. You can ask me about internet, agriculture, health, education, or roads."
+            return "I'm here to help. Could you please ask a complete question?"
         
         # Convert to lowercase and normalize
         normalized = message.lower().strip()
@@ -193,20 +194,9 @@ class InputValidator:
             corrected_words.append(word)
         normalized = ' '.join(corrected_words)
         
-        # Map single keywords to full questions
-        keyword_map = {
-            # Single-keyword expansion removed (NPP-specific hardcoded content deleted)
-            "security": "What has NPP done for national security?",
-        }
-        
-        # If message is a single word or very short phrase, map to full question
-        if len(normalized.split()) <= 3:
-            for keyword, question in keyword_map.items():
-                if keyword in normalized or normalized == keyword:
-                    return question
-        
         # Remove multiple punctuation
         normalized = re.sub(r'([!?.]){2,}', r'\1', normalized)
+
         
         # Ensure message ends with question mark if it looks like a question
         if any(word in normalized for word in ["what", "how", "why", "when", "where", "who", "tell", "explain"]):

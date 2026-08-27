@@ -1,4 +1,4 @@
-﻿"""
+"""
 Security module for Company Bot backend.
 Provides JWT handling, password hashing, AES encryption, 2FA, CSRF protection,
 and input validation utilities.
@@ -548,15 +548,14 @@ _PROMPT_INJECTION_PATTERNS = [
 ]
 
 _HOSTILE_KEYWORDS = [
-    "corrupt", "incompetent", "failure", "liar", "dictator",
-    "steal", "rigged", "fake", "useless", "worst", "terrible",
+    "corrupt", "incompetent", "failure", "liar",
+    "scam", "fraud", "fake", "useless", "terrible",
     "awful", "disaster", "shame", "embarrassment"
 ]
 
 _HOSTILE_PATTERNS = [
-    re.compile(r"(?i)(barrow|president|npp)\s+is\s+({})".format("|".join(_HOSTILE_KEYWORDS))),
-    re.compile(r"(?i)(why is barrow|why does barrow)\s+(so bad|a failure|corrupt)"),
-    re.compile(r"(?i)(opposition|udp|pdois|gdc)\s+(is better|will win|should win)"),
+    re.compile(r"(?i)\b(you are|bot is|company is)\s+(useless|a failure|scam|terrible|corrupt|fraud)"),
+    re.compile(r"(?i)\b(fuck|shit|bitch|bastard|asshole)\b"),
 ]
 
 
@@ -665,13 +664,8 @@ def detect_hostile_content(text: str) -> Tuple[bool, Optional[str]]:
         if match:
             return True, match.group()
     
-    # Check for isolated hostile keywords near Barrow/NPP references
-        if has_barrow_ref:
-        for keyword in _HOSTILE_KEYWORDS:
-            if keyword in text_lower:
-                return True, keyword
-    
     return False, None
+
 
 
 def validate_chat_message(message: str) -> Tuple[bool, Optional[str], str]:
@@ -839,9 +833,10 @@ def validate_password_strength(password: str) -> Tuple[bool, List[str]]:
     
     # Check common passwords
     common_passwords = [
-        "password", "password123", "admin123", , ,
-        "12345678", "qwerty123", , 
+        "password", "password123", "admin123",
+        "12345678", "qwerty123",
     ]
+
     
     if password.lower() in common_passwords:
         issues.append("Password is too common or easily guessable")

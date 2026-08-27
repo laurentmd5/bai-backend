@@ -1,4 +1,4 @@
-﻿"""
+"""
 WhatsApp Service for Company Bot.
 Integrates with Meta WhatsApp Cloud API for bidirectional messaging.
 """
@@ -513,20 +513,15 @@ class WhatsAppService:
             )
             return
 
-        # Refine language detection: use text-based detector to confirm/override
-        # Whisper's detection (more reliable on short clips or accented speech).
+        # Refine language detection
         text_lang = self._input_validator.detect_language(transcribed_text)
-        
-        # CRITICAL FIX: The text-based detector (langdetect) defaults to English when it doesn't know.
-        # Language detection from Whisper
-            detected_language = whisper_lang or text_lang or "en"
-        elif text_lang == "mandinka" or whisper_lang == "mandinka":
-            detected_language = "mandinka"
-        elif text_lang in ["en", "fr"] and len(transcribed_text.split()) >= 3:
+        if text_lang in ["en", "fr"] and len(transcribed_text.split()) >= 3:
             detected_language = text_lang
+        elif whisper_lang in ["en", "fr"]:
+            detected_language = whisper_lang
         else:
-            # Prefer text-based detection; fall back to Whisper if text is too short
-            detected_language = text_lang if len(transcribed_text.split()) >= 3 else whisper_lang
+            detected_language = text_lang or "en"
+
         logger.info(
             "whatsapp_voice_language_detected",
             phone=phone_number[-4:],
@@ -534,6 +529,7 @@ class WhatsAppService:
             text_lang=text_lang,
             final_lang=detected_language,
         )
+
 
         # Validate
         try:

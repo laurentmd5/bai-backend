@@ -1,4 +1,4 @@
-﻿"""
+"""
 Whisper transcription service with Redis caching using local faster-whisper.
 """
 
@@ -27,13 +27,17 @@ class WhisperTranscriber:
     
     def __init__(self):
         self.model_size = settings.WHISPER_MODEL_SIZE
-        # Initialize model on CPU with INT8 quantization for efficiency
-        logger.info(f"Loading local faster-whisper model: {self.model_size}")
-        self.model = WhisperModel(
-            self.model_size,
-            device="cpu",
-            compute_type="int8"
-        )
+        self._model: Optional[WhisperModel] = None
+
+    def _get_model(self) -> WhisperModel:
+        if self._model is None:
+            logger.info(f"Loading local faster-whisper model: {self.model_size}")
+            self._model = WhisperModel(
+                self.model_size,
+                device="cpu",
+                compute_type="int8"
+            )
+        return self._model
     
     def _compute_hash(self, audio_bytes: bytes) -> str:
         """Compute SHA-256 hash of audio for cache key."""
@@ -58,8 +62,10 @@ class WhisperTranscriber:
             # Generic IT prompt to guide transcription vocabulary
             it_prompt = "network, server, firewall, router, cloud, cybersecurity, support, maintenance, infrastructure, backup, VPN, incident, troubleshoot, configuration, NETSYSTEME"
             
+            model = self._get_model()
             # Run inference synchronously (we could use an executor but this is POC)
-            segments, info = self.model.transcribe(
+            segments, info = model.transcribe(
+
                 audio_file,
                 beam_size=beam_size,
                 language=language,

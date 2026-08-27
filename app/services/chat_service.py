@@ -1,4 +1,4 @@
-﻿"""
+"""
 Chat Service — Main orchestrator for the chatbot engine.
 Coordinates all components: validation, RAG, LLM, caching, and persistence.
 """
@@ -52,16 +52,25 @@ class ChatService:
     6. LLM generation
     7. Output validation
     8. Persistence and analytics
-    
-        "digital": ["digital", "digitization", "e-service", "online platform", "mygov", "portal", "e-government", "digital address", "smart"],
-        "infrastructure": ["road", "bridge", "highway", "infrastructure", "construction", "development", "port", "airport"],
-        "youth": ["youth", "young", "employment", "job", "entrepreneurship", "startup", "training", "skill", "empowerment"],
-        "economy": ["economy", "gdp", "growth", "investment", "business", "trade", "economic", "job creation"],
-        "health": ["health", "hospital", "clinic", "healthcare", "medical", "disease", "treatment", "vaccine"],
-        "education": ["education", "school", "university", "college", "student", "teacher", "learning", "scholarship"],
-        "agriculture": ["agriculture", "farm", "farming", "crop", "food security", "irrigation", "rice", "vegetable"],
+    """
+
+    SPECIAL_INTENTS = {
+        "greeting": ["hello", "hi", "hey", "bonjour", "salut", "bonsoir"],
+        "help": ["help", "aide", "menu", "what can you do", "capabilities", "que peux-tu faire"],
+        "thanks": ["thank", "merci", "thanks", "thank you", "je vous remercie"],
+        "stop": ["stop", "unsubscribe", "désabonner", "opt out", "opt-out"],
+        "start": ["start", "subscribe", "réabonner", "opt in", "opt-in"],
+        "status": ["status", "health", "ping", "test"],
     }
-    
+
+    RELEVANCE_KEYWORDS = {
+        "network": ["network", "réseau", "lan", "wan", "wifi", "vpn", "firewall"],
+        "security": ["security", "sécurité", "cybersecurity", "antivirus", "threat"],
+        "support": ["support", "aide", "ticket", "incident", "troubleshoot", "depannage"],
+        "infrastructure": ["server", "serveur", "cloud", "datacenter", "storage", "backup"],
+        "services": ["service", "solution", "contrat", "maintenance", "sla", "devis"],
+    }
+
     def __init__(
         self,
         session_repository: SessionRepository,
@@ -88,6 +97,7 @@ class ChatService:
         # Services injected at initialization
         self._rag_service = rag_service
         self._llm_provider = llm_provider or get_llm_provider()
+
         self._groq_provider = GroqProvider()
         
         # Initialize query transformer for advanced intelligence

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Output validation service for Company Bot.
 Validates LLM-generated responses before sending to users.
 """
@@ -18,16 +18,12 @@ class OutputValidator:
     Comprehensive output validation service.
     
     Validates LLM responses for:
-    - Required slogan presence
     - Minimum/maximum length
     - Forbidden terms
     - Hallucination indicators
     - Response coherence
     - Source attribution
     """
-    
-    # Optional company tagline (loaded from company.yaml; empty = no tagline appended)
-    COMPANY_TAGLINE: str = ""  # set dynamically below
     
     # Generic forbidden terms (offensive language only)
     FORBIDDEN_TERMS = [
@@ -109,7 +105,7 @@ class OutputValidator:
                 validation_metadata["fixes_applied"].append("replaced_with_fallback")
                 return False, final_response, validation_metadata
         
-        # Step 2: (slogan enforcement removed — no mandatory slogan for generic bot)
+        # Step 2: Slogan check skipped (generic bot)
         validation_metadata["validations_performed"].append("slogan_check_skipped")
         
         # Step 3: Check length
@@ -233,15 +229,15 @@ class OutputValidator:
     
     def _truncate_for_whatsapp(self, text: str) -> str:
         """
-        Truncate text for WhatsApp while preserving the slogan.
+        Truncate text for WhatsApp if it exceeds length limit.
         
         Args:
             text: Text to truncate
             
         Returns:
-            Truncated text with slogan
+            Truncated text
         """
-        max_len = self.MAX_WHATSAPP_LENGTH - len(self.REQUIRED_SLOGAN) - 5
+        max_len = self.MAX_WHATSAPP_LENGTH
         
         if len(text) <= max_len:
             return text
@@ -335,4 +331,3 @@ class OutputValidator:
             text = text[:max_length] + "..."
         
         return text
-

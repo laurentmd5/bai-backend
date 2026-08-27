@@ -1,4 +1,4 @@
-﻿"""
+"""
 Company Configuration Loader.
 
 Loads the company identity from company.yaml at startup.
@@ -79,13 +79,20 @@ class CompanyConfig:
         }
 
     def _fmt(self, text: str) -> str:
-        """Substitute company variables in a string."""
-        return text.format(
-            company_name=self.name,
-            bot_name=self.bot_name,
-            website=self.website,
-            support_email=self.support_email,
-        )
+        """Substitute company variables in a string without failing on unformatted placeholders."""
+        if not text:
+            return ""
+        replacements = {
+            "{company_name}": self.name,
+            "{bot_name}": self.bot_name,
+            "{website}": self.website,
+            "{support_email}": self.support_email,
+            "{tagline}": self.tagline,
+        }
+        for placeholder, value in replacements.items():
+            text = text.replace(placeholder, value)
+        return text
+
 
     @property
     def name(self) -> str:

@@ -1,22 +1,22 @@
-﻿# ============================================================
+# ============================================================
 # IDENTITE DE L'ENTREPRISE
 # Seul fichier a modifier pour deployer ce bot
 # pour une nouvelle organisation.
 # ============================================================
 
 company:
-  name: ""NETSYSTEME""
-  bot_name: ""NetBot""
-  tagline: ""Votre partenaire IT de confiance.""
-  website: ""https://www.netsysteme.sn""
-  support_email: ""support@netsysteme.sn""
-  support_phone: """"
+  name: "NETSYSTEME"
+  bot_name: "NetBot"
+  tagline: "Votre partenaire IT de confiance."
+  website: "https://www.netsysteme.sn"
+  support_email: "support@netsysteme.sn"
+  support_phone: ""
 
 languages:
   supported:
-    - ""en""
-    - ""fr""
-  default: ""fr""
+    - "en"
+    - "fr"
+  default: "fr"
 
 # Prompts LLM -- variables: {bot_name}, {company_name}, {context}, {history}, {question}
 prompt:
@@ -33,7 +33,7 @@ prompt:
     **CONVERSATIONAL RULES:**
     1. Base all answers on the provided CONTEXT documents when available
     2. If you don't know, say so honestly and suggest contacting support
-    3. After answering, suggest a follow-up when relevant: ""Would you like to know more about...?""
+    3. After answering, suggest a follow-up when relevant: "Would you like to know more about...?"
     4. If a question is vague, ask for clarification
     5. Keep responses concise (max 3-4 paragraphs), use bullet points for lists
     6. Never invent facts, statistics, or specifications
@@ -77,8 +77,8 @@ prompt:
 # Reponses pre-construites -- variables: {bot_name}, {company_name}, {website}, {support_email}
 responses:
   greeting:
-    en: ""Hello! Welcome to {company_name}. I'm {bot_name}, your intelligent assistant. I can help you with our IT services, technical support, quotes, and company information. How can I help you today?""
-    fr: ""Bonjour ! Bienvenue chez {company_name}. Je suis {bot_name}, votre assistant intelligent. Je peux vous aider avec nos services IT, le support technique, les devis et les informations sur notre entreprise. Comment puis-je vous aider aujourd'hui ?""
+    en: "Hello! Welcome to {company_name}. I'm {bot_name}, your intelligent assistant. I can help you with our IT services, technical support, quotes, and company information. How can I help you today?"
+    fr: "Bonjour ! Bienvenue chez {company_name}. Je suis {bot_name}, votre assistant intelligent. Je peux vous aider avec nos services IT, le support technique, les devis et les informations sur notre entreprise. Comment puis-je vous aider aujourd'hui ?"
 
   help:
     en: |
@@ -91,9 +91,9 @@ responses:
       - Company contacts and locations
 
       **Example questions:**
-      - ""What services does {company_name} offer?""
-      - ""How do I contact technical support?""
-      - ""What are your network solutions?""
+      - "What services does {company_name} offer?"
+      - "How do I contact technical support?"
+      - "What are your network solutions?"
 
       What would you like to know?
     fr: |
@@ -106,28 +106,28 @@ responses:
       - Les contacts et emplacements de l'entreprise
 
       **Exemples de questions :**
-      - ""Quels services propose {company_name} ?""
-      - ""Comment contacter le support technique ?""
-      - ""Quelles sont vos solutions reseau ?""
+      - "Quels services propose {company_name} ?"
+      - "Comment contacter le support technique ?"
+      - "Quelles sont vos solutions reseau ?"
 
       Que souhaitez-vous savoir ?
 
   fallback:
-    en: ""I don't have specific information about that in my knowledge base. Please contact our support team at {support_email} or visit {website}.""
-    fr: ""Je n'ai pas d'information specifique sur ce sujet. Veuillez contacter notre equipe a {support_email} ou visiter {website}.""
+    en: "I don't have specific information about that in my knowledge base. Please contact our support team at {support_email} or visit {website}."
+    fr: "Je n'ai pas d'information specifique sur ce sujet. Veuillez contacter notre equipe a {support_email} ou visiter {website}."
 
   stop:
-    en: ""You have been unsubscribed from {bot_name} messages. Send 'START' to resubscribe at any time.""
-    fr: ""Vous avez ete desabonne des messages de {bot_name}. Envoyez 'START' pour vous reabonner.""
+    en: "You have been unsubscribed from {bot_name} messages. Send 'START' to resubscribe at any time."
+    fr: "Vous avez ete desabonne des messages de {bot_name}. Envoyez 'START' pour vous reabonner."
 
   start:
-    en: ""Welcome back to {bot_name}! You are now resubscribed. How can I help you today?""
-    fr: ""Bon retour sur {bot_name} ! Vous etes de nouveau abonne. Comment puis-je vous aider aujourd'hui ?""
+    en: "Welcome back to {bot_name}! You are now resubscribed. How can I help you today?"
+    fr: "Bon retour sur {bot_name} ! Vous etes de nouveau abonne. Comment puis-je vous aider aujourd'hui ?"
 
   error:
-    en: ""I'm experiencing a temporary technical issue. Please try again in a few moments.""
-    fr: ""Je rencontre un probleme technique temporaire. Veuillez reessayer dans quelques instants.""
+    en: "I'm experiencing a temporary technical issue. Please try again in a few moments."
+    fr: "Je rencontre un probleme technique temporaire. Veuillez reessayer dans quelques instants."
 
   hostile:
-    en: ""I'm here to help with {company_name} services and IT topics. How can I assist you?""
-    fr: ""Je suis la pour vous aider avec les services {company_name}. Comment puis-je vous assister ?""
+    en: "I'm here to help with {company_name} services and IT topics. How can I assist you?"
+    fr: "Je suis la pour vous aider avec les services {company_name}. Comment puis-je vous assister ?"
