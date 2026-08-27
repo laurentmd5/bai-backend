@@ -92,6 +92,8 @@ class CompanyConfig:
             "{whatsapp}": self.whatsapp,
             "{address}": self.address,
             "{tagline}": self.tagline,
+            "{ninea}": self.ninea,
+            "{rccm}": self.rccm,
         }
         for placeholder, value in replacements.items():
             text = text.replace(placeholder, value)
@@ -131,6 +133,15 @@ class CompanyConfig:
         return self._data.get("company", {}).get("address", "")
 
     @property
+    def ninea(self) -> str:
+        return self._data.get("company", {}).get("ninea", "")
+
+    @property
+    def rccm(self) -> str:
+        return self._data.get("company", {}).get("rccm", "")
+
+    @property
+
     def supported_languages(self) -> list:
         return self._data.get("languages", {}).get("supported", ["en"])
 
