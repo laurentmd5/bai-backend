@@ -166,8 +166,8 @@ async function loadTrendChart(period = '7d') {
       datasets: [{
         label: 'Messages',
         data: values,
-        borderColor: '#0b3b2f',
-        backgroundColor: 'rgba(11,59,47,.08)',
+        borderColor: '#0f2b5c',
+        backgroundColor: 'rgba(37,99,235,.10)',
         borderWidth: 2,
         pointRadius: 3,
         fill: true,
@@ -198,7 +198,8 @@ async function loadLatencyChart() {
   }
   const labels = Object.keys(data).map(k => k.toUpperCase());
   const values = Object.values(data);
-  const colors = ['#0b3b2f', '#f4b942', '#2563eb', '#7c3aed'];
+  const colors = ['#0f2b5c', '#1d4ed8', '#2563eb', '#60a5fa'];
+
   const ctx = document.getElementById('latency-chart').getContext('2d');
   if (latencyChart) latencyChart.destroy();
   latencyChart = new Chart(ctx, {

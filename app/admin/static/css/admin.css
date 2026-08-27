@@ -4,24 +4,25 @@
 
 /* ── Custom properties ─────────────────────────────────────── */
 :root {
-  --primary:        #0b3b2f;
-  --primary-dark:   #072820;
-  --primary-light:  #1a6b57;
-  --primary-muted:  #e8f4f1;
-  --accent:         #f4b942;
-  --accent-hover:   #e0a830;
+  --primary:        #0f2b5c;       /* Bleu foncé / marine NETSYSTEME */
+  --primary-dark:   #091c3e;       /* Bleu nuit très foncé */
+  --primary-light:  #1d4ed8;       /* Bleu royal vif */
+  --primary-muted:  #eff6ff;       /* Fond bleu clair */
+  --accent:         #2563eb;       /* Bleu normal éclatant */
+  --accent-hover:   #1d4ed8;       /* Bleu hover */
 
   --surface:        #ffffff;
   --surface-2:      #f8fafc;
   --surface-3:      #f1f5f9;
 
   --border:         #e2e8f0;
-  --border-focus:   #0b3b2f;
+  --border-focus:   #2563eb;
 
   --text-primary:   #0f172a;
   --text-secondary: #475569;
   --text-muted:     #94a3b8;
   --text-inverse:   #ffffff;
+
 
   --danger:         #dc2626;
   --danger-bg:      #fef2f2;
@@ -335,7 +336,7 @@ input, button, select, textarea { font: inherit; }
 .form-control:focus {
   outline: none;
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px rgba(11,59,47,.12);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.15);
 }
 .form-control::placeholder { color: var(--text-muted); }
 .form-control.error { border-color: var(--danger); }
@@ -397,8 +398,9 @@ select.form-control { cursor: pointer; }
   outline: none;
   background: var(--surface);
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px rgba(11,59,47,.1);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.15);
 }
+
 .search-input-wrap input::placeholder { color: var(--text-muted); }
 
 /* ── Tables ─────────────────────────────────────────────────────── */
