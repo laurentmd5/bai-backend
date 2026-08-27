@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Conversations — BARROW.AI{% endblock %}
+{% block title %}Conversations — {{ company.name or 'Admin' }}{% endblock %}
+
 {% block page_title %}Conversations{% endblock %}
 {% block breadcrumb %}
   <span class="sep">/</span><span>Conversations</span>

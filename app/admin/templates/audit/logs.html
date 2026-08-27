@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Audit logs — BARROW.AI{% endblock %}
+{% block title %}Audit logs — {{ company.name or 'Admin' }}{% endblock %}
+
 {% block page_title %}Audit logs{% endblock %}
 {% block breadcrumb %}
   <span class="sep">/</span><span>Sécurité</span>

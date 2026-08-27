@@ -1,6 +1,7 @@
 {% extends "base.html" %}
-{% block title %}2FA - BARROW.AI Admin{% endblock %}
+{% block title %}2FA - {{ company.name or 'NETSYSTEME' }} Admin{% endblock %}
 {% block page_title %}Vérification 2FA{% endblock %}
+
 {% block content %}
 <div class="max-w-md mx-auto mt-20 bg-white rounded-lg shadow p-8">
     <h2 class="text-2xl font-bold text-center mb-6">Code d'authentification à deux facteurs</h2>

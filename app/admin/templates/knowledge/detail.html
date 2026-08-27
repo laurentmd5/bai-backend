@@ -1,52 +1,197 @@
 {% extends "base.html" %}
-{% block title %}Détail document{% endblock %}
+{% block title %}Détail Document — {{ company.name or 'Admin' }}{% endblock %}
 {% block page_title %}Détail du document{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">/</span><a href="/admin/knowledge">{{ t['base']['knowledge_base'] }}</a>
+  <span class="sep">/</span><span id="breadcrumb-doc-title">Document</span>
+{% endblock %}
+
 {% block content %}
-<div class="bg-white rounded-xl shadow-sm p-6">
-    <div id="doc-detail">
-        <div class="text-center py-8">Chargement...</div>
+<div style="max-width:960px">
+  <div class="card" id="main-card">
+    <div class="card-header">
+      <div>
+        <div class="card-title" id="doc-title-header">Détail du document</div>
+        <div class="card-subtitle" id="doc-filename-header">Chargement des métadonnées…</div>
+      </div>
+      <div style="display:flex;gap:.5rem;align-items:center">
+        <button class="btn btn-secondary btn-sm" id="reindex-btn" onclick="reindexDocument()" style="display:none">
+          <i class="fas fa-sync-alt"></i> Réindexer
+        </button>
+        <button class="btn btn-danger btn-sm" id="delete-btn" onclick="openDeleteModal()" style="display:none">
+          <i class="fas fa-trash"></i> Supprimer
+        </button>
+        <a href="/admin/knowledge" class="btn btn-secondary btn-sm">
+          <i class="fas fa-arrow-left"></i> Retour
+        </a>
+      </div>
     </div>
+
+    <div class="card-body">
+      <!-- Error banner if document failed indexing -->
+      <div id="status-error-alert" class="alert alert-error hidden" style="margin-bottom:1.5rem">
+        <i class="fas fa-exclamation-triangle"></i>
+        <div>
+          <strong>Échec de l'indexation vectorielle</strong>
+          <div id="status-error-text" style="font-size:.8125rem;margin-top:.25rem"></div>
+        </div>
+      </div>
+
+      <div id="doc-content-wrap">
+        <div class="skeleton" style="height:200px;border-radius:var(--radius)"></div>
+      </div>
+    </div>
+  </div>
 </div>
 
+<!-- Delete confirm modal -->
+<div class="modal-overlay hidden" id="delete-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title"><i class="fas fa-trash" style="color:var(--danger);margin-right:.5rem"></i>Supprimer le document</span>
+      <button class="modal-close" onclick="closeDeleteModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.9rem;color:var(--text-secondary)">
+        Êtes-vous sûr de vouloir supprimer définitivement ce document de la base de connaissances ? Cette action supprimera également les segments vectoriels dans Qdrant.
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeDeleteModal()">Annuler</button>
+      <button class="btn btn-danger" id="confirm-delete-btn" onclick="executeDelete()"><i class="fas fa-trash"></i> Supprimer</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block extra_js %}
 <script>
-    const docId = '{{ doc_id }}';
-    async function loadDetail() {
-        const token = localStorage.getItem('access_token');
-        const res = await fetch(`/api/v1/admin/knowledge/${docId}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (res.ok) {
-            const doc = await res.json();
-            renderDetail(doc);
-        } else if (res.status === 404) {
-            document.getElementById('doc-detail').innerHTML = '<div class="text-center py-8 text-red-600">Document non trouvé</div>';
-        } else if (res.status === 401) {
-            window.location.href = '/admin/login';
-        }
-    }
-    
-    function renderDetail(doc) {
-        const html = `
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><span class="font-bold">ID:</span> ${doc.id}</div>
-                <div><span class="font-bold">Titre:</span> ${escapeHtml(doc.title)}</div>
-                <div><span class="font-bold">Fichier:</span> ${escapeHtml(doc.filename)}</div>
-                <div><span class="font-bold">Statut:</span> <span class="badge ${doc.is_active ? 'badge-success' : 'badge-warning'}">${doc.is_active ? 'Actif' : 'Inactif'}</span></div>
-                <div><span class="font-bold">Langue:</span> ${doc.language || 'en'}</div>
-                <div><span class="font-bold">Uploadé par:</span> ${doc.uploaded_by || '-'}</div>
-                <div><span class="font-bold">Créé le:</span> ${formatDate(doc.created_at)}</div>
-                <div><span class="font-bold">Nombre de chunks:</span> ${doc.chunk_count || 0}</div>
-                ${doc.description ? `<div class="col-span-2"><span class="font-bold">Description:</span> ${escapeHtml(doc.description)}</div>` : ''}
-            </div>
-            <div class="mt-6 flex gap-2">
-                <button onclick="window.location.href='/admin/knowledge/upload'" class="btn btn-primary">Uploader un nouveau document</button>
-                <button onclick="window.location.href='/admin/knowledge'" class="btn btn-secondary">Retour à la liste</button>
-            </div>
-        `;
-        document.getElementById('doc-detail').innerHTML = html;
-    }
-    
-    function escapeHtml(str) { return str ? str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;') : ''; }
-    loadDetail();
+const docId = '{{ doc_id }}';
+let currentDoc = null;
+
+function renderStatusBadge(status) {
+  if (status === 'active') {
+    return '<span class="badge badge-success"><span class="badge-dot"></span>Actif</span>';
+  } else if (status === 'indexing') {
+    return '<span class="badge" style="background:rgba(37,99,235,.1);color:#2563eb;font-weight:600"><i class="fas fa-spinner fa-spin" style="margin-right:4px"></i>Indexation en cours</span>';
+  } else if (status === 'error') {
+    return '<span class="badge badge-danger" style="background:rgba(220,38,38,.1);color:#dc2626"><i class="fas fa-exclamation-triangle" style="margin-right:4px"></i>Erreur</span>';
+  } else {
+    return '<span class="badge badge-warning"><span class="badge-dot"></span>En attente</span>';
+  }
+}
+
+async function loadDetail() {
+  const doc = await apiJSON(`/knowledge/${docId}`);
+  if (!doc) {
+    document.getElementById('doc-content-wrap').innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-file-excel" style="color:var(--danger)"></i>
+        <p>Document introuvable ou supprimé</p>
+        <a href="/admin/knowledge" class="btn btn-secondary btn-sm" style="margin-top:1rem">Retour à la liste</a>
+      </div>
+    `;
+    return;
+  }
+
+  currentDoc = doc;
+  document.getElementById('doc-title-header').textContent = doc.title || 'Document sans titre';
+  document.getElementById('doc-filename-header').textContent = doc.filename;
+  document.getElementById('breadcrumb-doc-title').textContent = doc.title || doc.filename;
+  document.getElementById('reindex-btn').style.display = 'inline-flex';
+  document.getElementById('delete-btn').style.display = 'inline-flex';
+
+  if (doc.status === 'error' && doc.error_message) {
+    document.getElementById('status-error-text').textContent = doc.error_message;
+    document.getElementById('status-error-alert').classList.remove('hidden');
+  } else {
+    document.getElementById('status-error-alert').classList.add('hidden');
+  }
+
+  const html = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:1.25rem">
+      <div style="background:var(--bg-secondary);padding:1rem;border-radius:var(--radius);border:1px solid var(--border)">
+        <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;font-weight:700;margin-bottom:.35rem">Statut d'Indexation</div>
+        <div>${renderStatusBadge(doc.status)}</div>
+      </div>
+
+      <div style="background:var(--bg-secondary);padding:1rem;border-radius:var(--radius);border:1px solid var(--border)">
+        <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;font-weight:700;margin-bottom:.35rem">Segments Vectoriels (Chunks)</div>
+        <div style="font-size:1.125rem;font-weight:700;color:var(--text-primary)">${doc.chunks_count || 0} chunks</div>
+      </div>
+
+      <div style="background:var(--bg-secondary);padding:1rem;border-radius:var(--radius);border:1px solid var(--border)">
+        <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;font-weight:700;margin-bottom:.35rem">Langue</div>
+        <div style="font-size:.9375rem;font-weight:600;color:var(--text-primary)"><span class="badge badge-neutral">${(doc.language || 'fr').toUpperCase()}</span></div>
+      </div>
+
+      <div style="background:var(--bg-secondary);padding:1rem;border-radius:var(--radius);border:1px solid var(--border)">
+        <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;font-weight:700;margin-bottom:.35rem">Date d'import</div>
+        <div style="font-size:.875rem;color:var(--text-primary)">${formatDate(doc.uploaded_at || doc.created_at)}</div>
+      </div>
+    </div>
+
+    <div style="margin-top:1.5rem;padding:1.25rem;background:var(--bg-secondary);border-radius:var(--radius);border:1px solid var(--border)">
+      <div style="font-size:.8125rem;font-weight:700;margin-bottom:.75rem;color:var(--text-primary)">Informations Détaillées</div>
+      <table style="width:100%;font-size:.875rem;border-collapse:collapse">
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:.5rem 0;color:var(--text-muted);width:180px">Identifiant (UUID)</td>
+          <td style="padding:.5rem 0;font-family:monospace;font-size:.8125rem">${doc.id}</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:.5rem 0;color:var(--text-muted)">Nom du fichier</td>
+          <td style="padding:.5rem 0;font-weight:600">${escapeHtml(doc.filename)}</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:.5rem 0;color:var(--text-muted)">Empreinte SHA-256</td>
+          <td style="padding:.5rem 0;font-family:monospace;font-size:.75rem;color:var(--text-muted)">${doc.content_hash || '—'}</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:.5rem 0;color:var(--text-muted)">Indexé le</td>
+          <td style="padding:.5rem 0">${doc.indexed_at ? formatDate(doc.indexed_at) : 'En attente / Non indexé'}</td>
+        </tr>
+        <tr>
+          <td style="padding:.5rem 0;color:var(--text-muted)">Description</td>
+          <td style="padding:.5rem 0">${escapeHtml(doc.description || 'Aucune description fournie')}</td>
+        </tr>
+      </table>
+    </div>
+  `;
+
+  document.getElementById('doc-content-wrap').innerHTML = html;
+}
+
+async function reindexDocument() {
+  const btn = document.getElementById('reindex-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Réindexation…';
+  showToast('Lancement de la réindexation…', 'info');
+
+  const res = await apiJSON(`/knowledge/${docId}/reindex`, { method: 'POST' });
+  if (res) {
+    showToast('Réindexation en cours !', 'success');
+    setTimeout(() => { loadDetail(); }, 1500);
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fas fa-sync-alt"></i> Réindexer';
+}
+
+function openDeleteModal() {
+  document.getElementById('delete-modal').classList.remove('hidden');
+}
+function closeDeleteModal() {
+  document.getElementById('delete-modal').classList.add('hidden');
+}
+
+async function executeDelete() {
+  const res = await apiJSON(`/knowledge/${docId}`, { method: 'DELETE' });
+  if (res !== null) {
+    showToast('Document supprimé avec succès', 'success');
+    setTimeout(() => { window.location.href = '/admin/knowledge'; }, 600);
+  }
+}
+
+loadDetail();
 </script>
 {% endblock %}
+

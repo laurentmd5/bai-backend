@@ -18,14 +18,16 @@ templates = Jinja2Templates(directory=str(templates_dir))
 
 
 from app.admin.i18n import get_translations
+from app.core.company_config import company
 
 def render_template(name: str, context: dict):
     request = context.get("request")
-    lang = request.cookies.get("admin_lang", "en")
+    lang = request.cookies.get("admin_lang", company.default_language or "fr") if request else "fr"
     t = get_translations(lang)
-    ctx = {"lang": lang, "t": t}
+    ctx = {"lang": lang, "t": t, "company": company, "app_name": company.name}
     ctx.update(context)
     return templates.TemplateResponse(name, ctx)
+
 
 @router.get("/set-lang")
 async def set_lang(lang: str, request: Request):

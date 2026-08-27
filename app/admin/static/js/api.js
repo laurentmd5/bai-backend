@@ -7,11 +7,13 @@ async function apiCall(endpoint, options = {}) {
   const method = (options.method || 'GET').toUpperCase();
   const isWrite = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method);
 
+  const validToken = (token && token !== 'null' && token !== 'undefined') ? token : null;
   const headers = {
     ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    ...(validToken ? { 'Authorization': `Bearer ${validToken}` } : {}),
     ...options.headers,
   };
+
 
   // Attach CSRF token for state-changing requests
   if (isWrite) {

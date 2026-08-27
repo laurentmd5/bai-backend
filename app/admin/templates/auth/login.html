@@ -16,9 +16,10 @@
     <!-- Header -->
     <div class="login-header">
       <div class="login-logo"><i class="fas fa-robot"></i></div>
-      <div class="login-title">BARROW.AI</div>
-      <div class="login-subtitle">{{ t.login.subtitle }}</div>
+      <div class="login-title">{{ company.name or 'NETSYSTEME' }}</div>
+      <div class="login-subtitle">{{ company.tagline or t.login.subtitle }}</div>
     </div>
+
 
     <!-- Body -->
     <div class="login-body">
@@ -72,8 +73,9 @@
     </div>
 
     <div class="login-footer">
-      {{ t.login.footer_msg }} &nbsp;·&nbsp; BARROW.AI © 2025
+      {{ t.login.footer_msg }} &nbsp;·&nbsp; {{ company.name or 'NETSYSTEME' }}
     </div>
+
 <!-- Language Switcher in Login -->
     <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
       <a href="/admin/set-lang?lang=en" style="text-decoration: none; color: {% if lang == 'en' %}var(--primary){% else %}var(--text-muted){% endif %}; font-weight: {% if lang == 'en' %}600{% else %}400{% endif %};">EN</a>

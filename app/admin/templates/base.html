@@ -19,10 +19,11 @@
     <div class="sidebar-brand">
       <div class="sidebar-brand-icon"><i class="fas fa-robot"></i></div>
       <div class="sidebar-brand-text">
-        <div class="sidebar-brand-name">BARROW.AI</div>
-        <div class="sidebar-brand-sub">Administration</div>
+        <div class="sidebar-brand-name">{{ company.name or 'NETSYSTEME' }}</div>
+        <div class="sidebar-brand-sub">{{ company.bot_name or 'NetBot' }} Admin</div>
       </div>
     </div>
+
 
     <nav class="sidebar-nav">
       <div class="nav-section-label">{{ t.base.navigation }}</div>

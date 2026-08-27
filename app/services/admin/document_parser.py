@@ -21,6 +21,12 @@ except ImportError:
     HAS_PDF = False
 
 try:
+    from docx import Document as DocxDocument
+    HAS_DOCX = True
+except ImportError:
+    HAS_DOCX = False
+
+try:
     from llama_cloud import AsyncLlamaCloud
     HAS_LLAMAPARSE = True
 except ImportError:
@@ -55,33 +61,60 @@ async def parse_document_content(
     Raises:
         DocumentParsingError: If parsing fails
     """
-    
+    if not content:
+        raise DocumentParsingError("Document is empty (0 bytes)")
+        
     filename = filename or "document"
+    fn_lower = filename.lower()
     
     # Detect format from content_type or filename
-    if content_type == "application/pdf" or filename.lower().endswith(".pdf"):
+    if content_type == "application/pdf" or fn_lower.endswith(".pdf"):
         return await _parse_pdf(content)
     
-    elif content_type in [
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/msword"
-    ] or filename.lower().endswith(".docx"):
+    elif (
+        content_type in [
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/msword",
+        ]
+        or fn_lower.endswith((".docx", ".doc"))
+    ):
         return await _parse_docx(content)
     
-    elif content_type == "text/plain" or filename.lower().endswith(".txt"):
-        return content.decode("utf-8", errors="ignore")
-    
-    elif content_type == "text/markdown" or filename.lower().endswith(".md"):
-        return content.decode("utf-8", errors="ignore")
+    elif (
+        content_type in ["text/plain", "text/markdown"]
+        or fn_lower.endswith((".txt", ".md"))
+    ):
+        for enc in ("utf-8", "utf-8-sig"):
+            try:
+                decoded = content.decode(enc)
+                if decoded.strip():
+                    return decoded
+            except UnicodeDecodeError:
+                continue
+        decoded = content.decode("utf-8", errors="ignore")
+        if decoded.strip():
+            return decoded
+        raise DocumentParsingError("Unable to decode text document")
     
     else:
-        raise DocumentParsingError(f"Unsupported format: {content_type}")
+        raise DocumentParsingError(f"Unsupported document format: {content_type} ({filename})")
+
 
 
 async def _parse_with_llama(content: bytes, suffix: str) -> str:
     """Extract text from file using LlamaCloud."""
-    api_key = settings.LLAMA_CLOUD_API_KEY.get_secret_value()
-    client = AsyncLlamaCloud(api_key=api_key)
+    if not settings.LLAMA_CLOUD_API_KEY:
+        raise DocumentParsingError("LlamaCloud API key not configured")
+        
+    api_key_str = (
+        settings.LLAMA_CLOUD_API_KEY.get_secret_value()
+        if hasattr(settings.LLAMA_CLOUD_API_KEY, "get_secret_value")
+        else str(settings.LLAMA_CLOUD_API_KEY)
+    )
+    if not api_key_str or not api_key_str.strip():
+        raise DocumentParsingError("LlamaCloud API key is empty")
+        
+    client = AsyncLlamaCloud(api_key=api_key_str)
     
     fd, temp_path = tempfile.mkstemp(suffix=suffix)
     try:
@@ -121,7 +154,6 @@ async def _parse_pdf(content: bytes) -> str:
             return await _parse_with_llama(content, suffix=".pdf")
         except Exception as e:
             logger.warning(f"LlamaParse failed, falling back to pypdf: {str(e)}")
-            # Fallback to pypdf
 
     if not HAS_PDF:
         raise DocumentParsingError(
@@ -159,7 +191,6 @@ async def _parse_docx(content: bytes) -> str:
             return await _parse_with_llama(content, suffix=".docx")
         except Exception as e:
             logger.warning(f"LlamaParse failed for DOCX, falling back to python-docx: {str(e)}")
-            # Fallback to python-docx
 
     if not HAS_DOCX:
         raise DocumentParsingError(
@@ -173,7 +204,14 @@ async def _parse_docx(content: bytes) -> str:
         text_parts = []
         for para in doc.paragraphs:
             if para.text.strip():
-                text_parts.append(para.text)
+                text_parts.append(para.text.strip())
+                
+        # Also extract table text
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
+                if row_text:
+                    text_parts.append(row_text)
         
         if not text_parts:
             raise DocumentParsingError("No text extracted from DOCX")
@@ -184,6 +222,7 @@ async def _parse_docx(content: bytes) -> str:
         raise
     except Exception as e:
         raise DocumentParsingError(f"DOCX parsing failed: {str(e)}")
+
 
 
 def split_text_into_chunks(

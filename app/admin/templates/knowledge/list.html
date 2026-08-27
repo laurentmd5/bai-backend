@@ -22,10 +22,11 @@
         <option value="fr">{{ t['knowledge']['lang_fr'] }}</option>
         <option value="en">{{ t['knowledge']['lang_en'] }}</option>
       </select>
-      <select id="status-filter" class="form-control" style="width:auto;min-width:110px">
+      <select id="status-filter" class="form-control" style="width:auto;min-width:130px">
         <option value="">{{ t['knowledge']['status_all'] }}</option>
         <option value="active">{{ t['knowledge']['status_active'] }}</option>
-        <option value="inactive">{{ t['knowledge']['status_inactive'] }}</option>
+        <option value="indexing">Indexation en cours</option>
+        <option value="error">Erreur</option>
       </select>
       <a href="/admin/knowledge/upload" class="btn btn-primary btn-sm">
         <i class="fas fa-upload"></i> {{ t['knowledge']['btn_upload'] }}
@@ -40,7 +41,7 @@
           <th>{{ t['knowledge']['th_document'] }}</th>
           <th>{{ t['knowledge']['th_status'] }}</th>
           <th>{{ t['knowledge']['th_language'] }}</th>
-          <th>{{ t['knowledge']['th_uploaded_by'] }}</th>
+          <th>Segments (Chunks)</th>
           <th>{{ t['knowledge']['th_date'] }}</th>
           <th class="col-actions">{{ t['knowledge']['th_actions'] }}</th>
         </tr>
@@ -79,9 +80,10 @@ let searchQuery  = '';
 let langFilter   = '';
 let statusFilter = '';
 let pendingDeleteId = null;
+let pollTimer = null;
 
 const fileIcons = {
-  pdf: 'fa-file-pdf', docx: 'fa-file-word', txt: 'fa-file-alt',
+  pdf: 'fa-file-pdf', docx: 'fa-file-word', doc: 'fa-file-word', txt: 'fa-file-alt',
   md: 'fa-file-alt', default: 'fa-file'
 };
 
@@ -90,19 +92,30 @@ function getFileIcon(title) {
   return fileIcons[ext] || fileIcons.default;
 }
 
+function renderStatusBadge(status, errorMsg) {
+  if (status === 'active') {
+    return '<span class="badge badge-success"><span class="badge-dot"></span>Actif</span>';
+  } else if (status === 'indexing') {
+    return '<span class="badge" style="background:rgba(37,99,235,.1);color:#2563eb;font-weight:600"><i class="fas fa-spinner fa-spin" style="margin-right:4px"></i>Indexation</span>';
+  } else if (status === 'error') {
+    return `<span class="badge badge-danger" style="background:rgba(220,38,38,.1);color:#dc2626" title="${escapeHtml(errorMsg || 'Erreur d\'indexation')}"><i class="fas fa-exclamation-triangle" style="margin-right:4px"></i>Erreur</span>`;
+  } else {
+    return '<span class="badge badge-warning"><span class="badge-dot"></span>En attente</span>';
+  }
+}
+
 async function loadDocuments(page = 0) {
+  if (pollTimer) clearTimeout(pollTimer);
   const tbody = document.getElementById('docs-tbody');
-  tbody.innerHTML = skeletonRows(6, 5);
+  if (tbody.children.length === 0) {
+    tbody.innerHTML = skeletonRows(6, 5);
+  }
   currentPage = page;
 
   const params = new URLSearchParams({ limit: PAGE_LIMIT, offset: page * PAGE_LIMIT });
   if (searchQuery)  params.set('search', searchQuery);
   if (langFilter)   params.set('language', langFilter);
-  if (statusFilter) {
-    if (statusFilter === 'active') params.set('status', 'active');
-    else if (statusFilter === 'inactive') params.set('status', 'error'); // or something to filter out if not active, wait knowledge.py allows 'active' 'pending' 'error'. Let's just pass the statusFilter directly as 'status' parameter since we changed the value to 'active' or 'pending' etc.
-    params.set('status', statusFilter);
-  }
+  if (statusFilter) params.set('status', statusFilter);
 
   const data = await apiJSON(`/knowledge?${params}`);
   if (!data) return;
@@ -119,42 +132,63 @@ async function loadDocuments(page = 0) {
     return;
   }
 
-  tbody.innerHTML = data.documents.map(d => `<tr>
-    <td>
-      <div style="display:flex;align-items:center;gap:.75rem">
-        <div style="width:34px;height:34px;background:var(--primary-muted);border-radius:var(--radius);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <i class="fas ${getFileIcon(d.title)}" style="color:var(--primary);font-size:.9rem"></i>
+  let hasPending = false;
+  tbody.innerHTML = data.documents.map(d => {
+    if (d.status === 'indexing' || d.status === 'pending') {
+      hasPending = true;
+    }
+    return `<tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:.75rem">
+          <div style="width:34px;height:34px;background:var(--primary-muted);border-radius:var(--radius);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <i class="fas ${getFileIcon(d.title || d.filename)}" style="color:var(--primary);font-size:.9rem"></i>
+          </div>
+          <div>
+            <div style="font-weight:600;font-size:.875rem"><a href="/admin/knowledge/detail/${d.id}" style="color:inherit;text-decoration:none">${escapeHtml(d.title||'{{ t["knowledge"]["js"]["untitled"] }}')}</a></div>
+            <div class="text-xs text-muted">${escapeHtml(d.filename)}</div>
+          </div>
         </div>
-        <div>
-          <div style="font-weight:600;font-size:.875rem">${escapeHtml(d.title||'{{ t["knowledge"]["js"]["untitled"] }}')}</div>
-          <div class="text-xs text-muted">${escapeHtml((d.description||'').substring(0,60))}${(d.description||'').length>60?'…':''}</div>
-        </div>
-      </div>
-    </td>
-    <td>${d.status === 'active' || d.status === 'indexing'
-      ? '<span class="badge badge-success"><span class="badge-dot"></span>{{ t["knowledge"]["js"]["active"] }}</span>'
-      : '<span class="badge badge-warning"><span class="badge-dot"></span>{{ t["knowledge"]["js"]["inactive"] }}</span>'}</td>
-    <td><span class="badge badge-neutral">${(d.language||'en').toUpperCase()}</span></td>
-    <td class="text-sm text-muted">${escapeHtml(d.uploaded_by||'—')}</td>
-    <td class="text-sm text-muted">${formatDateShort(d.created_at)}</td>
-    <td class="col-actions">
-      <button class="action-btn action-view" title="{{ t['knowledge']['js']['view'] }}" onclick="viewDoc('${d.id}')">
-        <i class="fas fa-eye"></i>
-      </button>
-      <button class="action-btn action-delete" title="{{ t['knowledge']['js']['delete'] }}" onclick="openDeleteModal('${d.id}','${escapeHtml(d.title||'{{ t["knowledge"]["js"]["this_doc"] }}')}')">
-        <i class="fas fa-trash"></i>
-      </button>
-    </td>
-  </tr>`).join('');
+      </td>
+      <td>${renderStatusBadge(d.status, d.error_message)}</td>
+      <td><span class="badge badge-neutral">${(d.language||'fr').toUpperCase()}</span></td>
+      <td class="text-sm font-semibold">${d.chunks_count || 0}</td>
+      <td class="text-sm text-muted">${formatDateShort(d.created_at)}</td>
+      <td class="col-actions">
+        <button class="action-btn action-view" title="{{ t['knowledge']['js']['view'] }}" onclick="viewDoc('${d.id}')">
+          <i class="fas fa-eye"></i>
+        </button>
+        <button class="action-btn" title="Réindexer" style="color:var(--primary)" onclick="reindexDoc('${d.id}')">
+          <i class="fas fa-sync-alt"></i>
+        </button>
+        <button class="action-btn action-delete" title="{{ t['knowledge']['js']['delete'] }}" onclick="openDeleteModal('${d.id}','${escapeHtml(d.title||'{{ t["knowledge"]["js"]["this_doc"] }}')}')">
+          <i class="fas fa-trash"></i>
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
 
   renderPagination(
     document.getElementById('docs-pagination'),
     data.total, page, PAGE_LIMIT,
     p => loadDocuments(p)
   );
+
+  // Auto-refresh if indexing is in progress
+  if (hasPending) {
+    pollTimer = setTimeout(() => loadDocuments(currentPage), 4000);
+  }
 }
 
 function viewDoc(id) { window.location.href = `/admin/knowledge/detail/${id}`; }
+
+async function reindexDoc(id) {
+  showToast('Lancement de la réindexation…', 'info');
+  const res = await apiJSON(`/knowledge/${id}/reindex`, { method: 'POST' });
+  if (res) {
+    showToast('Réindexation en cours', 'success');
+    loadDocuments(currentPage);
+  }
+}
 
 function openDeleteModal(id, name) {
   pendingDeleteId = id;
@@ -184,4 +218,5 @@ document.getElementById('delete-modal').addEventListener('click', e => { if (e.t
 
 loadDocuments();
 </script>
+
 {% endblock %}

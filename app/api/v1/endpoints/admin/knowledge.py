@@ -1,4 +1,4 @@
-﻿"""
+"""
 Admin knowledge base management endpoints for Company Bot.
 
 Endpoints for managing knowledge documents used in the RAG pipeline.
@@ -567,4 +567,63 @@ async def delete_knowledge_document(
         "document_id": str(doc.id),
         "message": "Document deleted successfully"
     }
+
+
+@router.post("/{document_id}/reindex", response_model=Dict[str, Any], status_code=status.HTTP_200_OK)
+async def reindex_knowledge_document(
+    document_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    current_admin: dict = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Trigger re-indexing of an existing knowledge base document.
+    """
+    logger.info(
+        "reindex_knowledge_document_requested",
+        document_id=document_id,
+        admin_id=current_admin["id"],
+    )
+    
+    repo = KnowledgeRepository(session)
+    try:
+        doc_id = UUID(document_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid document ID format"
+        )
+        
+    doc = await repo.get_by_id(doc_id)
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+        
+    # Mark as INDEXING
+    await repo.update_indexing_status(doc.id, DocumentStatus.INDEXING, chunks_count=0)
+    
+    # Check if we can reindex
+    # If description or title contains content or if we use description as a fallback chunk
+    content_to_index = doc.description or doc.title or doc.filename
+    chunk_dicts = split_text_into_chunks(content_to_index, chunk_size=200, overlap=30)
+    chunks = [c["content"] for c in chunk_dicts]
+    
+    background_tasks.add_task(
+        index_document_background_task,
+        doc_id=doc.id,
+        chunks=chunks,
+        document_name=doc.filename,
+        language=doc.language or "fr",
+        app=request.app
+    )
+    
+    return {
+        "document_id": str(doc.id),
+        "status": "indexing",
+        "message": "Re-indexing initiated in background"
+    }
+
 
