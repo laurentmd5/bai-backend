@@ -87,6 +87,10 @@ class CompanyConfig:
             "{bot_name}": self.bot_name,
             "{website}": self.website,
             "{support_email}": self.support_email,
+            "{support_phone}": self.phone,
+            "{phone}": self.phone,
+            "{whatsapp}": self.whatsapp,
+            "{address}": self.address,
             "{tagline}": self.tagline,
         }
         for placeholder, value in replacements.items():
@@ -115,12 +119,25 @@ class CompanyConfig:
         return self._data.get("company", {}).get("support_email", "")
 
     @property
+    def phone(self) -> str:
+        return self._data.get("company", {}).get("support_phone", "") or self._data.get("company", {}).get("phone", "")
+
+    @property
+    def whatsapp(self) -> str:
+        return self._data.get("company", {}).get("whatsapp", "")
+
+    @property
+    def address(self) -> str:
+        return self._data.get("company", {}).get("address", "")
+
+    @property
     def supported_languages(self) -> list:
         return self._data.get("languages", {}).get("supported", ["en"])
 
     @property
     def default_language(self) -> str:
         return self._data.get("languages", {}).get("default", "en")
+
 
     def get_prompt(self, language: str = "en") -> str:
         """Return the system prompt for the given language."""

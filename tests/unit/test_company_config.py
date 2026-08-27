@@ -1,4 +1,4 @@
-﻿"""
+"""
 Tests unitaires pour le module CompanyConfig (Multi-Entreprise).
 Verifie le chargement de company.yaml, la gestion des langues,
 des prompts et des reponses pre-construites.
@@ -18,7 +18,7 @@ class TestCompanyConfig:
     def test_global_company_singleton_loaded(self):
         """Le singleton global est correctement charge."""
         assert company is not None
-        assert company.name == "NETSYSTEME"
+        assert "NETSYSTEME" in company.name
         assert company.bot_name == "NetBot"
         assert "en" in company.supported_languages
         assert "fr" in company.supported_languages
@@ -26,11 +26,14 @@ class TestCompanyConfig:
 
     def test_company_properties(self):
         """Verification des proprietes de base de l'entreprise."""
-        assert company.name == "NETSYSTEME"
+        assert company.name == "NETSYSTEME INFORMATIQUE"
         assert company.bot_name == "NetBot"
-        assert company.website == "https://www.netsysteme.sn"
-        assert company.support_email == "support@netsysteme.sn"
-        assert company.tagline == "Votre partenaire IT de confiance."
+        assert company.website == "https://netsys-info.com"
+        assert company.support_email == "contact@netsys-info.com"
+        assert company.phone == "+221 33 827 28 45"
+        assert company.whatsapp == "+221 77 846 16 55"
+        assert "Cité Keur Gorgui" in company.address
+        assert "Votre partenaire IT" in company.tagline
 
     def test_get_prompt_french(self):
         """Le prompt en francais est correctement formate avec les variables."""
@@ -74,6 +77,7 @@ class TestCompanyConfig:
         help_fr = company.get_response("help", "fr")
         assert "NetBot" in help_fr
         assert "NETSYSTEME" in help_fr
+        assert "33 827 28 45" in help_fr
 
         help_en = company.get_response("help", "en")
         assert "NetBot" in help_en
@@ -81,7 +85,7 @@ class TestCompanyConfig:
     def test_get_response_fallback(self):
         """Reponse fallback par langue."""
         fb_fr = company.get_response("fallback", "fr")
-        assert "support@netsysteme.sn" in fb_fr or "https://www.netsysteme.sn" in fb_fr
+        assert "contact@netsys-info.com" in fb_fr or "https://netsys-info.com" in fb_fr
 
     def test_get_response_stop_and_start(self):
         """Reponses de desabonnement et reabonnement."""
@@ -90,6 +94,7 @@ class TestCompanyConfig:
 
         start_fr = company.get_response("start", "fr")
         assert "abonné" in start_fr or "abonne" in start_fr
+
 
     def test_custom_yaml_loading(self):
         """Test du chargement d'un fichier YAML d'une toute autre entreprise."""
