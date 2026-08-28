@@ -388,6 +388,11 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
+
+    # The worker does not expose the HTTP server used by the image healthcheck.
+    # Without this override Docker marks the running consumer as unhealthy.
+    healthcheck:
+      disable: true
         
     logging: *default-logging
 

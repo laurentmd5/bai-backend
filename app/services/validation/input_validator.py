@@ -765,12 +765,17 @@ class InputValidator:
         if wolof_score >= 1:
             return "wolof"
 
+        # Short greetings are frequently misclassified by statistical detectors.
+        if words & {"bonjour", "salut", "merci"}:
+            return "fr"
+
         # ── 2. langdetect for fr / en ──────────────────────────────────────
         try:
             from langdetect import detect, DetectorFactory  # type: ignore[import]
             DetectorFactory.seed = 42  # deterministic
             detected = detect(text)
-            return "en"
+            if detected in self.ALLOWED_LANGUAGES:
+                return detected
         except Exception:
             pass
 
@@ -784,7 +789,7 @@ class InputValidator:
         }
         french_score = len(french_words & words)
         if french_score >= 2:
-            return "en"
+            return "fr"
 
         return "en"
 

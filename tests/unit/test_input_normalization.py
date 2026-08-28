@@ -123,6 +123,19 @@ class TestDetectIntentFix:
         assert intent == "help"
 
 
+class TestLanguageDetection:
+
+    @pytest.fixture
+    def validator(self):
+        return InputValidator()
+
+    def test_detects_french_greeting(self, validator):
+        assert validator.detect_language("Bonjour !") == "fr"
+
+    def test_detects_english_question(self, validator):
+        assert validator.detect_language("What services do you offer?") == "en"
+
+
 class TestNormalizationIntegration:
     
     @pytest.fixture
