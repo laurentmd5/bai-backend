@@ -553,6 +553,17 @@ class ChatService:
                     user_message=sanitized_message,
                     channel=channel
                 )
+                if not recruiter_res:
+                    # Check if candidate expresses job/stage intent via text
+                    is_recruitment, detected_role = recruiter_agent.is_recruitment_intent(sanitized_message)
+                    if is_recruitment:
+                        recruiter_res = await recruiter_agent.start_text_interview(
+                            session_id=actual_session_id,
+                            role=detected_role,
+                            user_message=sanitized_message,
+                            channel=channel
+                        )
+
                 if recruiter_res:
                     await session_repo.touch_session(session.id)
                     await conv_repo.create_conversation(
@@ -575,6 +586,7 @@ class ChatService:
                 keyword_response = await self._handle_keyword_query(
                     sanitized_message, language, actual_session_id
                 )
+
                 if keyword_response:
                     # Store conversation
                     await conv_repo.create_conversation(

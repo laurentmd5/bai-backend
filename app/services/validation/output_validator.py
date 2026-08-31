@@ -105,8 +105,22 @@ class OutputValidator:
                 validation_metadata["fixes_applied"].append("replaced_with_fallback")
                 return False, final_response, validation_metadata
         
+        # Step 1.5: Clean any leaked prompt template markers
+        leaked_patterns = [
+            r'\n?\s*(\*|\*\*|#)*\s*QUESTION\s*:.*$',
+            r'\n?\s*(\*|\*\*|#)*\s*RÉPONSE\s*:.*$',
+            r'\n?\s*(\*|\*\*|#)*\s*User\s*:.*$',
+            r'\n?\s*(\*|\*\*|#)*\s*Utilisateur\s*:.*$',
+        ]
+        for pat in leaked_patterns:
+            cleaned = re.sub(pat, '', final_response, flags=re.IGNORECASE | re.DOTALL)
+            if cleaned != final_response:
+                validation_metadata["fixes_applied"].append("cleaned_leaked_prompt_markers")
+                final_response = cleaned.strip()
+
         # Step 2: Slogan check skipped (generic bot)
         validation_metadata["validations_performed"].append("slogan_check_skipped")
+
         
         # Step 3: Check length
         if len(response) < self.MIN_RESPONSE_LENGTH:

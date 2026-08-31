@@ -92,6 +92,70 @@ class RecruiterAgent:
         except Exception:
             pass
 
+    def is_recruitment_intent(self, message: str) -> Tuple[bool, str]:
+        """
+        Check if user message expresses a job, stage, or employment application intent.
+        Returns (is_intent, detected_role).
+        """
+        msg = (message or "").lower()
+        
+        triggers = [
+            "emploi", "stage", "postuler", "candidature", "embauche", "recrutement",
+            "développeur", "developpeur", "technicien", "stagiaire", "ingénieur", "ingenieur",
+            "cherche un travail", "cherche du travail", "recherche un emploi", "recherche un stage",
+            "cherche un stage", "cherche un emploi", "disponible pour un stage", "offre de stage"
+        ]
+        
+        has_intent = any(t in msg for t in triggers)
+        
+        role = ""
+        if "développeur" in msg or "developpeur" in msg or "dev" in msg:
+            role = "Développeur"
+        elif "technicien" in msg or "reseau" in msg or "réseau" in msg:
+            role = "Technicien Réseaux / Télécom"
+        elif "solaire" in msg or "photovolta" in msg:
+            role = "Technicien Énergie Solaire"
+        elif "stage" in msg:
+            role = "Stagiaire"
+            
+        return has_intent, role
+
+    async def start_text_interview(
+        self,
+        session_id: str,
+        role: str = "",
+        user_message: str = "",
+        channel: str = "whatsapp"
+    ) -> Dict[str, Any]:
+        """
+        Start the 5-step screening interview when candidate expresses intent via text.
+        """
+        state = await self.get_state(session_id)
+        state["stage"] = "IN_INTERVIEW"
+        state["current_step"] = 0
+        state["role_target"] = role or "Candidat"
+        state["answers"] = {}
+        
+        await self.save_state(session_id, state)
+        
+        first_q = SCREENING_QUESTIONS[0]["question"]
+        role_mention = f" pour un profil **{role}**" if role else ""
+        
+        intro_msg = (
+            f"Bonjour ! Chez **NETSYSTEME INFORMATIQUE**, nous sommes constamment à l'écoute des talents"
+            f"{role_mention}.\n\n"
+            f"Afin d'évaluer votre profil et de transmettre votre candidature à notre Direction Technique, "
+            f"merci de répondre à nos **5 questions de présélection** (vous pouvez également nous envoyer votre CV au format PDF/Word à tout moment) :\n\n"
+            f"{first_q}"
+        )
+        
+        return {
+            "message": intro_msg,
+            "session_id": session_id,
+            "recruiter_stage": "IN_INTERVIEW",
+            "step": 1,
+            "total_steps": 5,
+        }
 
     async def handle_cv_submission(
         self,
@@ -103,7 +167,7 @@ class RecruiterAgent:
     ) -> Dict[str, Any]:
         """
         Triggered when a candidate sends a CV file (PDF/DOCX).
-        Parses the CV and starts the 5-step screening interview.
+        Parses the CV and starts or updates the 5-step screening interview.
         """
         parsed_cv = await cv_parser_service.parse_cv_text(raw_text, filename=filename)
         
@@ -136,6 +200,7 @@ class RecruiterAgent:
             "total_steps": 5,
             "cv_parsed": parsed_cv
         }
+
 
     async def process_candidate_message(
         self,

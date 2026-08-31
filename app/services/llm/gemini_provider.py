@@ -1,4 +1,4 @@
-﻿"""
+"""
 Gemini LLM Provider implementation for Company Bot.
 Integrates with Google Gemini 3.0 Flash fine-tuned model.
 """
@@ -259,6 +259,16 @@ class GeminiProvider(ILLMProvider):
                 "maxOutputTokens": tokens,
                 "topP": 0.9,
                 "topK": 40,
+                "stopSequences": [
+                    "\n**QUESTION :**",
+                    "\n**QUESTION:**",
+                    "\n*QUESTION :*",
+                    "\n*QUESTION:*",
+                    "\nQUESTION :",
+                    "\nQUESTION:",
+                    "\nUser:",
+                    "\nUtilisateur:",
+                ],
             },
             "safetySettings": [
                 {
@@ -310,7 +320,16 @@ class GeminiProvider(ILLMProvider):
                 
                 generated_text = candidate["content"]["parts"][0]["text"]
                 
-                # Ensure slogan is present
+                # Clean any leaked prompt template markers from completion
+                import re
+                leaked_patterns = [
+                    r'\n?\s*(\*|\*\*|#)*\s*QUESTION\s*:.*$',
+                    r'\n?\s*(\*|\*\*|#)*\s*RÉPONSE\s*:.*$',
+                    r'\n?\s*(\*|\*\*|#)*\s*User\s*:.*$',
+                    r'\n?\s*(\*|\*\*|#)*\s*Utilisateur\s*:.*$',
+                ]
+                for pat in leaked_patterns:
+                    generated_text = re.sub(pat, '', generated_text, flags=re.IGNORECASE | re.DOTALL)
                 
                 self._record_success()
                 
@@ -321,6 +340,7 @@ class GeminiProvider(ILLMProvider):
                 )
                 
                 return generated_text.strip()
+
                 
             elif response.status_code == 429:
                 self._record_failure()
