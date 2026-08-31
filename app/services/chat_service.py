@@ -24,6 +24,7 @@ from app.repositories.session_repository import SessionRepository
 from app.core.config import settings
 from app.core.company_config import company
 from app.core.logging import get_logger
+from app.services.recruitment.recruiter_agent import recruiter_agent
 from app.core.metrics import (
     llm_generation_duration_ms,
     record_chat_message,
@@ -34,6 +35,7 @@ from app.core.metrics import (
     record_llm_tokens,
     record_security_violation,
 )
+
 
 from app.core.exceptions import (
     BotException,
@@ -543,6 +545,30 @@ class ChatService:
                             "timestamp": datetime.utcnow().isoformat(),
                         }
                 
+                # ===============================================================
+                # STEP 4.2: Recruiter Agent Screening Interview
+                # ===============================================================
+                recruiter_res = await recruiter_agent.process_candidate_message(
+                    session_id=actual_session_id,
+                    user_message=sanitized_message,
+                    channel=channel
+                )
+                if recruiter_res:
+                    await session_repo.touch_session(session.id)
+                    await conv_repo.create_conversation(
+                        session_id=session.id,
+                        user_message=sanitized_message,
+                        bot_response=recruiter_res["message"],
+                        channel=channel,
+                        sources=[],
+                        confidence=1.0,
+                        cache_hit=False,
+                        llm_model="RecruiterAgent",
+                        fallback_triggered=False,
+                    )
+                    recruiter_res["timestamp"] = datetime.utcnow().isoformat()
+                    return recruiter_res
+
                 # ===============================================================
                 # STEP 4.5: Handle Keyword-Only Queries
                 # ===============================================================

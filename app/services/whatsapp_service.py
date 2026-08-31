@@ -335,15 +335,22 @@ class WhatsAppService:
             whatsapp_messages_received_total.labels(type="voice").inc()
             await self._handle_voice_message(message, phone_number)
             return
+
+        # Handle document / CV messages (PDF, DOCX)
+        if message.type == "document" or (hasattr(message, 'document') and message.document):
+            whatsapp_messages_received_total.labels(type="document").inc()
+            await self._handle_document_message(message, phone_number)
+            return
         
         # Only process text messages for now (POC)
         if not message.is_text or not message.text_content:
             whatsapp_messages_received_total.labels(type="other").inc()
             await self.send_text_message(
                 to_number=phone_number,
-                text="I can only process text or voice messages at the moment. Please send a voice note or type your question.",
+                text="I can only process text, voice, or document (CV PDF/Word) messages at the moment.",
             )
             return
+
         
         # Record text message
         whatsapp_messages_received_total.labels(type="text").inc()
@@ -603,8 +610,82 @@ class WhatsAppService:
         
         # Fallback to text response
         await self.send_text_message(to_number=phone_number, text=response_text)
+
+    async def _handle_document_message(self, message: WhatsAppMessage, phone_number: str) -> None:
+        """Process an incoming document / CV message."""
+        doc = getattr(message, 'document', None)
+        if not doc or not doc.id:
+            await self.send_text_message(
+                to_number=phone_number,
+                text="Document reçu sans identifiant média valide. Veuillez réessayer."
+            )
+            return
+
+        filename = doc.filename or "cv_document.pdf"
+        mime_type = doc.mime_type or "application/pdf"
+
+        logger.info("whatsapp_document_received", phone=phone_number[-4:], filename=filename, mime_type=mime_type)
+
+        await self.send_text_message(
+            to_number=phone_number,
+            text=f"📥 Document reçu (`{filename}`). Analyse du CV par l'Agent Recruteur NETSYSTEME en cours…"
+        )
+
+        client = await self._get_client()
+        media_bytes = await download_media(
+            media_id=doc.id,
+            access_token=self._access_token,
+            api_version=self._api_version,
+            phone_number_id=self._phone_number_id,
+            client=client
+        )
+
+        if not media_bytes:
+            await self.send_text_message(
+                to_number=phone_number,
+                text="Impossible de télécharger votre document. Veuillez le renvoyer ou l'adresser à adiarraa@gmail.com."
+            )
+            return
+
+        try:
+            from app.services.admin.document_parser import parse_document_content
+            from app.services.recruitment.recruiter_agent import recruiter_agent
+
+            extracted_text = await parse_document_content(
+                content=media_bytes,
+                content_type=mime_type,
+                filename=filename
+            )
+
+            session = await self._get_or_create_session(phone_number)
+            session_id = str(session.id) if session else phone_number
+
+            recruiter_res = await recruiter_agent.handle_cv_submission(
+                session_id=session_id,
+                raw_text=extracted_text,
+                filename=filename,
+                phone_number=phone_number,
+                channel="whatsapp"
+            )
+
+            await self.send_text_message(
+                to_number=phone_number,
+                text=recruiter_res.get("message", "Votre CV a été analysé avec succès.")
+            )
+
+        except Exception as e:
+            logger.error("whatsapp_cv_processing_error", error=str(e), phone=phone_number[-4:])
+            await self.send_text_message(
+                to_number=phone_number,
+                text=(
+                    f"✅ Document `{filename}` bien reçu. "
+                    "Nous vous invitons également à adresser votre candidature détaillée à notre direction à **adiarraa@gmail.com** "
+                    "ou par téléphone au **+221 33 827 28 45**."
+                )
+            )
     
     async def send_text_message(
+
         self,
         to_number: str,
         text: str,

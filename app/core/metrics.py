@@ -178,6 +178,35 @@ db_pool_connections = Gauge(
     ['state']
 )
 
+recruitment_applications_total = Counter(
+    'bot_recruitment_applications_total',
+    'Total candidate applications processed by channel and status',
+    ['channel', 'status']
+)
+
+recruitment_cv_parsed_total = Counter(
+    'bot_recruitment_cv_parsed_total',
+    'Total candidate CV documents parsed by status',
+    ['status']
+)
+
+
+def record_recruitment_application(channel: str = "whatsapp", status: str = "completed"):
+    """Record a recruitment application submission."""
+    try:
+        recruitment_applications_total.labels(channel=channel, status=status).inc()
+    except Exception:
+        pass
+
+
+def record_cv_parsed(status: str = "success"):
+    """Record a CV document parsing event."""
+    try:
+        recruitment_cv_parsed_total.labels(status=status).inc()
+    except Exception:
+        pass
+
+
 
 def get_metrics() -> Dict[str, Any]:
     """Get current metrics in Prometheus format."""
