@@ -1,4 +1,4 @@
-﻿"""
+"""
 API v1 router for Company Bot.
 Aggregates all endpoint routers.
 """
@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     chat,
     whatsapp,
     health,
+    internal,
 )
 from app.api.v1.endpoints.admin import (
     auth as admin_auth,
@@ -28,6 +29,8 @@ api_router = APIRouter()
 api_router.include_router(chat.router, prefix="/chat", tags=["Chat"])
 api_router.include_router(whatsapp.router, prefix="/whatsapp", tags=["WhatsApp"])
 api_router.include_router(health.router, prefix="/health", tags=["Health"])
+api_router.include_router(internal.router, prefix="/internal", tags=["Internal"])
+
 
 # Admin endpoints
 api_router.include_router(admin_auth.router, prefix="/admin", tags=["Admin Authentication"])

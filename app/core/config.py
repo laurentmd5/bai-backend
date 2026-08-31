@@ -1,4 +1,4 @@
-﻿"""
+"""
 Core configuration module for Company Bot backend.
 Uses Pydantic Settings for robust environment variable management.
 All sensitive values are loaded from environment variables only.
@@ -307,10 +307,25 @@ class Settings(BaseSettings):
         """Construct RabbitMQ connection URL."""
         password = self.RABBITMQ_PASSWORD.get_secret_value()
         return f"amqp://{self.RABBITMQ_USER}:{password}@{self.RABBITMQ_HOST}:{self.RABBITMQ_PORT}/"
+
+    # =========================================================================
+    # INTERNAL SERVICE COMMUNICATION
+    # =========================================================================
+
+    BACKEND_INTERNAL_URL: str = Field(
+        default="http://localhost:8000",
+        description="Internal URL used by background workers to communicate with FastAPI backend"
+    )
     
+    INTERNAL_API_SECRET: SecretStr = Field(
+        default=SecretStr("internal-secret-token-for-worker-delegation"),
+        description="Shared secret for authenticating internal service requests"
+    )
+
     # =========================================================================
     # QDRANT SETTINGS
     # =========================================================================
+
     QDRANT_HOST: str = Field(
         default="qdrant",
         description="Qdrant host"

@@ -1,4 +1,4 @@
-﻿"""
+"""
 CSRF (Cross-Site Request Forgery) Protection Middleware for Company Bot.
 
 Implements double-submit cookie pattern with SameSite cookie attribute.
@@ -36,12 +36,14 @@ EXEMPT_PATHS = {
     "/docs",
     "/redoc",
     "/api/v1/whatsapp/webhook",     # WhatsApp webhook uses signature validation instead
+    "/api/v1/internal/process-whatsapp", # Internal inter-service endpoint (uses X-Internal-Secret)
     # Auth endpoints are exempt: no session exists yet before login
     "/api/v1/admin/auth/login",
     "/api/v1/admin/auth/verify-2fa",
     "/api/v1/admin/auth/refresh",
     "/api/v1/admin/auth/csrf-token",
 }
+
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):

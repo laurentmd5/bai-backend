@@ -1,4 +1,4 @@
-﻿# =============================================================================
+# =============================================================================
 # BARROW.AI POC - Docker Compose Configuration
 # Complete stack with all services
 # =============================================================================
@@ -276,11 +276,16 @@ services:
       RATE_LIMIT_ADMIN_PER_MINUTE: ${RATE_LIMIT_ADMIN_PER_MINUTE:-60}
       RATE_LIMIT_WHATSAPP_PER_MINUTE: ${RATE_LIMIT_WHATSAPP_PER_MINUTE:-10}
       
+      # Internal Communication
+      BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://localhost:8000}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-internal-secret-token-for-worker-delegation}
+      
       # Monitoring
       SENTRY_DSN: ${SENTRY_DSN:-}
       PROMETHEUS_ENABLED: ${PROMETHEUS_ENABLED:-true}
     
     depends_on:
+
       postgres:
         condition: service_healthy
       redis:
@@ -378,8 +383,13 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       CSRF_SECRET: ${CSRF_SECRET}
+
+      # Internal Communication
+      BACKEND_INTERNAL_URL: http://backend:8000
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-internal-secret-token-for-worker-delegation}
     
     depends_on:
+
       postgres:
         condition: service_healthy
       redis:
