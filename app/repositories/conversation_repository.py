@@ -1,4 +1,4 @@
-﻿"""
+"""
 Conversation repository for Company Bot.
 Handles conversation-specific database operations.
 """
@@ -159,6 +159,35 @@ class ConversationRepository(BaseRepository[Conversation, ChatMessageRequest, Di
         
         result = await db_session.execute(stmt)
         return list(result.scalars().all())
+    
+    async def get_recent_by_session(
+        self,
+        session_id: UUID,
+        limit: int = 10
+    ) -> List[Conversation]:
+        """
+        Get the most recent conversations for a session in chronological order (oldest to newest).
+        
+        Args:
+            session_id: Session UUID
+            limit: Maximum recent results to fetch
+            
+        Returns:
+            List of recent conversations in chronological order (oldest to newest)
+        """
+        db_session = await self._get_session()
+        
+        stmt = (
+            select(Conversation)
+            .where(Conversation.session_id == session_id)
+            .order_by(Conversation.created_at.desc())
+            .limit(limit)
+        )
+        
+        result = await db_session.execute(stmt)
+        recent_desc = list(result.scalars().all())
+        # Return reversed so oldest is first and newest is last (natural conversation flow)
+        return list(reversed(recent_desc))
     
     async def count_by_session(self, session_id: UUID) -> int:
         """

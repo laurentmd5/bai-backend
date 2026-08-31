@@ -628,16 +628,15 @@ class ChatService:
                 # ===============================================================
                 # STEP 5.5: Query Transformation & HyDE (Intelligence Layer)
                 # ===============================================================
-                # Fetch conversation history early for context
+                # Fetch conversation history early for context using the current request's conv_repo
                 history_text = ""
                 try:
-                    history_list = await self.get_conversation_history(session.id, limit=4)
-                    if history_list:
+                    recent_convs = await conv_repo.get_recent_by_session(session.id, limit=6)
+                    if recent_convs:
                         history_lines = []
-                        # history_list is returned newest first, we want oldest first
-                        for msg in reversed(history_list):
-                            history_lines.append(f"User: {msg.get('user_message', '')}")
-                            history_lines.append(f"Assistant: {msg.get('bot_response', '')}")
+                        for conv in recent_convs:
+                            history_lines.append(f"Utilisateur: {conv.user_message}")
+                            history_lines.append(f"Assistant: {conv.bot_response}")
                         history_text = "\n".join(history_lines)
                 except Exception as e:
                     logger.error("failed_to_fetch_history", error=str(e))
@@ -1022,7 +1021,7 @@ class ChatService:
             # Handle asyncpg UUID objects that don't have .replace()
             session_uuid = uuid.UUID(str(session_id))
             
-            conversations = await self._conversation_repo.get_by_session(
+            conversations = await self._conversation_repo.get_recent_by_session(
                 session_id=session_uuid,
                 limit=limit,
             )
