@@ -481,14 +481,14 @@ class WhatsAppService:
         else:
             await self.send_text_message(
                 to_number=phone_number,
-                text="I received an audio message but no media ID. Please try again."
+                text="J'ai bien reçu un message audio mais le fichier est introuvable. Veuillez réessayer."
             )
             return
         
-        # Send "processing" indicator
+        # Send "processing" indicator (French first)
         await self.send_text_message(
             to_number=phone_number,
-            text="🎤 I'm listening to your voice message / J'écoute votre message vocal. Please wait / Veuillez patienter..."
+            text="🎤 J'écoute votre message vocal. Veuillez patienter... / I'm listening to your voice message. Please wait..."
         )
         
         # Download media
@@ -504,7 +504,7 @@ class WhatsAppService:
         if not audio_bytes:
             await self.send_text_message(
                 to_number=phone_number,
-                text="I couldn't download your voice message. Please try again."
+                text="Je n'ai pas pu télécharger votre message vocal. Veuillez réessayer."
             )
             return
         
@@ -513,31 +513,28 @@ class WhatsAppService:
         if not is_valid:
             await self.send_text_message(
                 to_number=phone_number,
-                text=f"Your voice message could not be processed: {error_msg}. Please try a shorter message or type your question."
+                text=f"Votre message vocal n'a pas pu être traité : {error_msg}. Veuillez essayer un message plus court ou poser votre question par écrit."
             )
             return
         
-        # Transcribe with automatic language detection
-        # whisper.transcribe_detect() passes language=None to Whisper so it
-        # identifies the spoken language itself, then we confirm with our
-        # text-based detector for better accuracy on short utterances.
+        # Transcribe with automatic language detection (defaults to French)
         transcribed_text, whisper_lang = await whisper.transcribe_detect(audio_bytes)
         if not transcribed_text:
             voice_message_processed_total.labels(status="transcription_failed").inc()
             await self.send_text_message(
                 to_number=phone_number,
-                text="I couldn't understand your voice message. Could you please repeat or type your question?"
+                text="Je n'ai pas bien compris votre message vocal. Pourriez-vous le répéter ou poser votre question par écrit ?"
             )
             return
 
-        # Refine language detection
+        # Refine language detection (French as primary default)
         text_lang = self._input_validator.detect_language(transcribed_text)
         if text_lang in ["en", "fr"] and len(transcribed_text.split()) >= 3:
             detected_language = text_lang
         elif whisper_lang in ["en", "fr"]:
             detected_language = whisper_lang
         else:
-            detected_language = text_lang or "en"
+            detected_language = text_lang or "fr"
 
         logger.info(
             "whatsapp_voice_language_detected",
@@ -546,7 +543,6 @@ class WhatsAppService:
             text_lang=text_lang,
             final_lang=detected_language,
         )
-
 
         # Validate
         try:
@@ -559,9 +555,10 @@ class WhatsAppService:
             logger.warning("voice_input_validation_failed", error=str(e))
             await self.send_text_message(
                 to_number=phone_number,
-                text="I had trouble understanding your message. Could you try again?"
+                text="J'ai eu des difficultés à comprendre votre message. Pourriez-vous réessayer ou l'écrire par texte ?"
             )
             return
+
 
         response = await self._chat_service.process_message(
             message=sanitized_message,

@@ -104,13 +104,13 @@ class WhisperTranscriber:
             detected_lang = info.language
             prob = info.language_probability
             
-            # Language detection: keep "en" and "fr"; default to "en" for other languages
-            if detected_lang == "fr" and prob >= 0.30:
-                pass  # Keep "fr"
-            elif detected_lang == "en" and prob >= 0.30:
-                pass  # Keep "en"
+            # Language detection: prioritize "fr" (primary) and "en"
+            if detected_lang == "fr" and prob >= 0.20:
+                detected_lang = "fr"
+            elif detected_lang == "en" and prob >= 0.40:
+                detected_lang = "en"
             else:
-                detected_lang = "en"  # Default to English
+                detected_lang = "fr"  # Default to French (primary language)
             
             if transcript:
                 logger.info(
@@ -122,11 +122,12 @@ class WhisperTranscriber:
                 return transcript, detected_lang
             else:
                 logger.warning("empty_transcript_from_whisper")
-                return None, "en"
+                return None, "fr"
 
         except Exception as e:
             logger.error("whisper_local_failed", error=str(e))
-            return None, "en"
+            return None, "fr"
+
 
     async def transcribe(
         self,
