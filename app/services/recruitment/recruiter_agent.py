@@ -125,7 +125,8 @@ class RecruiterAgent:
         session_id: str,
         role: str = "",
         user_message: str = "",
-        channel: str = "whatsapp"
+        channel: str = "whatsapp",
+        candidate_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Start the 5-step screening interview when candidate expresses intent via text.
@@ -134,15 +135,18 @@ class RecruiterAgent:
         state["stage"] = "IN_INTERVIEW"
         state["current_step"] = 0
         state["role_target"] = role or "Candidat"
+        if candidate_name and candidate_name.strip() and candidate_name.lower() != "candidat":
+            state["candidate_name"] = candidate_name.strip()
         state["answers"] = {}
         
         await self.save_state(session_id, state)
         
         first_q = SCREENING_QUESTIONS[0]["question"]
+        name_mention = f" {state['candidate_name']}" if state.get("candidate_name") else ""
         role_mention = f" pour un profil **{role}**" if role else ""
         
         intro_msg = (
-            f"Bonjour ! Chez **NETSYSTEME INFORMATIQUE**, nous sommes constamment à l'écoute des talents"
+            f"Bonjour{name_mention} ! Chez **NETSYSTEME INFORMATIQUE**, nous sommes constamment à l'écoute des talents"
             f"{role_mention}.\n\n"
             f"Afin d'évaluer votre profil et de transmettre votre candidature à notre Direction Technique, "
             f"merci de répondre à nos **5 questions de présélection** (vous pouvez également nous envoyer votre CV au format PDF/Word à tout moment) :\n\n"
@@ -176,16 +180,20 @@ class RecruiterAgent:
         state["current_step"] = 0
         state["cv_parsed"] = parsed_cv
         state["phone_number"] = phone_number or parsed_cv.get("phone")
-        state["candidate_name"] = parsed_cv.get("full_name") or "Candidat"
+        if parsed_cv.get("full_name"):
+            state["candidate_name"] = parsed_cv.get("full_name")
+        elif not state.get("candidate_name"):
+            state["candidate_name"] = "Candidat"
         
         await self.save_state(session_id, state)
         
         first_q = SCREENING_QUESTIONS[0]["question"]
-        candidate_name = state["candidate_name"]
+        candidate_name = state.get("candidate_name", "Candidat")
+        name_mention = f" {candidate_name}" if candidate_name and candidate_name.lower() != "candidat" else ""
         match_score = parsed_cv.get("match_score", 0)
         
         welcome_msg = (
-            f"📄 Merci {candidate_name} ! Nous avons bien reçu et analysé votre CV (`{filename or 'CV'}`). "
+            f"📄 Merci{name_mention} ! Nous avons bien reçu et analysé votre CV (`{filename or 'CV'}`). "
             f"Votre profil a été pré-qualifié avec un score d'adéquation de **{match_score}%**.\n\n"
             f"Afin de finaliser l'évaluation de votre candidature pour l'équipe de **NETSYSTEME INFORMATIQUE**, "
             f"merci de répondre à nos **5 questions de présélection** :\n\n"
@@ -206,7 +214,8 @@ class RecruiterAgent:
         self,
         session_id: str,
         user_message: str,
-        channel: str = "web"
+        channel: str = "web",
+        candidate_name: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Process user response during the screening interview.
@@ -215,6 +224,10 @@ class RecruiterAgent:
         state = await self.get_state(session_id)
         if state.get("stage") != "IN_INTERVIEW":
             return None
+
+        if candidate_name and candidate_name.strip() and candidate_name.lower() != "candidat":
+            if not state.get("candidate_name") or state.get("candidate_name") == "Candidat":
+                state["candidate_name"] = candidate_name.strip()
 
         step = state.get("current_step", 0)
         if step < len(SCREENING_QUESTIONS):
@@ -242,21 +255,39 @@ class RecruiterAgent:
             state["completed_at"] = datetime.utcnow().isoformat()
             await self.save_state(session_id, state)
             
-            candidate_name = state.get("candidate_name", "Candidat")
-            cv_info = state.get("cv_parsed") or {}
+            candidate_name_val = state.get("candidate_name")
+            name_suffix = f", {candidate_name_val}" if candidate_name_val and candidate_name_val.lower() != "candidat" else ""
             
+            has_cv = bool(state.get("cv_parsed"))
+            if has_cv:
+                cv_info = state.get("cv_parsed") or {}
+                match_score = cv_info.get("match_score", 0)
+                score_mention = f" (Score de matching : **{match_score}%**)" if match_score else ""
+                dossier_text = (
+                    f"Votre dossier complet de candidature (**CV analysé{score_mention} + Réponses aux 5 questions de présélection**)"
+                )
+                cv_instruction = ""
+            else:
+                dossier_text = (
+                    "Vos réponses aux **5 questions de présélection** ont été enregistrées avec succès"
+                )
+                cv_instruction = (
+                    "📄 **Pour compléter et valoriser au mieux votre dossier** :\n"
+                    "N'hésitez pas à nous envoyer votre **CV (au format PDF ou Word)** directement ici sur WhatsApp ou par email à **adiarraa@gmail.com**.\n\n"
+                )
+
             final_response = (
-                f"✅ **Merci infiniment pour vos réponses, {candidate_name} !**\n\n"
-                f"Votre dossier complet de candidature (CV analysé + Réponses au questionnaire de présélection) "
-                f"a été enregistré avec succès et transmis à la Direction Générale (M. Ameth DIARRA) "
+                f"✅ **Merci infiniment pour vos réponses{name_suffix} !**\n\n"
+                f"{dossier_text} et transmises à la Direction Générale (M. Ameth DIARRA) "
                 f"et à notre équipe technique chez **NETSYSTEME INFORMATIQUE**.\n\n"
+                f"{cv_instruction}"
                 f"📌 **Prochaines étapes** :\n"
-                f"- Examen approfondi de votre dossier sous 48h à 72h.\n"
+                f"- Examen approfondi de votre profil sous 48h à 72h.\n"
                 f"- Si votre profil est retenu, nous vous contacterons directement par téléphone ou WhatsApp pour un entretien technique au siège (Cité Keur Gorgui, Immeuble Horizon).\n\n"
                 f"Vous pouvez également nous joindre directement par email à **adiarraa@gmail.com** ou au **+221 33 827 28 45**."
             )
             
-            logger.info("recruitment_interview_completed", session_id=session_id, candidate=candidate_name)
+            logger.info("recruitment_interview_completed", session_id=session_id, candidate=candidate_name_val, has_cv=has_cv)
             
             return {
                 "message": final_response,
@@ -269,3 +300,4 @@ class RecruiterAgent:
 
 
 recruiter_agent = RecruiterAgent()
+

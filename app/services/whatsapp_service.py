@@ -265,7 +265,8 @@ class WhatsAppService:
         
         for message in messages:
             try:
-                await self._process_incoming_message(message)
+                contact_name = webhook_request.get_contact_name_for_sender(message.from_number)
+                await self._process_incoming_message(message, contact_name=contact_name)
                 processed_count += 1
             except Exception as e:
                 logger.error("whatsapp_message_processing_failed", error=str(e), message_id=message.id)
@@ -278,13 +279,15 @@ class WhatsAppService:
             "errors": errors if errors else None,
         }
     
-    async def _process_incoming_message(self, message: WhatsAppMessage) -> None:
+    async def _process_incoming_message(self, message: WhatsAppMessage, contact_name: Optional[str] = None) -> None:
         """
         Process a single incoming WhatsApp message.
         
         Args:
             message: Parsed WhatsApp message
+            contact_name: Optional sender profile display name
         """
+
         phone_number = message.phone_number
         message_id = message.message_id
         
@@ -388,8 +391,14 @@ class WhatsAppService:
             channel="whatsapp",
             ip_address=None,
             user_agent="WhatsApp",
-            metadata={"phone_number": phone_number, "detected_language": detected_language},
+            metadata={
+                "phone_number": phone_number,
+                "detected_language": detected_language,
+                "contact_name": contact_name,
+                "user_name": contact_name,
+            },
         )
+
         
         # Send response
         response_text = response.get("message", "")

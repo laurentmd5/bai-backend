@@ -1,4 +1,4 @@
-﻿"""
+"""
 WhatsApp webhook request models for Company Bot.
 Models the Meta WhatsApp Cloud API webhook payload structure.
 """
@@ -296,9 +296,21 @@ class WhatsAppWebhookRequest(BaseModel):
         messages = self.get_messages()
         return messages[0] if messages else None
     
+    def get_contact_name_for_sender(self, sender_id: Optional[str] = None) -> Optional[str]:
+        """Extract the sender's display name from contacts in the payload."""
+        for entry in self.entry:
+            for change in entry.changes:
+                if change.value.contacts:
+                    for contact in change.value.contacts:
+                        if not sender_id or contact.wa_id == sender_id:
+                            if contact.profile and contact.profile.name:
+                                return contact.profile.name
+        return None
+
     def has_messages(self) -> bool:
         """Check if payload contains any messages."""
         return len(self.get_messages()) > 0
+
     
     model_config = {
         "json_schema_extra": {

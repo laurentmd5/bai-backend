@@ -548,10 +548,15 @@ class ChatService:
                 # ===============================================================
                 # STEP 4.2: Recruiter Agent Screening Interview
                 # ===============================================================
+                caller_name = None
+                if metadata and isinstance(metadata, dict):
+                    caller_name = metadata.get("contact_name") or metadata.get("user_name") or metadata.get("name")
+
                 recruiter_res = await recruiter_agent.process_candidate_message(
                     session_id=actual_session_id,
                     user_message=sanitized_message,
-                    channel=channel
+                    channel=channel,
+                    candidate_name=caller_name
                 )
                 if not recruiter_res:
                     # Check if candidate expresses job/stage intent via text
@@ -561,7 +566,8 @@ class ChatService:
                             session_id=actual_session_id,
                             role=detected_role,
                             user_message=sanitized_message,
-                            channel=channel
+                            channel=channel,
+                            candidate_name=caller_name
                         )
 
                 if recruiter_res:

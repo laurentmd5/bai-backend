@@ -1,6 +1,6 @@
 ﻿"""
 Unit tests for Recruiter Agent.
-Tests screening questionnaire progression, state persistence, text intent detection, and completion.
+Tests screening questionnaire progression, state persistence, text intent detection, personalization, and completion.
 """
 
 import pytest
@@ -35,18 +35,27 @@ class TestRecruiterAgent:
         assert is_rec3 is False
 
     @pytest.mark.asyncio
-    async def test_text_initiated_interview_flow(self):
-        """Candidate applies via text (without PDF first) and advances through 5 questions cleanly."""
+    async def test_text_initiated_interview_flow_with_name_and_no_cv(self):
+        """
+        Candidate applies via text with WhatsApp profile name.
+        Verifies:
+        - Greeting contains candidate name
+        - Sequential progression
+        - Final response does NOT mention 'CV analysé' if no CV was uploaded
+        - Final response warmly invites candidate to send CV.
+        """
         session_id = "test_text_candidate_session_456"
 
-        # 1. Text application start
+        # 1. Text application start with caller name
         res = await recruiter_agent.start_text_interview(
             session_id=session_id,
             role="Développeur",
-            user_message="Je suis développeur à la recherche d'un stage."
+            user_message="Je suis développeur à la recherche d'un stage.",
+            candidate_name="Laurent MAVOUNGOU"
         )
         assert res["recruiter_stage"] == "IN_INTERVIEW"
         assert res["step"] == 1
+        assert "Laurent MAVOUNGOU" in res["message"]
         assert "1️⃣" in res["message"]
 
         # 2. Answer Q1
@@ -89,6 +98,11 @@ class TestRecruiterAgent:
             user_message="Oui, j'ai déployé des serveurs et réseaux sur site."
         )
         assert final_res["recruiter_stage"] == "COMPLETED"
+        assert "Laurent MAVOUNGOU" in final_res["message"]
+        # Must NOT claim CV was analyzed if no CV was sent!
+        assert "CV analysé" not in final_res["message"]
+        # Must invite candidate to send CV
+        assert "Pour compléter et valoriser au mieux votre dossier" in final_res["message"]
         assert "adiarraa@gmail.com" in final_res["message"]
 
     @pytest.mark.asyncio
@@ -107,7 +121,23 @@ class TestRecruiterAgent:
         )
         assert res["recruiter_stage"] == "IN_INTERVIEW"
         assert res["step"] == 1
+        assert "Aminata SOW" in res["message"]
         assert "1️⃣" in res["message"]
+
+        # 2. Answer Q1 to Q5
+        for i in range(4):
+            await recruiter_agent.process_candidate_message(
+                session_id=session_id,
+                user_message=f"Réponse test {i+1}"
+            )
+        
+        final_res = await recruiter_agent.process_candidate_message(
+            session_id=session_id,
+            user_message="Réponse finale Q5"
+        )
+        assert final_res["recruiter_stage"] == "COMPLETED"
+        assert "Aminata SOW" in final_res["message"]
+        assert "CV analysé" in final_res["message"]
 
 
 class TestOutputSanitizer:
