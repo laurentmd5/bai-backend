@@ -32,9 +32,37 @@ from app.services.audio.media_utils import download_media, upload_media, send_au
 from app.services.audio.whisper_service import whisper
 from app.services.audio.tts_service import tts
 from app.repositories.session_repository import SessionRepository
+import re
 from app.models.request.whatsapp import WhatsAppWebhookRequest, WhatsAppMessage
 
 logger = get_logger(__name__)
+
+
+def format_for_whatsapp(text: str) -> str:
+    """
+    Convert standard Markdown (LLM / Python templates) into native WhatsApp formatting:
+    - Standard Markdown bold **text** -> WhatsApp bold *text*
+    - Standard Markdown strikethrough ~~text~~ -> WhatsApp strikethrough ~text~
+    - Fix any mismatched or triple asterisks (e.g. ***bold*** or **bold*) -> *bold*
+    """
+    if not text:
+        return text
+    
+    # 1. Convert standard Markdown bold **text** -> WhatsApp bold *text*
+    formatted = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
+    
+    # 2. Convert standard Markdown strikethrough ~~text~~ -> WhatsApp strikethrough ~text~
+    formatted = re.sub(r'~~(.+?)~~', r'~\1~', formatted)
+    
+    # 3. Clean any triple asterisks ***text*** -> *text*
+    formatted = re.sub(r'\*\*\*(.+?)\*\*\*', r'*\1*', formatted)
+    
+    # 4. Clean accidental mismatched double/single asterisks (e.g. **word* or *word**)
+    formatted = re.sub(r'\*\*([^*]+)\*', r'*\1*', formatted)
+    formatted = re.sub(r'\*([^*]+)\*\*', r'*\1*', formatted)
+    
+    return formatted
+
 
 
 class WhatsAppException(BotException):
@@ -692,7 +720,6 @@ class WhatsAppService:
             )
     
     async def send_text_message(
-
         self,
         to_number: str,
         text: str,
@@ -709,17 +736,19 @@ class WhatsAppService:
         Returns:
             API response dict
         """
+        formatted_body = format_for_whatsapp(text)
         async with self._message_semaphore:
             return await self._send_message(
                 to_number=to_number,
                 message_type="text",
                 payload={
                     "text": {
-                        "body": text,
+                        "body": formatted_body,
                         "preview_url": preview_url,
                     }
                 },
             )
+
     
     async def send_template_message(
         self,
