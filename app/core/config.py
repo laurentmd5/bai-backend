@@ -450,10 +450,16 @@ class Settings(BaseSettings):
     
     GROQ_API_KEY: Optional[SecretStr] = Field(
         default=None,
-        description="Groq API Key for Llama 3.3 fallback"
+        description="Groq API Key for fast LLM fallback"
+    )
+    
+    GROQ_MODEL: str = Field(
+        default="llama-3.1-8b-instant",
+        description="Groq model for fast fallback"
     )
     
     LLAMA_CLOUD_API_KEY: Optional[SecretStr] = Field(
+
         default=None,
         description="LlamaParse Cloud API Key"
     )

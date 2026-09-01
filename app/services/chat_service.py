@@ -83,7 +83,13 @@ class ChatService:
         "services": ["service", "solution", "contrat", "maintenance", "sla", "devis"],
     }
 
+    TECHNICAL_ERROR_RESPONSE = {
+        "fr": "Désolé, nous rencontrons actuellement une difficulté technique momentanée. Veuillez réessayer dans quelques instants ou contacter notre équipe par email à contact@netsys-info.com ou par téléphone au +221 33 827 28 45.",
+        "en": "Sorry, we are currently experiencing a temporary technical difficulty. Please try again in a moment or contact our team at contact@netsys-info.com or by phone at +221 33 827 28 45.",
+    }
+
     def __init__(
+
         self,
         session_repository: SessionRepository,
         conversation_repository: ConversationRepository,

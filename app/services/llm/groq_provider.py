@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 from typing import Optional
 
 from groq import AsyncGroq
@@ -20,17 +20,14 @@ logger = get_logger(__name__)
 class GroqProvider(ILLMProvider):
     """
     Groq LLM Provider implementation for Company Bot.
-    Used as the ultra-fast fallback provider (Llama 3.3 70B).
+    Used as the ultra-fast fallback provider.
     """
 
-    # We use llama-3.3-70b-versatile which is Groq's flagship open model
-    # offering GPT-4 class performance at ~700 tokens/s.
-    MODEL_NAME = "llama-3.3-70b-versatile"
-
-    # System prompt is now loaded dynamically from prompts.py
+    MODEL_NAME = getattr(settings, "GROQ_MODEL", "llama-3.1-8b-instant")
 
     def __init__(self):
         self.api_key = settings.GROQ_API_KEY.get_secret_value() if settings.GROQ_API_KEY else None
+        self.model = getattr(settings, "GROQ_MODEL", "llama-3.1-8b-instant")
         if not self.api_key:
             logger.warning("Groq API key is not configured. GroqProvider will fail on generation.")
             self.client = None
@@ -40,6 +37,7 @@ class GroqProvider(ILLMProvider):
                 max_retries=2,
                 timeout=15.0
             )
+
 
     async def generate(
         self,
@@ -80,12 +78,13 @@ class GroqProvider(ILLMProvider):
             messages.append({"role": "user", "content": user_msg})
 
             response = await self.client.chat.completions.create(
-                model=self.MODEL_NAME,
+                model=self.model,
                 messages=messages,
                 temperature=temperature if temperature is not None else 0.1,
                 max_tokens=max_tokens or 1024,
                 top_p=0.9,
             )
+
 
             if not response.choices:
                 raise LLMException("Empty response from Groq")

@@ -260,15 +260,12 @@ class GeminiProvider(ILLMProvider):
                 "topP": 0.9,
                 "topK": 40,
                 "stopSequences": [
-                    "\n**QUESTION :**",
-                    "\n**QUESTION:**",
-                    "\n*QUESTION :*",
-                    "\n*QUESTION:*",
-                    "\nQUESTION :",
-                    "\nQUESTION:",
+                    "\n**QUESTION",
+                    "\n*QUESTION",
                     "\nUser:",
                     "\nUtilisateur:",
                 ],
+
             },
             "safetySettings": [
                 {
