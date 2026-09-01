@@ -265,12 +265,13 @@ class WhatsAppService:
         
         for message in messages:
             try:
-                contact_name = webhook_request.get_contact_name_for_sender(message.from_number)
+                contact_name = webhook_request.get_contact_name_for_sender(message.phone_number)
                 await self._process_incoming_message(message, contact_name=contact_name)
                 processed_count += 1
             except Exception as e:
                 logger.error("whatsapp_message_processing_failed", error=str(e), message_id=message.id)
                 errors.append({"message_id": message.id, "error": str(e)})
+
         
         return {
             "status": "success",

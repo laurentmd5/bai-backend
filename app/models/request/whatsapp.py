@@ -204,9 +204,15 @@ class WhatsAppMessage(BaseModel):
         return self.from_
     
     @property
+    def from_number(self) -> str:
+        """Get sender's phone number alias."""
+        return self.from_
+    
+    @property
     def message_id(self) -> str:
         """Get message ID."""
         return self.id
+
     
     @property
     def text_content(self) -> Optional[str]:
