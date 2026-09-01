@@ -1,4 +1,4 @@
-﻿"""
+"""
 WhatsApp webhook endpoints for Company Bot.
 Handles incoming webhooks from Meta WhatsApp Cloud API.
 """
@@ -100,7 +100,11 @@ async def receive_webhook(
     Always returns 200 OK — Meta will retry if we return non-200.
     """
     signature = request.headers.get("X-Hub-Signature-256")
-    raw_body = await request.body()
+    try:
+        raw_body = await request.body()
+    except Exception as e:
+        logger.warning("whatsapp_webhook_body_read_failed", error=str(e))
+        return JSONResponse(content={"status": "ignored"}, status_code=200)
 
     # Parse JSON — if this fails it's malformed, not a Meta message
     try:
@@ -109,6 +113,7 @@ async def receive_webhook(
         logger.error("whatsapp_webhook_invalid_json", error=str(e))
         # Still return 200 — malformed payloads should not trigger Meta retries
         return JSONResponse(content={"status": "ignored"}, status_code=200)
+
 
     # Validate payload structure — log but never block with non-200
     try:

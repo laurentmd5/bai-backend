@@ -17,6 +17,16 @@ from app.services.cache.redis_cache import cache_service, CacheNamespace
 logger = get_logger(__name__)
 
 
+# Phonetic corrections for common speech-to-text mishearings
+PHONETIC_CORRECTIONS = {
+    "net system": "NETSYSTEME",
+    "netsystem": "NETSYSTEME",
+    "net-systeme": "NETSYSTEME",
+    "net-système": "NETSYSTEME",
+    "netsystème": "NETSYSTEME",
+}
+
+
 class WhisperTranscriber:
     """
     Local Whisper model for speech-to-text transcription.
@@ -79,13 +89,14 @@ class WhisperTranscriber:
             transcript = " ".join([segment.text for segment in segments]).strip()
             
             lower_transcript = transcript.lower()
-            for wrong, correct in CORRECTIONS.items():
+            for wrong, correct in PHONETIC_CORRECTIONS.items():
                 if wrong in lower_transcript:
                     import re
                     # Case-insensitive replace
                     pattern = re.compile(re.escape(wrong), re.IGNORECASE)
                     transcript = pattern.sub(correct, transcript)
                     lower_transcript = transcript.lower()
+
             
             duration = time.time() - start_time
             whisper_transcription_duration_seconds.observe(duration)
