@@ -104,13 +104,14 @@ class WhisperTranscriber:
             detected_lang = info.language
             prob = info.language_probability
             
-            # Language detection: prioritize "fr" (primary) and "en"
-            if detected_lang == "fr" and prob >= 0.20:
+            # Language detection: strongly prioritize "fr" (corporate primary) and require high certainty for "en"
+            if detected_lang == "fr" and prob >= 0.15:
                 detected_lang = "fr"
-            elif detected_lang == "en" and prob >= 0.40:
+            elif detected_lang == "en" and prob >= 0.75:
                 detected_lang = "en"
             else:
                 detected_lang = "fr"  # Default to French (primary language)
+
             
             if transcript:
                 logger.info(

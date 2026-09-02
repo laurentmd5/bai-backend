@@ -555,22 +555,54 @@ class WhatsAppService:
             )
             return
 
-        # Refine language detection (French as primary default)
+        # Check active session language for conversation inertia
+        session_lang = "fr"
+        try:
+            active_session = await self._session_repo.get_by_external_id(
+                external_id=phone_number,
+                channel="whatsapp"
+            )
+            if active_session and active_session.language:
+                session_lang = active_session.language
+        except Exception as e:
+            logger.debug("session_language_lookup_skipped", error=str(e))
+
+        # Check for unambiguous French conversational words
+        words = set(re.findall(r'\b\w+\b', transcribed_text.lower()))
+        french_keywords = {
+            "oui", "ouais", "ouep", "non", "nan", "ok", "d'accord", "daccord", "dac", "merci",
+            "bonjour", "salut", "bonsoir", "stage", "stages", "stagiaire", "stagiaires", "emploi",
+            "candidat", "candidature", "developpeur", "developpement", "web", "cv", "informatique",
+            "reseau", "reseaux", "voila", "exact", "exactement", "absolument", "parfait", "compris",
+            "disponible", "disponibilite", "terrain", "site"
+        }
+        has_french_keyword = bool(words & french_keywords)
+
+        # Refine language detection with session inertia & semantic keyword lock
         text_lang = self._input_validator.detect_language(transcribed_text)
-        if text_lang in ["en", "fr"] and len(transcribed_text.split()) >= 3:
+        word_count = len(transcribed_text.split())
+
+        if has_french_keyword:
+            detected_language = "fr"
+        elif word_count < 3 and session_lang in ["fr", "en"]:
+            # Short answers inherit the ongoing session's language
+            detected_language = session_lang
+        elif text_lang in ["en", "fr"] and word_count >= 3:
             detected_language = text_lang
-        elif whisper_lang in ["en", "fr"]:
+        elif whisper_lang in ["en", "fr"] and whisper_lang == session_lang:
             detected_language = whisper_lang
         else:
-            detected_language = text_lang or "fr"
+            detected_language = session_lang or "fr"
 
         logger.info(
             "whatsapp_voice_language_detected",
             phone=phone_number[-4:],
             whisper_lang=whisper_lang,
             text_lang=text_lang,
+            session_lang=session_lang,
             final_lang=detected_language,
         )
+
 
         # Validate
         try:
