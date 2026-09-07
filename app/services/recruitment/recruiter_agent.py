@@ -6,8 +6,10 @@ Manages candidate screening interview flow (5 NETSYSTEME questions) and stores c
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 import json
+import re
 
 from app.core.logging import get_logger
+
 from app.services.cache.redis_cache import cache_service, CacheNamespace
 from app.services.recruitment.cv_parser_service import cv_parser_service
 
@@ -210,6 +212,57 @@ class RecruiterAgent:
         }
 
 
+    def is_abort_intent(self, message: str) -> bool:
+        """Check if candidate wants to abort/stop the interview."""
+        if not message:
+            return False
+        pattern = r"\b(annuler|stop|arreter|arrêter|arrête|quitter|laisser tomber|laisse tomber|pas interesse|pas intéressé|autre question|autre chose|annule|non merci)\b"
+        return bool(re.search(pattern, message, re.IGNORECASE))
+
+    def is_clarification_or_question(self, message: str, current_step: int = 0) -> Tuple[bool, Optional[str]]:
+        """
+        Check if user message expresses confusion, doubt, or asks a question about the process.
+        Returns (True, explanation_prefix) or (False, None).
+        """
+        if not message:
+            return False, None
+
+        msg_lower = message.lower().strip()
+
+        # Questions or confusion keywords
+        confusion_patterns = [
+            r"\b(pas vu|aucune annonce|pas d'?annonce|pas vu d'?annonce|tu parles de quoi|parles de quoi|de quoi tu parles|de quoi s'agit-il|c'est quoi ce stage|quel stage|quelle offre|pourquoi ce stage|quel poste|c'est où|c'est quoi|explication|expliquer)\b",
+            r"\b(comprends rien|comprends pas|comprends plus|rien compris|pas compris)\b",
+            r"\b(problème|probleme|bizarre|ia a un problème|ia a un probleme|bug|erreur)\b",
+        ]
+
+        is_confusion = any(re.search(p, msg_lower, re.IGNORECASE) for p in confusion_patterns)
+        is_direct_question = "?" in message or any(msg_lower.startswith(w) for w in ["pourquoi", "comment", "où", "quel", "quelle", "c'est quoi", "qui"])
+
+        if is_confusion or is_direct_question:
+            if current_step == 0 or "annonce" in msg_lower or "stage" in msg_lower or "quoi" in msg_lower:
+                explanation = (
+                    "Pas de souci, je vous explique ! Chez **NETSYSTEME INFORMATIQUE**, nous accueillons régulièrement "
+                    "des talents techniques (Développement Web/App, Réseaux, Systèmes, Énergie Solaire) pour une période "
+                    "d'immersion et d'évaluation, avec de réelles perspectives d'embauche en contrat (CDD/CDI) selon les performances.\n\n"
+                    "Afin de transmettre au mieux votre candidature à notre Direction Technique, merci de nous préciser :\n\n"
+                )
+            elif "problème" in msg_lower or "comprends" in msg_lower:
+                explanation = (
+                    "Je vous rassure, tout fonctionne bien ! Je suis NetBot et je vous pose simplement 5 questions courtes "
+                    "pour pré-qualifier votre profil auprès de notre équipe technique.\n\n"
+                    "Pour continuer votre évaluation :\n\n"
+                )
+            else:
+                explanation = (
+                    "Je comprends votre question ! Ce rapide échange en 5 questions permet à notre Direction Technique "
+                    "d'évaluer votre profil et vos disponibilités.\n\n"
+                    "Pour poursuivre :\n\n"
+                )
+            return True, explanation
+
+        return False, None
+
     async def process_candidate_message(
         self,
         session_id: str,
@@ -230,6 +283,40 @@ class RecruiterAgent:
                 state["candidate_name"] = candidate_name.strip()
 
         step = state.get("current_step", 0)
+
+        # 1. Check for abort intent
+        if self.is_abort_intent(user_message):
+            state["stage"] = "ABORTED"
+            state["aborted_at"] = datetime.utcnow().isoformat()
+            await self.save_state(session_id, state)
+            logger.info("recruitment_interview_aborted", session_id=session_id)
+            return {
+                "message": (
+                    "C'est bien noté, j'interromps le questionnaire de candidature. "
+                    "Comment puis-je vous renseigner sur nos services et expertises chez **NETSYSTEME INFORMATIQUE** ?"
+                ),
+                "session_id": session_id,
+                "recruiter_stage": "ABORTED",
+                "step": step,
+                "total_steps": 5,
+            }
+
+        # 2. Check for question, doubt or confusion (Clarification without advancing step)
+        is_clarification, explanation_prefix = self.is_clarification_or_question(user_message, current_step=step)
+        if is_clarification and step < len(SCREENING_QUESTIONS):
+            current_q = SCREENING_QUESTIONS[step]["question"]
+            clarification_msg = f"{explanation_prefix}{current_q}"
+            logger.info("recruitment_clarification_provided", session_id=session_id, step=step)
+            return {
+                "message": clarification_msg,
+                "session_id": session_id,
+                "recruiter_stage": "IN_INTERVIEW",
+                "step": step + 1,
+                "total_steps": 5,
+                "fallback_triggered": False,
+            }
+
+        # 3. Valid answer: record and advance to next question
         if step < len(SCREENING_QUESTIONS):
             q_id = SCREENING_QUESTIONS[step]["id"]
             state["answers"][q_id] = user_message.strip()
@@ -257,6 +344,7 @@ class RecruiterAgent:
             
             candidate_name_val = state.get("candidate_name")
             name_suffix = f", {candidate_name_val}" if candidate_name_val and candidate_name_val.lower() != "candidat" else ""
+
             
             has_cv = bool(state.get("cv_parsed"))
             if has_cv:
