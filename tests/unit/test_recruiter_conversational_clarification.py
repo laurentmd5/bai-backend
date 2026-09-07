@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit tests for RecruiterAgent conversational clarifications and abort handling.
 Verifies that doubts, questions, and confusion do not blindly advance the questionnaire.
 """
@@ -88,6 +88,30 @@ async def test_recruiter_handles_abort(recruiter):
     assert res is not None
     assert res["recruiter_stage"] == "ABORTED"
     assert "interromps le questionnaire" in res["message"]
+
+
+@pytest.mark.asyncio
+async def test_recruiter_handles_plus_interesse(recruiter):
+    """When candidate says 'Je ne suis plus intéressé', exit interview cleanly."""
+    session_id = "test-session-abort-2"
+    initial_state = {
+        "stage": "IN_INTERVIEW",
+        "current_step": 2,
+        "candidate_name": "Mits",
+        "answers": {"q1_offer_knowledge": "Oui", "q2_availability": "Pas dispo"}
+    }
+    recruiter.get_state = AsyncMock(return_value=initial_state)
+
+    res = await recruiter.process_candidate_message(
+        session_id=session_id,
+        user_message="Je ne suis plus intéressé",
+        candidate_name="Mits"
+    )
+
+    assert res is not None
+    assert res["recruiter_stage"] == "ABORTED"
+    assert "interromps le questionnaire" in res["message"]
+
 
 
 @pytest.mark.asyncio

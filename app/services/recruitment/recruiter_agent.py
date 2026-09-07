@@ -216,8 +216,21 @@ class RecruiterAgent:
         """Check if candidate wants to abort/stop the interview."""
         if not message:
             return False
-        pattern = r"\b(annuler|stop|arreter|arrêter|arrête|quitter|laisser tomber|laisse tomber|pas interesse|pas intéressé|autre question|autre chose|annule|non merci)\b"
+        pattern = (
+            r"\b("
+            r"annuler|annule|stop|arreter|arrêter|arrête|quitter|laisser tomber|laisse tomber|"
+            r"(pas|plus|non|guere|guère)\s+(intéressé|interesse|intéréssé|interressé|intéressée|interessee|chaud)|"
+            r"m'intéresse\s+(pas|plus)|m'interesse\s+(pas|plus)|"
+            r"ne\s+m'intéresse|ne\s+m'interesse|"
+            r"ne\s+veux\s+(pas|plus)|veux\s+plus|veux\s+pas|"
+            r"pas\s+pour\s+moi|pas\s+intéressant|pas\s+interessant|"
+            r"je\s+refuse|refuse|décline|decline|"
+            r"autre\s+question|autre\s+chose|changer\s+de\s+sujet|"
+            r"non\s+merci|merci\s+au\s+revoir"
+            r")\b"
+        )
         return bool(re.search(pattern, message, re.IGNORECASE))
+
 
     def is_clarification_or_question(self, message: str, current_step: int = 0) -> Tuple[bool, Optional[str]]:
         """
