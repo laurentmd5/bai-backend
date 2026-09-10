@@ -139,8 +139,8 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-barrowai}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "127.0.0.1:15672:15672"
+
     healthcheck:
       test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping || rabbitmqctl status"]
       interval: 10s
