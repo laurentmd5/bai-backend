@@ -21,11 +21,58 @@ from app.core.metrics import (
     record_rag_chunks_retrieved,
 )
 
-logger = get_logger(__name__)
+def reciprocal_rank_fusion(
+    vector_results: List[Dict[str, Any]],
+    keyword_results: List[Dict[str, Any]],
+    k_rrf: int = 60
+) -> List[Dict[str, Any]]:
+    """
+    Combine Dense Vector Search and Keyword Search results using Reciprocal Rank Fusion (RRF).
+    Formula: RRF_Score(d) = sum(1 / (k_rrf + rank_i))
+    
+    Args:
+        vector_results: Chunks retrieved from dense vector search
+        keyword_results: Chunks retrieved from lexical keyword search
+        k_rrf: Smoothing constant (standard default is 60)
+        
+    Returns:
+        Deduplicated list of chunks ordered by fused RRF score descending.
+    """
+    chunk_map: Dict[Tuple[Optional[str], Optional[int]], Dict[str, Any]] = {}
+    rrf_scores: Dict[Tuple[Optional[str], Optional[int]], float] = {}
 
+    # 1. Process dense vector results
+    for rank, res in enumerate(vector_results, start=1):
+        payload = res.get("payload", {})
+        chunk_id = (payload.get("document_name"), payload.get("chunk_index"))
+        if chunk_id not in chunk_map:
+            chunk_map[chunk_id] = res
+            rrf_scores[chunk_id] = 0.0
+        rrf_scores[chunk_id] += 1.0 / (k_rrf + rank)
+
+    # 2. Process lexical keyword results
+    for rank, res in enumerate(keyword_results, start=1):
+        payload = res.get("payload", {})
+        chunk_id = (payload.get("document_name"), payload.get("chunk_index"))
+        if chunk_id not in chunk_map:
+            chunk_map[chunk_id] = res
+            rrf_scores[chunk_id] = 0.0
+        rrf_scores[chunk_id] += 1.0 / (k_rrf + rank)
+
+    # 3. Create final list with assigned rrf_score
+    fused_results = []
+    for chunk_id, res in chunk_map.items():
+        chunk_entry = dict(res)
+        chunk_entry["rrf_score"] = rrf_scores[chunk_id]
+        fused_results.append(chunk_entry)
+
+    # Sort descending by RRF score
+    fused_results.sort(key=lambda x: x["rrf_score"], reverse=True)
+    return fused_results
 
 
 class RAGService:
+
     """
     Retrieval-Augmented Generation service.
     
@@ -171,28 +218,16 @@ class RAGService:
         record_rag_search_duration(duration * 1000.0)
 
         
-        # Combine results, removing duplicates based on document and chunk_index
-        combined_results = []
-        seen_chunks = set()
-        
-        # Prioritize Vector results
-        for res in vector_results:
-            payload = res.get("payload", {})
-            chunk_id = (payload.get("document_name"), payload.get("chunk_index"))
-            if chunk_id not in seen_chunks:
-                seen_chunks.add(chunk_id)
-                combined_results.append(res)
-                
-        # Add missing Keyword results
-        for res in keyword_results:
-            payload = res.get("payload", {})
-            chunk_id = (payload.get("document_name"), payload.get("chunk_index"))
-            if chunk_id not in seen_chunks:
-                seen_chunks.add(chunk_id)
-                combined_results.append(res)
+        # Combine results using Reciprocal Rank Fusion (RRF)
+        combined_results = reciprocal_rank_fusion(
+            vector_results=vector_results,
+            keyword_results=keyword_results,
+            k_rrf=60
+        )
         
         # Record chunk metrics
         record_rag_chunks_retrieved(len(combined_results))
+
         
         if not combined_results:
             logger.info(
