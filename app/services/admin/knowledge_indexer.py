@@ -47,6 +47,14 @@ async def index_document_background_task(
             chunks_count=indexed_count
         )
         
+        # Invalidate RAG cache so fresh document information is served immediately
+        try:
+            from app.services.cache.redis_cache import cache_service
+            deleted_keys = await cache_service.invalidate_rag_cache()
+            logger.info("rag_cache_invalidated_after_indexing", doc_id=str(doc_id), keys_deleted=deleted_keys)
+        except Exception as cache_err:
+            logger.warning("rag_cache_invalidation_failed", error=str(cache_err))
+        
     except Exception as e:
         logger.error("background_indexing_failed", doc_id=str(doc_id), error=str(e))
         await _update_status(doc_id, DocumentStatus.ERROR, error_message=str(e))

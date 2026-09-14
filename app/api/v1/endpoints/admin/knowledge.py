@@ -31,6 +31,7 @@ from app.services.admin.document_parser import (
     DocumentParsingError,
 )
 from app.services.admin.knowledge_indexer import index_document_background_task
+from app.services.cache.redis_cache import cache_service
 
 logger = get_logger(__name__)
 
@@ -494,6 +495,12 @@ async def update_knowledge_document(
     
     if update_data:
         await repo.update_document(doc_id, **update_data)
+        # Invalidate RAG cache when document metadata is modified
+        try:
+            await cache_service.invalidate_rag_cache()
+            logger.info("rag_cache_invalidated_after_document_update", doc_id=str(doc.id))
+        except Exception as cache_err:
+            logger.warning("rag_cache_invalidation_failed", error=str(cache_err))
     
     # Log audit
     try:
@@ -551,6 +558,13 @@ async def delete_knowledge_document(
     
     # Soft delete or hard delete
     await repo.delete_document(doc_id)
+    
+    # Invalidate RAG response cache so deleted content is never served
+    try:
+        await cache_service.invalidate_rag_cache()
+        logger.info("rag_cache_invalidated_after_document_delete", doc_id=str(doc.id))
+    except Exception as cache_err:
+        logger.warning("rag_cache_invalidation_failed", error=str(cache_err))
     
     # Log audit
     try:

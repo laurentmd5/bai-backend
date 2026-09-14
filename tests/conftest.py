@@ -108,6 +108,15 @@ class MockCacheService:
         """Remove old entries from sliding window."""
         return 0
 
+    async def invalidate_rag_cache(self) -> int:
+        """Mock invalidate RAG cache."""
+        deleted = 0
+        keys_to_delete = [k for k in self._cache.keys() if "rag:response" in str(k)]
+        for k in keys_to_delete:
+            del self._cache[k]
+            deleted += 1
+        return deleted
+
 # Replace cache service with mock
 import app.services.cache.redis_cache
 _original_cache = app.services.cache.redis_cache.cache_service

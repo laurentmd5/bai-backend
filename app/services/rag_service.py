@@ -21,6 +21,8 @@ from app.core.metrics import (
     record_rag_chunks_retrieved,
 )
 
+logger = get_logger(__name__)
+
 def reciprocal_rank_fusion(
     vector_results: List[Dict[str, Any]],
     keyword_results: List[Dict[str, Any]],
@@ -192,13 +194,17 @@ class RAGService:
         # Search in Qdrant with timing (Dense + Sparse/Keyword)
         start_time = time.time()
         
+        # Relax raw vector threshold slightly to prevent premature elimination of chunks
+        # when a query is short or has high keyword relevance (e.g. "solaire", "odoo")
+        vector_threshold = max(0.0, threshold - 0.15)
+        
         # Run Vector Search and Keyword Search concurrently
         import asyncio
         vector_search_task = asyncio.create_task(
             self._vector_store.search(
                 query_vector=query_vector,
                 limit=k,
-                score_threshold=threshold,
+                score_threshold=vector_threshold,
                 filters=filters,
             )
         )
@@ -238,8 +244,30 @@ class RAGService:
             raise LowConfidenceException(0.0, threshold)
 
         
-        # Top score is the highest vector score
-        top_score = vector_results[0]["score"] if vector_results else 0.8
+        # Adaptive Confidence Scoring:
+        # If we have vector results, evaluate top vector score.
+        # If keyword search matched relevant terms (BM25 exact match), grant adaptive confidence boost
+        vector_top_score = vector_results[0]["score"] if vector_results else 0.0
+        
+        # Check if the top combined chunk came from keyword search or both
+        has_keyword_match = bool(keyword_results)
+        
+        if has_keyword_match:
+            # Exact keyword match found in document text
+            # Ensure confidence is at least 0.75 or vector_top_score
+            top_score = max(vector_top_score, 0.75)
+        else:
+            top_score = vector_top_score
+            
+        # If top_score is still below the requested threshold (and no keyword match rescued it)
+        if top_score < threshold and not has_keyword_match:
+            logger.info(
+                "rag_low_confidence",
+                query_preview=query[:100],
+                top_score=top_score,
+                threshold=threshold,
+            )
+            raise LowConfidenceException(top_score, threshold)
         
         logger.debug(
             "rag_retrieval_completed",
