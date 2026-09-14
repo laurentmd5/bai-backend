@@ -1,0 +1,36 @@
+﻿# =============================================================================
+# Prometheus Configuration for SRE Observability (BARROW / NetBot Platform)
+# =============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+rule_files:
+  - "alert_rules.yml"
+
+scrape_configs:
+  # ---------------------------------------------------------------------------
+  # 1. FastAPI Backend Service (BAI / NetBot)
+  # ---------------------------------------------------------------------------
+  - job_name: "bai-backend"
+    metrics_path: "/metrics"
+    scrape_interval: 10s
+    static_configs:
+      - targets: ["backend:8000"]
+        labels:
+          environment: "production"
+          service: "bai-backend"
+          tier: "application"
+
+  # ---------------------------------------------------------------------------
+  # 2. Local Prometheus Self-Monitoring
+  # ---------------------------------------------------------------------------
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+        labels:
+          environment: "production"
+          service: "prometheus"
+          tier: "monitoring"
