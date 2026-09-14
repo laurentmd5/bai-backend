@@ -1,4 +1,4 @@
-﻿"""
+"""
 Admin users management endpoints for Company Bot.
 Complete CRUD operations for admin user management with role-based access control.
 """
@@ -129,9 +129,9 @@ async def create_user(
     **Request Body**:
     ```json
     {
-        "email": "newadmin@pace.gm",
+        "email": "newadmin@example.com",
         "full_name": "John Doe",
-        "password": "SecureP@ssw0rd123!",
+        "password": "YOUR_STRONG_PASSWORD",
         "role": "admin"
     }
     ```

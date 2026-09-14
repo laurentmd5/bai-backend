@@ -295,8 +295,12 @@
           "legendFormat": "2xx - {{endpoint}}"
         },
         {
-          "expr": "sum(rate(bot_http_requests_total{status=~\"4..\"}[1m])) by (endpoint)",
+          "expr": "sum(rate(bot_http_requests_total{status=~\"4..\", endpoint!~\"/not_found|/.*\\.env.*|/.*php.*|/\\.git.*\"}[1m])) by (endpoint)",
           "legendFormat": "4xx - {{endpoint}}"
+        },
+        {
+          "expr": "sum(rate(bot_http_requests_total{status=~\"4..\", endpoint=~\"/not_found|/.*\\.env.*|/.*php.*|/\\.git.*\"}[1m]))",
+          "legendFormat": "4xx - Scans & Probes (404)"
         },
         {
           "expr": "sum(rate(bot_http_requests_total{status=~\"5..\"}[1m])) by (endpoint)",

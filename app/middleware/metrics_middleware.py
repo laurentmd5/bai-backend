@@ -62,17 +62,20 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
             status = response.status_code
+
+            # Anti-noise protection: group all scanner probes and missing routes under '/not_found'
+            endpoint_label = "/not_found" if status == 404 else normalized_endpoint
             
             # Record request metrics
             duration_seconds = time.time() - start_time
             http_requests_total.labels(
                 method=method,
-                endpoint=normalized_endpoint,
+                endpoint=endpoint_label,
                 status=status
             ).inc()
             http_request_duration_seconds.labels(
                 method=method,
-                endpoint=normalized_endpoint
+                endpoint=endpoint_label
             ).observe(duration_seconds)
             
             return response

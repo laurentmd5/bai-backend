@@ -91,7 +91,7 @@ class TestCsrfMiddlewareOnProtectedEndpoints:
         res = sync_client.post(
             "/api/v1/admin/users",
             headers={"X-CSRF-Token": csrf_token},
-            json={"email": "x@test.com", "password": "X123!", "role": "VIEWER"},
+            json={"email": "dummy@test.com", "password": "DUMMY_TEST_PWD", "role": "VIEWER"},
         )
         # Le CSRF passe — peut être 401, 422, ou 500 (DB), mais PAS 403
         assert res.status_code != 403

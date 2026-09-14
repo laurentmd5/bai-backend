@@ -1,4 +1,4 @@
-﻿"""
+"""
 Admin request models for Company Bot.
 Validates authentication, 2FA, and admin operations.
 """
@@ -432,9 +432,9 @@ class AdminCreateUserRequest(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "email": "newadmin@pace.gm",
+                "email": "newadmin@example.com",
                 "full_name": "John Doe",
-                "password": "SecureP@ssw0rd123!",
+                "password": "YOUR_STRONG_PASSWORD",
                 "role": "admin"
             }
         }
