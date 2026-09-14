@@ -584,10 +584,20 @@ class WhatsAppService:
 
         if has_french_keyword:
             detected_language = "fr"
+        elif session_lang == "fr" and whisper_lang == "fr":
+            # Both session and Whisper acoustic detector agree on French.
+            # Never let text_lang switch to English due to phonetic hallucinations.
+            detected_language = "fr"
+        elif whisper_lang == "fr" and text_lang != "en":
+            detected_language = "fr"
         elif word_count < 3 and session_lang in ["fr", "en"]:
             # Short answers inherit the ongoing session's language
             detected_language = session_lang
-        elif text_lang in ["en", "fr"] and word_count >= 3:
+        elif session_lang == "fr" and text_lang == "en" and whisper_lang == "fr":
+            # Protect French session against Whisper hallucinating English words
+            detected_language = "fr"
+        elif text_lang in ["en", "fr"] and word_count >= 4 and whisper_lang != "fr":
+            # Only switch to English if Whisper did NOT detect French and the transcript is robustly English
             detected_language = text_lang
         elif whisper_lang in ["en", "fr"] and whisper_lang == session_lang:
             detected_language = whisper_lang

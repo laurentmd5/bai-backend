@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit tests for voice language inertia and short keywords locking.
 Tests that short affirmative/negative French voice messages ("Oui", "Non")
 maintain French conversation continuity.
@@ -53,8 +53,36 @@ class TestVoiceLanguageInertia:
         assert detected_language == "fr"
 
     @pytest.mark.asyncio
+    async def test_voice_whisper_hallucination_keeps_french(self, whatsapp_service):
+        """
+        When session is French and Whisper acoustic detects French,
+        even if transcript text contains English hallucinated words,
+        the language must remain French.
+        """
+        transcribed_text = "and we will show you some of the things we need to"
+        session_lang = "fr"
+        whisper_lang = "fr"
+        text_lang = whatsapp_service._input_validator.detect_language(transcribed_text) # "en"
+        word_count = len(transcribed_text.split())
+
+        words = set(re.findall(r'\b\w+\b', transcribed_text.lower()))
+        french_keywords = {"oui", "non", "bonjour", "stage"}
+        has_french_keyword = bool(words & french_keywords)
+
+        if has_french_keyword:
+            detected_language = "fr"
+        elif session_lang == "fr" and whisper_lang == "fr":
+            detected_language = "fr"
+        elif text_lang in ["en", "fr"] and word_count >= 4 and whisper_lang != "fr":
+            detected_language = text_lang
+        else:
+            detected_language = session_lang or "fr"
+
+        assert detected_language == "fr"
+
+    @pytest.mark.asyncio
     async def test_voice_full_english_sentence_switches_to_english(self, whatsapp_service):
-        """A full English sentence (>= 3 words) properly switches to English."""
+        """A full English sentence switches to English when Whisper does NOT detect French."""
         transcribed_text = "I need an IT quote for my company"
         session_lang = "fr"
         whisper_lang = "en"
@@ -67,7 +95,9 @@ class TestVoiceLanguageInertia:
         
         if has_french_keyword:
             detected_language = "fr"
-        elif text_lang in ["en", "fr"] and word_count >= 3:
+        elif session_lang == "fr" and whisper_lang == "fr":
+            detected_language = "fr"
+        elif text_lang in ["en", "fr"] and word_count >= 4 and whisper_lang != "fr":
             detected_language = text_lang
         else:
             detected_language = session_lang

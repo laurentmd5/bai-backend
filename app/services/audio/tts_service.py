@@ -75,12 +75,12 @@ class EdgeTTSService:
     
     # Male voices
     VOICES = {
-        "en": "en-NG-AbeoNeural",      # Nigerian male
+        "en": "en-US-GuyNeural",      # Standard English male
         "fr": "fr-FR-HenriNeural",    # French male
     }
     
-    # Default speech rate (slower)
-    DEFAULT_RATE = "-20%"   # Slow down by 20%
+    # Default speech rate (natural speed)
+    DEFAULT_RATE = "+0%"   # Natural speed (slowdown removed)
     DEFAULT_VOLUME = "+0%"
     
     MAX_CACHE_SIZE = 100
@@ -95,7 +95,7 @@ class EdgeTTSService:
     async def synthesize(
         self,
         text: str,
-        language: str = "en",
+        language: str = "fr",
         rate: Optional[str] = None,
         volume: Optional[str] = None,
         voice: Optional[str] = None
@@ -106,7 +106,7 @@ class EdgeTTSService:
         Args:
             text: Text to speak
             language: Language code ('en' or 'fr')
-            rate: Speaking rate (e.g. "-20%", "+0%")
+            rate: Speaking rate (e.g. "+0%", "+10%")
             volume: Volume level
             voice: Specific voice name (overrides language mapping)
             
@@ -119,6 +119,16 @@ class EdgeTTSService:
         speech_text = clean_text_for_tts(text)
         if not speech_text:
             return None
+
+        # Content guard: If text clearly contains French markers or accents, never read it with an English voice
+        french_chars = any(c in speech_text for c in "éèêëàâôîïùûçÉÈÊËÀÂÔÎÏÙÛÇ")
+        french_words = {"bonjour", "salut", "merci", "candidature", "entretien", "poste", "stage", "entreprise", "nous", "vous", "votre", "notre", "avec", "pour"}
+        has_french_vocab = bool(set(re.findall(r'\b\w+\b', speech_text.lower())) & french_words)
+
+        resolved_language = language
+        if (french_chars or has_french_vocab) and resolved_language != "fr":
+            logger.info("tts_language_forced_to_french_due_to_content", detected_in_text=True)
+            resolved_language = "fr"
         
         # Voice selection
         if voice:
@@ -126,7 +136,7 @@ class EdgeTTSService:
         elif self._voice_override:
             selected_voice = self._voice_override
         else:
-            selected_voice = self.VOICES.get(language, self.VOICES["en"])
+            selected_voice = self.VOICES.get(resolved_language, self.VOICES["fr"])
         
         # Rate and volume selection
         selected_rate = rate or self._rate
