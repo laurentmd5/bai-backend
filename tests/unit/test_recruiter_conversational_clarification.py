@@ -5,6 +5,7 @@ Verifies that doubts, questions, and confusion do not blindly advance the questi
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
+from app.core.config import settings
 from app.services.recruitment.recruiter_agent import RecruiterAgent, SCREENING_QUESTIONS
 
 
@@ -37,7 +38,7 @@ async def test_recruiter_handles_unseen_ad_clarification(recruiter):
     assert res["recruiter_stage"] == "IN_INTERVIEW"
     assert res["step"] == 1
     # Must contain explanation and repeat Q1
-    assert "NETSYSTEME INFORMATIQUE" in res["message"]
+    assert settings.COMPANY_NAME in res["message"]
     assert SCREENING_QUESTIONS[0]["question"] in res["message"]
     # Answers must still be empty for Q1
     assert "q1_offer_knowledge" not in initial_state["answers"]
@@ -63,7 +64,7 @@ async def test_recruiter_handles_confusion_question(recruiter):
 
     assert res is not None
     assert res["recruiter_stage"] == "IN_INTERVIEW"
-    assert "NETSYSTEME" in res["message"]
+    assert settings.COMPANY_NAME in res["message"]
     assert SCREENING_QUESTIONS[0]["question"] in res["message"]
 
 
@@ -161,7 +162,7 @@ async def test_recruiter_handles_q1_negation(recruiter):
     assert res["recruiter_stage"] == "IN_INTERVIEW"
     assert res["step"] == 2
     # Must explain the context
-    assert "NETSYSTEME INFORMATIQUE" in res["message"]
+    assert settings.COMPANY_NAME in res["message"]
     assert "CDD ou CDI" in res["message"]
     # Must transition to Q2
     assert SCREENING_QUESTIONS[1]["question"] in res["message"]
@@ -192,5 +193,5 @@ async def test_recruiter_handles_job_vs_stage_objection(recruiter):
     assert initial_state["current_step"] == 1
     # Must explain the hiring sas and direct CV option
     assert "sas de recrutement" in res["message"]
-    assert "adiarraa@gmail.com" in res["message"]
+    assert "CV" in res["message"]
 

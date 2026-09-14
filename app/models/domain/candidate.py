@@ -1,5 +1,5 @@
-﻿"""
-Candidate Application domain model for NETSYSTEME recruitment.
+"""
+Candidate Application domain model for automated recruitment pipeline.
 """
 
 from typing import Optional, Dict, Any, List
@@ -51,7 +51,7 @@ class CandidateApplication(Base):
     raw_cv_text = Column(Text, nullable=True)
     parsed_profile = Column(JSON, nullable=True)
     
-    # Screening answers (5 NETSYSTEME questions)
+    # Screening interview answers
     answers_json = Column(JSON, nullable=True)
     
     # Scoring & Domain matching

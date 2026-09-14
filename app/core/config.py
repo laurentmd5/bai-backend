@@ -53,6 +53,21 @@ class Settings(BaseSettings):
         description="Application name for logging and headers"
     )
     
+    COMPANY_NAME: str = Field(
+        default="Entreprise",
+        description="Company name for user-facing responses and notifications"
+    )
+    
+    COMPANY_CONTACT_EMAIL: Optional[str] = Field(
+        default=None,
+        description="Public contact email for candidate or user inquiries"
+    )
+    
+    COMPANY_CONTACT_PHONE: Optional[str] = Field(
+        default=None,
+        description="Public contact phone for inquiries"
+    )
+    
     APP_VERSION: str = Field(
         default="4.0.0",
         description="Semantic version of the application"
@@ -733,8 +748,41 @@ class Settings(BaseSettings):
     )
     
     # =========================================================================
+    # SMTP & RECRUITMENT NOTIFICATION SETTINGS
+    # =========================================================================
+    SMTP_HOST: str = Field(
+        default="smtp.gmail.com",
+        description="SMTP server host"
+    )
+    SMTP_PORT: int = Field(
+        default=587,
+        description="SMTP server port (587 for TLS, 465 for SSL)"
+    )
+    SMTP_USER: Optional[str] = Field(
+        default=None,
+        description="SMTP username (e.g. sender email)"
+    )
+    SMTP_PASSWORD: Optional[SecretStr] = Field(
+        default=None,
+        description="SMTP application password"
+    )
+    SMTP_FROM: Optional[str] = Field(
+        default=None,
+        description="Sender email display name and address"
+    )
+    SMTP_USE_TLS: bool = Field(
+        default=True,
+        description="Use STARTTLS (port 587)"
+    )
+    RECRUITER_NOTIFICATION_EMAIL: Optional[str] = Field(
+        default=None,
+        description="Target email for candidate applications notification"
+    )
+    
+    # =========================================================================
     # COMPUTED PROPERTIES
     # =========================================================================
+
     @property
     def is_production(self) -> bool:
         """Check if running in production environment."""

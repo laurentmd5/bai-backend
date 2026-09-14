@@ -1,16 +1,19 @@
 """
-Recruiter AI Agent for NETSYSTEME INFORMATIQUE.
-Manages candidate screening interview flow (5 NETSYSTEME questions) and stores candidate profiles.
+Recruiter AI Agent for automated candidate screening.
+Manages candidate screening interview flow (5 screening questions) and stores candidate profiles.
 """
 
+import asyncio
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 import json
 import re
 
+from app.core.config import settings
 from app.core.logging import get_logger
-
+from app.repositories.candidate_repository import CandidateApplicationRepository
 from app.services.cache.redis_cache import cache_service, CacheNamespace
+from app.services.notification.email_service import email_service
 from app.services.recruitment.cv_parser_service import cv_parser_service
 
 logger = get_logger(__name__)
@@ -26,7 +29,7 @@ SCREENING_QUESTIONS = [
     },
     {
         "id": "q2_availability",
-        "question": "2️⃣ Quelle est votre disponibilité pour commencer le stage chez NETSYSTEME ?"
+        "question": "2️⃣ Quelle est votre disponibilité pour commencer le stage au sein de notre entreprise ?"
     },
     {
         "id": "q3_conditions_agreement",
@@ -146,9 +149,10 @@ class RecruiterAgent:
         first_q = SCREENING_QUESTIONS[0]["question"]
         name_mention = f" {state['candidate_name']}" if state.get("candidate_name") else ""
         role_mention = f" pour un profil **{role}**" if role else ""
+        company_name = settings.COMPANY_NAME or "notre entreprise"
         
         intro_msg = (
-            f"Bonjour{name_mention} ! Chez **NETSYSTEME INFORMATIQUE**, nous sommes constamment à l'écoute des talents"
+            f"Bonjour{name_mention} ! Chez **{company_name}**, nous sommes constamment à l'écoute des talents"
             f"{role_mention}.\n\n"
             f"Afin d'évaluer votre profil et de transmettre votre candidature à notre Direction Technique, "
             f"merci de répondre à nos **5 questions de présélection** (vous pouvez également nous envoyer votre CV au format PDF/Word à tout moment) :\n\n"
@@ -193,11 +197,12 @@ class RecruiterAgent:
         candidate_name = state.get("candidate_name", "Candidat")
         name_mention = f" {candidate_name}" if candidate_name and candidate_name.lower() != "candidat" else ""
         match_score = parsed_cv.get("match_score", 0)
+        company_name = settings.COMPANY_NAME or "notre entreprise"
         
         welcome_msg = (
             f"📄 Merci{name_mention} ! Nous avons bien reçu et analysé votre CV (`{filename or 'CV'}`). "
             f"Votre profil a été pré-qualifié avec un score d'adéquation de **{match_score}%**.\n\n"
-            f"Afin de finaliser l'évaluation de votre candidature pour l'équipe de **NETSYSTEME INFORMATIQUE**, "
+            f"Afin de finaliser l'évaluation de votre candidature pour l'équipe de **{company_name}**, "
             f"merci de répondre à nos **5 questions de présélection** :\n\n"
             f"{first_q}"
         )
@@ -270,16 +275,18 @@ class RecruiterAgent:
         is_direct_question = "?" in message or any(msg_lower.startswith(w) for w in ["pourquoi", "comment", "où", "quel", "quelle", "c'est quoi", "qui"])
 
         if is_confusion or is_direct_question:
+            company_name = settings.COMPANY_NAME or "notre entreprise"
+            app_name = settings.APP_NAME or "votre assistant"
             if current_step == 0 or "annonce" in msg_lower or "stage" in msg_lower or "quoi" in msg_lower:
                 explanation = (
-                    "Pas de souci, je vous explique ! Chez **NETSYSTEME INFORMATIQUE**, nous accueillons régulièrement "
+                    f"Pas de souci, je vous explique ! Chez **{company_name}**, nous accueillons régulièrement "
                     "des talents techniques (Développement Web/App, Réseaux, Systèmes, Énergie Solaire) pour une période "
                     "d'immersion et d'évaluation, avec de réelles perspectives d'embauche en contrat (CDD/CDI) selon les performances.\n\n"
                     "Afin de transmettre au mieux votre candidature à notre Direction Technique, merci de nous préciser :\n\n"
                 )
             elif "problème" in msg_lower or "comprends" in msg_lower:
                 explanation = (
-                    "Je vous rassure, tout fonctionne bien ! Je suis NetBot et je vous pose simplement 5 questions courtes "
+                    f"Je vous rassure, tout fonctionne bien ! Je suis {app_name} et je vous pose simplement 5 questions courtes "
                     "pour pré-qualifier votre profil auprès de notre équipe technique.\n\n"
                     "Pour continuer votre évaluation :\n\n"
                 )
@@ -320,10 +327,11 @@ class RecruiterAgent:
             state["aborted_at"] = datetime.utcnow().isoformat()
             await self.save_state(session_id, state)
             logger.info("recruitment_interview_aborted", session_id=session_id)
+            company_name = settings.COMPANY_NAME or "notre entreprise"
             return {
                 "message": (
                     "C'est bien noté, j'interromps le questionnaire de candidature. "
-                    "Comment puis-je vous renseigner sur nos services et expertises chez **NETSYSTEME INFORMATIQUE** ?"
+                    f"Comment puis-je vous renseigner sur nos services et expertises chez **{company_name}** ?"
                 ),
                 "session_id": session_id,
                 "recruiter_stage": "ABORTED",
@@ -334,15 +342,18 @@ class RecruiterAgent:
         # 2. Check for "Job vs Stage" objection
         if self.is_job_vs_stage_objection(user_message):
             candidate_name_val = state.get("candidate_name")
-            name_prefix = f"{candidate_name_val}, " if candidate_name_val and candidate_name_val.lower() != "candidat" else ""
+            name_prefix = f" {candidate_name_val}" if candidate_name_val and candidate_name_val.lower() != "candidat" else ""
+            company_name = settings.COMPANY_NAME or "notre entreprise"
+            contact_email = settings.COMPANY_CONTACT_EMAIL or settings.RECRUITER_NOTIFICATION_EMAIL
+            email_info = f" par email à **{contact_email}**" if contact_email else ""
             objection_msg = (
-                f"C'est tout à fait compréhensible {name_prefix}! Chez **NETSYSTEME INFORMATIQUE**, pour tous nos profils "
+                f"C'est tout à fait compréhensible{name_prefix} ! Chez **{company_name}**, pour tous nos profils "
                 f"techniques (Développement Web/App, Réseaux, Systèmes, Énergie Solaire), ce stage d'immersion et d'évaluation "
                 f"constitue justement notre sas de recrutement direct permettant de valider les compétences pratiques sur des projets clients "
                 f"avant la délivrance d'un contrat d'embauche (**CDD ou CDI**).\n\n"
                 f"📄 **Pour les profils expérimentés / seniors** :\n"
                 f"Si vous possédez déjà une solide expérience et préférez postuler directement sans passer par cette étape de pré-qualification, "
-                f"vous pouvez envoyer directement votre CV détaillé à la Direction Générale (M. Ameth DIARRA) par email à **adiarraa@gmail.com** "
+                f"vous pouvez envoyer directement votre CV détaillé à la Direction{email_info} "
                 f"ou nous le transmettre ici-même au format PDF/Word.\n\n"
                 f"Souhaitez-vous poursuivre l'évaluation pour cette opportunité, ou préférez-vous nous transmettre directement votre CV ?"
             )
@@ -362,16 +373,17 @@ class RecruiterAgent:
         )
         if is_q1_negation:
             candidate_name_val = state.get("candidate_name")
-            name_prefix = f"{candidate_name_val}, " if candidate_name_val and candidate_name_val.lower() != "candidat" else ""
+            name_prefix = f" {candidate_name_val}" if candidate_name_val and candidate_name_val.lower() != "candidat" else ""
+            company_name = settings.COMPANY_NAME or "notre entreprise"
             q1_explanation = (
-                f"Aucun souci {name_prefix}! Je vous résume le cadre : chez **NETSYSTEME INFORMATIQUE**, nous accueillons régulièrement "
+                f"Aucun souci{name_prefix} ! Je vous résume le cadre : chez **{company_name}**, nous accueillons régulièrement "
                 f"des profils techniques pour une phase d'immersion et d'évaluation pratique. Cette période permet de tester vos compétences "
                 f"sur le terrain et débouche directement sur un contrat d'embauche (**CDD ou CDI**) selon vos performances.\n\n"
                 f"Afin de transmettre au mieux votre dossier à notre Direction Technique, pourriez-vous me préciser : \n\n"
                 f"{SCREENING_QUESTIONS[1]['question']}"
             )
             q_id = SCREENING_QUESTIONS[0]["id"]
-            state["answers"][q_id] = "Non (briefé par NetBot)"
+            state["answers"][q_id] = "Non (briefé par l'assistant)"
             state["current_step"] = 1
             await self.save_state(session_id, state)
             logger.info("recruitment_q1_negation_handled", session_id=session_id)
@@ -430,12 +442,68 @@ class RecruiterAgent:
             candidate_name_val = state.get("candidate_name")
             name_suffix = f", {candidate_name_val}" if candidate_name_val and candidate_name_val.lower() != "candidat" else ""
 
-            
-            has_cv = bool(state.get("cv_parsed"))
+            phone_val = state.get("phone_number") or state.get("candidate_phone")
+            email_val = state.get("candidate_email")
+            answers_dict = state.get("answers", {})
+            cv_info = state.get("cv_parsed") or {}
+            cv_filename = cv_info.get("filename")
+            raw_cv_text = cv_info.get("raw_text")
+            match_score = float(cv_info.get("match_score", 0.0))
+            target_domains = cv_info.get("matched_domains") or []
+
+            # 1. Persist application to PostgreSQL asynchronously
+            try:
+                candidate_repo = CandidateApplicationRepository()
+                await candidate_repo.save_application(
+                    full_name=candidate_name_val or "Candidat",
+                    phone_number=phone_val,
+                    email=email_val,
+                    session_id=session_id,
+                    channel=channel,
+                    answers=answers_dict,
+                    parsed_cv=cv_info if cv_info else None,
+                    cv_filename=cv_filename,
+                    raw_cv_text=raw_cv_text,
+                    match_score=match_score,
+                    target_domains=target_domains,
+                )
+                await candidate_repo.close()
+                logger.info("recruitment_db_persistence_success", session_id=session_id)
+            except Exception as db_err:
+                logger.error("recruitment_db_persistence_failed", session_id=session_id, error=str(db_err))
+
+            # 2. Trigger non-blocking email notification in background
+            try:
+                asyncio.create_task(
+                    email_service.send_recruitment_notification(
+                        full_name=candidate_name_val or "Candidat",
+                        phone_number=phone_val,
+                        email=email_val,
+                        channel=channel,
+                        answers=answers_dict,
+                        cv_info=cv_info if cv_info else None,
+                        match_score=match_score,
+                        target_domains=target_domains,
+                    )
+                )
+            except Exception as email_err:
+                logger.error("recruitment_email_trigger_failed", session_id=session_id, error=str(email_err))
+
+            has_cv = bool(cv_info)
+            company_label = settings.COMPANY_NAME or "notre entreprise"
+            contact_email = settings.COMPANY_CONTACT_EMAIL or settings.RECRUITER_NOTIFICATION_EMAIL
+            contact_phone = settings.COMPANY_CONTACT_PHONE
+
+            email_send_msg = f" ou par email à **{contact_email}**" if contact_email else ""
+            reach_email_msg = f" par email à **{contact_email}**" if contact_email else ""
+            reach_phone_msg = f" ou au **{contact_phone}**" if contact_phone else ""
+
+            reach_info = ""
+            if reach_email_msg or reach_phone_msg:
+                reach_info = f"\n\nVous pouvez également nous joindre directement{reach_email_msg}{reach_phone_msg}."
+
             if has_cv:
-                cv_info = state.get("cv_parsed") or {}
-                match_score = cv_info.get("match_score", 0)
-                score_mention = f" (Score de matching : **{match_score}%**)" if match_score else ""
+                score_mention = f" (Score de matching : **{match_score:.0f}%**)" if match_score else ""
                 dossier_text = (
                     f"Votre dossier complet de candidature (**CV analysé{score_mention} + Réponses aux 5 questions de présélection**)"
                 )
@@ -446,18 +514,17 @@ class RecruiterAgent:
                 )
                 cv_instruction = (
                     "📄 **Pour compléter et valoriser au mieux votre dossier** :\n"
-                    "N'hésitez pas à nous envoyer votre **CV (au format PDF ou Word)** directement ici sur WhatsApp ou par email à **adiarraa@gmail.com**.\n\n"
+                    f"N'hésitez pas à nous envoyer votre **CV (au format PDF ou Word)** directement ici sur WhatsApp{email_send_msg}.\n\n"
                 )
 
             final_response = (
                 f"✅ **Merci infiniment pour vos réponses{name_suffix} !**\n\n"
-                f"{dossier_text} et transmises à la Direction Générale (M. Ameth DIARRA) "
-                f"et à notre équipe technique chez **NETSYSTEME INFORMATIQUE**.\n\n"
+                f"{dossier_text} et transmises à l'équipe de recrutement chez **{company_label}**.\n\n"
                 f"{cv_instruction}"
                 f"📌 **Prochaines étapes** :\n"
                 f"- Examen approfondi de votre profil sous 48h à 72h.\n"
-                f"- Si votre profil est retenu, nous vous contacterons directement par téléphone ou WhatsApp pour un entretien technique au siège (Cité Keur Gorgui, Immeuble Horizon).\n\n"
-                f"Vous pouvez également nous joindre directement par email à **adiarraa@gmail.com** ou au **+221 33 827 28 45**."
+                f"- Si votre profil est retenu, nous vous contacterons directement par téléphone ou WhatsApp pour convenir d'un entretien technique.\n"
+                f"{reach_info}"
             )
             
             logger.info("recruitment_interview_completed", session_id=session_id, candidate=candidate_name_val, has_cv=has_cv)

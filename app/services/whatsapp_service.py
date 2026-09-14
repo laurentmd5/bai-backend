@@ -707,10 +707,14 @@ class WhatsAppService:
             client=client
         )
 
+        contact_email = settings.COMPANY_CONTACT_EMAIL or settings.RECRUITER_NOTIFICATION_EMAIL
+        contact_phone = settings.COMPANY_CONTACT_PHONE
+
         if not media_bytes:
+            email_info = f" ou l'adresser par email à {contact_email}" if contact_email else ""
             await self.send_text_message(
                 to_number=phone_number,
-                text="Impossible de télécharger votre document. Veuillez le renvoyer ou l'adresser à adiarraa@gmail.com."
+                text=f"Impossible de télécharger votre document. Veuillez le renvoyer{email_info}."
             )
             return
 
@@ -742,13 +746,12 @@ class WhatsAppService:
 
         except Exception as e:
             logger.error("whatsapp_cv_processing_error", error=str(e), phone=phone_number[-4:])
+            email_mention = f" par email à **{contact_email}**" if contact_email else ""
+            phone_mention = f" ou par téléphone au **{contact_phone}**" if contact_phone else ""
+            reach_text = f" Nous vous invitons à adresser votre candidature{email_mention}{phone_mention}." if (email_mention or phone_mention) else ""
             await self.send_text_message(
                 to_number=phone_number,
-                text=(
-                    f"✅ Document `{filename}` bien reçu. "
-                    "Nous vous invitons également à adresser votre candidature détaillée à notre direction à **adiarraa@gmail.com** "
-                    "ou par téléphone au **+221 33 827 28 45**."
-                )
+                text=f"✅ Document `{filename}` bien reçu.{reach_text}"
             )
     
     async def send_text_message(

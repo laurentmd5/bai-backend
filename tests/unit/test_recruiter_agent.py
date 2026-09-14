@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit tests for Recruiter Agent.
 Tests screening questionnaire progression, state persistence, text intent detection, personalization, and completion.
 """
@@ -103,7 +103,7 @@ class TestRecruiterAgent:
         assert "CV analysé" not in final_res["message"]
         # Must invite candidate to send CV
         assert "Pour compléter et valoriser au mieux votre dossier" in final_res["message"]
-        assert "adiarraa@gmail.com" in final_res["message"]
+        assert "CV" in final_res["message"]
 
     @pytest.mark.asyncio
     async def test_full_cv_interview_flow(self):
