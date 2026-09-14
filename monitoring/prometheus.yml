@@ -1,5 +1,5 @@
 ﻿# =============================================================================
-# Prometheus Configuration for SRE Observability (BARROW / NetBot Platform)
+# Prometheus Configuration for SRE Observability (NETSYSTEME / BAI Platform)
 # =============================================================================
 
 global:
@@ -8,7 +8,7 @@ global:
   scrape_timeout: 10s
 
 rule_files:
-  - "alert_rules.yml"
+  - "prometheus_alerts.yml"
 
 scrape_configs:
   # ---------------------------------------------------------------------------
