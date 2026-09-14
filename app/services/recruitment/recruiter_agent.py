@@ -9,6 +9,7 @@ from datetime import datetime
 import json
 import re
 
+from app.core.metrics import record_recruitment_application, record_cv_parsed
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.repositories.candidate_repository import CandidateApplicationRepository
@@ -180,6 +181,7 @@ class RecruiterAgent:
         Parses the CV and starts or updates the 5-step screening interview.
         """
         parsed_cv = await cv_parser_service.parse_cv_text(raw_text, filename=filename)
+        record_cv_parsed(status="success" if parsed_cv else "failed")
         
         state = await self.get_state(session_id)
         state["stage"] = "IN_INTERVIEW"
@@ -481,6 +483,7 @@ class RecruiterAgent:
                     target_domains=combined_domains,
                 )
                 await candidate_repo.close()
+                record_recruitment_application(channel=channel, status="completed")
                 logger.info(
                     "recruitment_db_persistence_success",
                     session_id=session_id,

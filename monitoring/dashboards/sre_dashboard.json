@@ -1,5 +1,7 @@
-﻿{
-  "annotations": { "list": [] },
+{
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -9,185 +11,617 @@
   "panels": [
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "id": 100,
-      "title": "⚡ 1. Four Golden Signals — Overview",
+      "title": "\ud83d\udee1\ufe0f 1. Service Level Objectives (SLOs) & Golden Signals",
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "text": "DOWN"
+                },
+                "1": {
+                  "color": "green",
+                  "text": "HEALTHY"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "up{job=~\"bai-backend|barrow-backend\"} or vector(1)",
+          "legendFormat": "Backend"
+        }
+      ],
+      "title": "Backend Health",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
           "unit": "reqps"
         }
       },
-      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 1 },
-      "id": 1,
-      "title": "Throughput (RPS par Méthode)",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "sum(rate(bot_http_requests_total[1m])) by (method)",
-          "legendFormat": "{{method}}"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "unit": "ms"
-        }
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 4,
+        "y": 1
       },
-      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 1 },
       "id": 2,
-      "title": "Latence Chat (P50, P95, P99)",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.50, sum(rate(bot_chat_latency_ms_bucket[1m])) by (le))",
-          "legendFormat": "P50"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(bot_chat_latency_ms_bucket[1m])) by (le))",
-          "legendFormat": "P95"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(bot_chat_latency_ms_bucket[1m])) by (le))",
-          "legendFormat": "P99"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 0.5 },
-              { "color": "red", "value": 1.0 }
-            ]
-          },
-          "unit": "percent"
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ]
         }
       },
-      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 1 },
-      "id": 3,
-      "title": "Taux d'Erreurs 5xx (%)",
-      "type": "gauge",
       "targets": [
         {
-          "expr": "(sum(rate(bot_http_requests_total{status=~\"5..\"}[5m])) / sum(rate(bot_http_requests_total[5m]))) * 100",
+          "expr": "sum(rate(bot_http_requests_total[1m])) or vector(0)",
+          "legendFormat": "RPS Global"
+        }
+      ],
+      "title": "Traffic Global (RPS)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 9,
+        "y": 1
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * (sum(rate(bot_http_requests_total{status=~\"5..\"}[5m])) or vector(0)) / (sum(rate(bot_http_requests_total[5m])) > 0 or vector(1))",
           "legendFormat": "5xx %"
         }
-      ]
+      ],
+      "title": "Taux d'Erreurs 5xx (%)",
+      "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "unit": "s",
           "thresholds": {
-            "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "orange", "value": 30 },
-              { "color": "red", "value": 50 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1.5
+              },
+              {
+                "color": "red",
+                "value": 3.0
+              }
             ]
-          },
-          "unit": "short"
+          }
         }
       },
-      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 1 },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 14,
+        "y": 1
+      },
       "id": 4,
-      "title": "Requêtes en vol (In-Flight)",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "sum(bot_http_requests_in_flight)",
-          "legendFormat": "En vol"
-        }
-      ]
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 8 },
-      "id": 200,
-      "title": "🧠 2. Moteur IA, LLM & RAG Vectoriel",
-      "type": "row"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "unit": "short"
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ]
         }
       },
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 9 },
-      "id": 5,
-      "title": "Tokens LLM Consommés (Prompt vs Completion)",
-      "type": "timeseries",
       "targets": [
         {
-          "expr": "sum(rate(bot_llm_tokens_total[1m])) by (type)",
-          "legendFormat": "{{type}}"
+          "expr": "histogram_quantile(0.95, sum(rate(bot_http_request_duration_seconds_bucket[5m])) by (le)) or vector(0)",
+          "legendFormat": "HTTP p95"
         }
-      ]
+      ],
+      "title": "Latence HTTP P95",
+      "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "unit": "percent",
+          "thresholds": {
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 75
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 19,
+        "y": 1
+      },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "bot_cache_hit_ratio or vector(0)",
+          "legendFormat": "Cache Hit"
+        }
+      ],
+      "title": "Hit Ratio Redis (%)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "sum(rate(bot_http_requests_total{status=~\"2..\"}[1m])) by (endpoint)",
+          "legendFormat": "2xx - {{endpoint}}"
+        },
+        {
+          "expr": "sum(rate(bot_http_requests_total{status=~\"4..\"}[1m])) by (endpoint)",
+          "legendFormat": "4xx - {{endpoint}}"
+        },
+        {
+          "expr": "sum(rate(bot_http_requests_total{status=~\"5..\"}[1m])) by (endpoint)",
+          "legendFormat": "5xx - {{endpoint}}"
+        }
+      ],
+      "title": "D\u00e9bit HTTP par Statut & Endpoint Normalis\u00e9",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
           "unit": "s"
         }
       },
-      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 9 },
-      "id": 6,
-      "title": "Durée Recherche RAG Qdrant (P95/P99)",
-      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "id": 7,
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(bot_rag_retrieval_duration_seconds_bucket[1m])) by (le))",
-          "legendFormat": "RAG P95"
+          "expr": "histogram_quantile(0.50, sum(rate(bot_http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "M\u00e9diane (p50)"
         },
         {
-          "expr": "histogram_quantile(0.99, sum(rate(bot_rag_retrieval_duration_seconds_bucket[1m])) by (le))",
-          "legendFormat": "RAG P99"
+          "expr": "histogram_quantile(0.95, sum(rate(bot_http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "Queue (p95)"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(bot_http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "Pire cas (p99)"
         }
-      ]
+      ],
+      "title": "Quantiles de Latence Utilisateur (P50, P95, P99)",
+      "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "id": 200,
+      "title": "\ud83c\udfa4 2. Pipeline Vocal & Exp\u00e9rience WhatsApp",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
           "unit": "short"
         }
       },
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 9 },
-      "id": 7,
-      "title": "Violations de Sécurité (Guardrails)",
-      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 13
+      },
+      "id": 8,
       "targets": [
         {
-          "expr": "sum(rate(bot_security_violations_total[5m])) by (violation_type)",
-          "legendFormat": "{{violation_type}}"
+          "expr": "sum(rate(bot_whatsapp_messages_received_total[5m])) by (type)",
+          "legendFormat": "Message : {{type}}"
         }
-      ]
+      ],
+      "title": "Ingestion WhatsApp (Texte vs Vocal vs Document)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 13
+      },
+      "id": 9,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(bot_whisper_transcription_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "Whisper STT (P95)"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(bot_tts_synthesis_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "Edge TTS Synth\u00e8se (P95)"
+        }
+      ],
+      "title": "Latence Pipeline Audio (Whisper vs TTS)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 13
+      },
+      "id": 10,
+      "targets": [
+        {
+          "expr": "sum(rate(bot_voice_message_processed_total[5m])) by (status)",
+          "legendFormat": "Statut : {{status}}"
+        }
+      ],
+      "title": "Taux de R\u00e9ussite & \u00c9checs Vocaux WhatsApp",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "id": 300,
+      "title": "\ud83e\udde0 3. Moteur RAG & Performance LLM Gemini",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 21
+      },
+      "id": 11,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(bot_rag_retrieval_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "Recherche Qdrant+RRF (P95)"
+        }
+      ],
+      "title": "Temps de Recherche RAG Hybride (Dense + BM25)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 21
+      },
+      "id": 12,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(bot_llm_generation_duration_ms_bucket[5m])) by (le, provider))",
+          "legendFormat": "G\u00e9n\u00e9ration LLM ({{provider}})"
+        }
+      ],
+      "title": "Dur\u00e9e de G\u00e9n\u00e9ration LLM (Gemini)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 21
+      },
+      "id": 13,
+      "targets": [
+        {
+          "expr": "sum(rate(bot_rag_fallbacks_total[5m]))",
+          "legendFormat": "Fallbacks RAG (Faible confiance)"
+        },
+        {
+          "expr": "sum(rate(bot_security_violations_total[5m])) by (violation_type)",
+          "legendFormat": "S\u00e9curit\u00e9 : {{violation_type}}"
+        }
+      ],
+      "title": "Qualit\u00e9 RAG (Fallbacks) & S\u00e9curit\u00e9 Guardrails",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
+      "id": 400,
+      "title": "\ud83d\udcbc 4. Funnel M\u00e9tier & Recrutement RH",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 29
+      },
+      "id": 14,
+      "targets": [
+        {
+          "expr": "sum(increase(bot_recruitment_applications_total[1h])) by (channel, status)",
+          "legendFormat": "Candidatures ({{channel}} - {{status}})"
+        }
+      ],
+      "title": "Candidatures RH Enregistr\u00e9es (Augmentation Horaire)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 29
+      },
+      "id": 15,
+      "targets": [
+        {
+          "expr": "sum(increase(bot_recruitment_cv_parsed_total[1h])) by (status)",
+          "legendFormat": "CVs Trait\u00e9s : {{status}}"
+        },
+        {
+          "expr": "sum(bot_http_requests_in_flight)",
+          "legendFormat": "Requ\u00eates en vol (Saturation)"
+        }
+      ],
+      "title": "Parsing de CVs Re\u00e7us & Saturation In-Flight",
+      "type": "timeseries"
     }
   ],
+  "refresh": "10s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["sre", "netsysteme", "observability", "golden-signals"],
-  "time": { "from": "now-1h", "to": "now" },
-  "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m"] },
+  "tags": [
+    "sre",
+    "netsysteme",
+    "genai",
+    "production",
+    "observability"
+  ],
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
   "timezone": "browser",
-  "title": "NETSYSTEME Bot — SRE Observability Dashboard"
+  "title": "NETSYSTEME Bot \u2014 Cockpit Observabilit\u00e9 SRE",
+  "uid": "netsysteme-sre-cockpit",
+  "version": 2
 }
