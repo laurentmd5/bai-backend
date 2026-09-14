@@ -232,6 +232,23 @@ class RecruiterAgent:
         return bool(re.search(pattern, message, re.IGNORECASE))
 
 
+    def is_job_vs_stage_objection(self, message: str) -> bool:
+        """Check if candidate objects to an internship and insists on a direct job/CDI/CDD."""
+        if not message:
+            return False
+        pattern = (
+            r"\b("
+            r"pas\s+(de\s+|un\s+|le\s+)?stage|"
+            r"veux\s+(un\s+|du\s+)?(emploi|travail|poste|boulot|cdi|cdd)|"
+            r"cherche\s+(un\s+|du\s+)?(emploi|travail|poste|boulot|cdi|cdd)|"
+            r"emploi\s+direct|travail\s+direct|recrutement\s+direct|embauche\s+directe?|"
+            r"uniquement\s+(un\s+)?(emploi|travail|cdi|cdd)|"
+            r"pas\s+int[eé]ress[eé]\s+par\s+(un\s+|le\s+)?stage|"
+            r"pas\s+de\s+b[eé]n[eé]volat|pas\s+l[aà]\s+pour\s+(un\s+)?stage"
+            r")\b"
+        )
+        return bool(re.search(pattern, message, re.IGNORECASE))
+
     def is_clarification_or_question(self, message: str, current_step: int = 0) -> Tuple[bool, Optional[str]]:
         """
         Check if user message expresses confusion, doubt, or asks a question about the process.
@@ -314,12 +331,66 @@ class RecruiterAgent:
                 "total_steps": 5,
             }
 
-        # 2. Check for question, doubt or confusion (Clarification without advancing step)
+        # 2. Check for "Job vs Stage" objection
+        if self.is_job_vs_stage_objection(user_message):
+            candidate_name_val = state.get("candidate_name")
+            name_prefix = f"{candidate_name_val}, " if candidate_name_val and candidate_name_val.lower() != "candidat" else ""
+            objection_msg = (
+                f"C'est tout à fait compréhensible {name_prefix}! Chez **NETSYSTEME INFORMATIQUE**, pour tous nos profils "
+                f"techniques (Développement Web/App, Réseaux, Systèmes, Énergie Solaire), ce stage d'immersion et d'évaluation "
+                f"constitue justement notre sas de recrutement direct permettant de valider les compétences pratiques sur des projets clients "
+                f"avant la délivrance d'un contrat d'embauche (**CDD ou CDI**).\n\n"
+                f"📄 **Pour les profils expérimentés / seniors** :\n"
+                f"Si vous possédez déjà une solide expérience et préférez postuler directement sans passer par cette étape de pré-qualification, "
+                f"vous pouvez envoyer directement votre CV détaillé à la Direction Générale (M. Ameth DIARRA) par email à **adiarraa@gmail.com** "
+                f"ou nous le transmettre ici-même au format PDF/Word.\n\n"
+                f"Souhaitez-vous poursuivre l'évaluation pour cette opportunité, ou préférez-vous nous transmettre directement votre CV ?"
+            )
+            logger.info("recruitment_job_vs_stage_objection_handled", session_id=session_id, step=step)
+            return {
+                "message": objection_msg,
+                "session_id": session_id,
+                "recruiter_stage": "IN_INTERVIEW",
+                "step": step + 1,
+                "total_steps": 5,
+                "fallback_triggered": False,
+            }
+
+        # 3. Check for negative answer to Q1 (Offer knowledge)
+        is_q1_negation = (step == 0) and bool(
+            re.search(r"^(non|pas encore|pas du tout|jamais|pas vu|aucune idée|aucune)\b", user_message.strip(), re.IGNORECASE)
+        )
+        if is_q1_negation:
+            candidate_name_val = state.get("candidate_name")
+            name_prefix = f"{candidate_name_val}, " if candidate_name_val and candidate_name_val.lower() != "candidat" else ""
+            q1_explanation = (
+                f"Aucun souci {name_prefix}! Je vous résume le cadre : chez **NETSYSTEME INFORMATIQUE**, nous accueillons régulièrement "
+                f"des profils techniques pour une phase d'immersion et d'évaluation pratique. Cette période permet de tester vos compétences "
+                f"sur le terrain et débouche directement sur un contrat d'embauche (**CDD ou CDI**) selon vos performances.\n\n"
+                f"Afin de transmettre au mieux votre dossier à notre Direction Technique, pourriez-vous me préciser : \n\n"
+                f"{SCREENING_QUESTIONS[1]['question']}"
+            )
+            q_id = SCREENING_QUESTIONS[0]["id"]
+            state["answers"][q_id] = "Non (briefé par NetBot)"
+            state["current_step"] = 1
+            await self.save_state(session_id, state)
+            logger.info("recruitment_q1_negation_handled", session_id=session_id)
+            return {
+                "message": q1_explanation,
+                "session_id": session_id,
+                "recruiter_stage": "IN_INTERVIEW",
+                "step": 2,
+                "total_steps": 5,
+                "fallback_triggered": False,
+            }
+
+        # 4. Check for question, doubt or confusion (Clarification without advancing step)
         is_clarification, explanation_prefix = self.is_clarification_or_question(user_message, current_step=step)
         if is_clarification and step < len(SCREENING_QUESTIONS):
             current_q = SCREENING_QUESTIONS[step]["question"]
             clarification_msg = f"{explanation_prefix}{current_q}"
             logger.info("recruitment_clarification_provided", session_id=session_id, step=step)
+
             return {
                 "message": clarification_msg,
                 "session_id": session_id,
@@ -329,7 +400,8 @@ class RecruiterAgent:
                 "fallback_triggered": False,
             }
 
-        # 3. Valid answer: record and advance to next question
+        # 5. Valid answer: record and advance to next question
+
         if step < len(SCREENING_QUESTIONS):
             q_id = SCREENING_QUESTIONS[step]["id"]
             state["answers"][q_id] = user_message.strip()
