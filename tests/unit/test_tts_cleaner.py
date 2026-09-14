@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit tests for TTS text cleaning.
 Tests emoji removal, keycap replacement, markdown stripping, and speech normalization.
 """
@@ -32,3 +32,22 @@ class TestTTSCleaner:
         """Empty string or None must return empty string."""
         assert clean_text_for_tts("") == ""
         assert clean_text_for_tts(None) == ""
+
+    def test_cleans_recruiter_completion_and_bullet_points(self):
+        """Full recruitment screening completion text must be stripped of emojis, markdown, and bullets."""
+        recruiter_msg = (
+            "✅ **Merci infiniment pour vos réponses !**\n\n"
+            "Vos réponses aux **5 questions de présélection** ont été enregistrées avec succès (Score d'évaluation : **85%**) "
+            "et transmises à l'équipe de recrutement chez **NETSYSTEME**.\n\n"
+            "📌 **Prochaines étapes** :\n"
+            "- Examen approfondi de votre profil sous 48h à 72h.\n"
+            "- Si votre profil est retenu, nous vous contacterons directement par téléphone ou WhatsApp.\n\n"
+            "Vous pouvez également nous joindre directement au **+221 33 800 00 00**."
+        )
+        cleaned = clean_text_for_tts(recruiter_msg)
+        assert "✅" not in cleaned
+        assert "📌" not in cleaned
+        assert "**" not in cleaned
+        assert "- Examen" not in cleaned
+        assert "Examen approfondi" in cleaned
+        assert "Merci infiniment" in cleaned
