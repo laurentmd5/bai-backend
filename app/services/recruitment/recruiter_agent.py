@@ -448,8 +448,21 @@ class RecruiterAgent:
             cv_info = state.get("cv_parsed") or {}
             cv_filename = cv_info.get("filename")
             raw_cv_text = cv_info.get("raw_text")
-            match_score = float(cv_info.get("match_score", 0.0))
-            target_domains = cv_info.get("matched_domains") or []
+
+            # Calculate unified score and extract domains from questionnaire
+            q_score, q_domains, q_breakdown = cv_parser_service.evaluate_questionnaire_score(answers_dict)
+            cv_match_score = float(cv_info.get("match_score", 0.0)) if cv_info else 0.0
+            cv_domains = cv_info.get("matched_domains") or []
+
+            final_match_score = cv_parser_service.combine_scores(cv_match_score, q_score)
+            combined_domains = list(dict.fromkeys(cv_domains + q_domains))
+
+            # Store in state
+            state["questionnaire_score"] = q_score
+            state["questionnaire_breakdown"] = q_breakdown
+            state["match_score"] = final_match_score
+            state["target_domains"] = combined_domains
+            await self.save_state(session_id, state)
 
             # 1. Persist application to PostgreSQL asynchronously
             try:
@@ -464,11 +477,16 @@ class RecruiterAgent:
                     parsed_cv=cv_info if cv_info else None,
                     cv_filename=cv_filename,
                     raw_cv_text=raw_cv_text,
-                    match_score=match_score,
-                    target_domains=target_domains,
+                    match_score=final_match_score,
+                    target_domains=combined_domains,
                 )
                 await candidate_repo.close()
-                logger.info("recruitment_db_persistence_success", session_id=session_id)
+                logger.info(
+                    "recruitment_db_persistence_success",
+                    session_id=session_id,
+                    final_score=final_match_score,
+                    domains=combined_domains
+                )
             except Exception as db_err:
                 logger.error("recruitment_db_persistence_failed", session_id=session_id, error=str(db_err))
 
@@ -482,8 +500,8 @@ class RecruiterAgent:
                         channel=channel,
                         answers=answers_dict,
                         cv_info=cv_info if cv_info else None,
-                        match_score=match_score,
-                        target_domains=target_domains,
+                        match_score=final_match_score,
+                        target_domains=combined_domains,
                     )
                 )
             except Exception as email_err:
@@ -503,14 +521,15 @@ class RecruiterAgent:
                 reach_info = f"\n\nVous pouvez également nous joindre directement{reach_email_msg}{reach_phone_msg}."
 
             if has_cv:
-                score_mention = f" (Score de matching : **{match_score:.0f}%**)" if match_score else ""
+                score_mention = f" (Score global combiné : **{final_match_score:.0f}%**)" if final_match_score else ""
                 dossier_text = (
                     f"Votre dossier complet de candidature (**CV analysé{score_mention} + Réponses aux 5 questions de présélection**)"
                 )
                 cv_instruction = ""
             else:
+                score_mention = f" (Score d'évaluation : **{final_match_score:.0f}%**)" if final_match_score else ""
                 dossier_text = (
-                    "Vos réponses aux **5 questions de présélection** ont été enregistrées avec succès"
+                    f"Vos réponses aux **5 questions de présélection** ont été enregistrées avec succès{score_mention}"
                 )
                 cv_instruction = (
                     "📄 **Pour compléter et valoriser au mieux votre dossier** :\n"

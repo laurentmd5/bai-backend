@@ -1,13 +1,14 @@
 """
 CV Parser Service for Company Bot.
-Extracts structured candidate information and scores alignment with NETSYSTEME domains.
+Extracts structured candidate information and scores alignment with company technical domains.
 """
 
 import json
 import re
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.services.llm.factory import get_llm_provider
 
@@ -78,7 +79,8 @@ class CVParserService:
         # 1. Try extraction via LLM
         try:
             llm = get_llm_provider()
-            prompt = f"""Tu es un expert en recrutement technique pour l'entreprise NETSYSTEME INFORMATIQUE.
+            company_label = settings.COMPANY_NAME or "l'entreprise"
+            prompt = f"""Tu es un expert en recrutement technique pour {company_label}.
 Analyse le CV ci-dessous et extrait TOUTES les informations clés sous format JSON strict avec les clés exactes suivantes :
 {{
   "full_name": "Nom et prénom du candidat",
@@ -89,7 +91,7 @@ Analyse le CV ci-dessous et extrait TOUTES les informations clés sous format JS
   "technical_skills": ["Compétence 1", "Compétence 2"],
   "field_experience": ["Projet ou travail de terrain 1", "Installation 2"],
   "years_of_experience": 0.0,
-  "summary": "Court résumé en 2-3 phrases des points forts du candidat pour NETSYSTEME"
+  "summary": "Court résumé en 2-3 phrases des points forts du candidat pour {company_label}"
 }}
 
 Texte du CV :
@@ -216,4 +218,134 @@ Réponds UNIQUEMENT avec l'objet JSON valide, sans texte additionnel ni markdown
         }
 
 
+    def evaluate_questionnaire_score(
+        self,
+        answers: Dict[str, Any]
+    ) -> Tuple[float, List[str], Dict[str, float]]:
+        """
+        Evaluate candidate screening questionnaire answers.
+        
+        Barème (Total 100 points) :
+        - Q1 (15 pts) : Connaissance et validation de l'offre
+        - Q2 (15 pts) : Disponibilité pour commencer
+        - Q3 (25 pts) : Accord sur le cadre du stage d'évaluation
+        - Q4 (25 pts) : Compétences techniques alignées avec les métiers
+        - Q5 (20 pts) : Expérience de terrain / interventions pratiques
+        
+        Returns:
+            (total_score, matched_domains, breakdown_dict)
+        """
+        scores: Dict[str, float] = {}
+        matched_domains: List[str] = []
+
+        # -------------------------------------------------------------
+        # Q1 : Connaissance de l'offre (15 pts)
+        # -------------------------------------------------------------
+        q1_text = str(answers.get("q1_offer_knowledge", "")).lower().strip()
+        if any(w in q1_text for w in ["oui", "parfait", "bien pris", "lu", "compris", "d'accord", "connaissance"]):
+            scores["q1_offer_knowledge"] = 15.0
+        elif "briefé" in q1_text or "assistant" in q1_text or "netbot" in q1_text:
+            scores["q1_offer_knowledge"] = 10.0
+        elif any(w in q1_text for w in ["non", "pas", "jamais"]):
+            scores["q1_offer_knowledge"] = 5.0
+        else:
+            scores["q1_offer_knowledge"] = 10.0 if q1_text else 0.0
+
+        # -------------------------------------------------------------
+        # Q2 : Disponibilité (15 pts)
+        # -------------------------------------------------------------
+        q2_text = str(answers.get("q2_availability", "")).lower().strip()
+        immediate_kws = [
+            "immédiat", "immediat", "tout de suite", "dès maintenant", "des maintenant",
+            "dès lundi", "des lundi", "maintenant", "aujourd'hui", "toujours", "libre", "disponible"
+        ]
+        short_term_kws = ["semaine", "mois", "bientôt", "bientot", "prochain", "jours"]
+        if any(w in q2_text for w in immediate_kws):
+            scores["q2_availability"] = 15.0
+        elif any(w in q2_text for w in short_term_kws):
+            scores["q2_availability"] = 10.0
+        else:
+            scores["q2_availability"] = 7.0 if q2_text else 0.0
+
+        # -------------------------------------------------------------
+        # Q3 : Accord sur les conditions (25 pts)
+        # -------------------------------------------------------------
+        q3_text = str(answers.get("q3_conditions_agreement", "")).lower().strip()
+        agree_kws = [
+            "oui", "d'accord", "dacord", "en phase", "parfait", "aucun problème",
+            "aucun probleme", "aucun souci", "je valide", "valide", "compris", "ok", "d accord", "convient"
+        ]
+        disagree_kws = ["non", "pas d'accord", "refuse", "impossible", "pas possible"]
+        if any(w in q3_text for w in disagree_kws):
+            scores["q3_conditions_agreement"] = 0.0
+        elif any(w in q3_text for w in agree_kws):
+            scores["q3_conditions_agreement"] = 25.0
+        else:
+            scores["q3_conditions_agreement"] = 12.0 if q3_text else 0.0
+
+        # -------------------------------------------------------------
+        # Q4 : Compétences techniques & Domaines (25 pts)
+        # -------------------------------------------------------------
+        q4_text = str(answers.get("q4_technical_skills", "")).lower().strip()
+        hits_count = 0
+        for domain, kws in NETSYSTEME_DOMAINS.items():
+            domain_hits = sum(1 for kw in kws if kw in q4_text)
+            if domain_hits > 0:
+                if domain not in matched_domains:
+                    matched_domains.append(domain)
+                hits_count += domain_hits
+
+        if hits_count >= 3:
+            scores["q4_technical_skills"] = 25.0
+        elif hits_count >= 1:
+            scores["q4_technical_skills"] = 18.0
+        elif len(q4_text) > 10:
+            scores["q4_technical_skills"] = 8.0
+        else:
+            scores["q4_technical_skills"] = 0.0
+
+        # -------------------------------------------------------------
+        # Q5 : Expérience terrain (20 pts)
+        # -------------------------------------------------------------
+        q5_text = str(answers.get("q5_field_experience", "")).lower().strip()
+        is_negation_q5 = bool(re.search(r"\b(non|jamais|pas encore|aucun|aucune|pas fait|rien)\b", q5_text))
+        has_positive_exp = bool(re.search(r"\b(oui|déjà|deja|j'ai fait|j'ai travaillé|plusieurs|ans|années|annees)\b", q5_text))
+        
+        field_high_kws = [
+            "chantier", "déploiement", "deploiement", "installation", "intervention",
+            "pose", "câblage", "cablage", "serveur", "armoire", "panneau",
+            "caméra", "camera", "client", "site", "société", "societe", "entreprise"
+        ]
+        has_field_keywords = any(w in q5_text for w in field_high_kws) or ("terrain" in q5_text and not is_negation_q5)
+        field_moderate_kws = ["stage", "école", "ecole", "université", "pratique", "quelques", "projets"]
+
+        if is_negation_q5 and not has_positive_exp:
+            scores["q5_field_experience"] = 5.0  # Pas d'expérience terrain
+        elif has_field_keywords:
+            scores["q5_field_experience"] = 20.0
+        elif any(w in q5_text for w in field_moderate_kws) or has_positive_exp:
+            scores["q5_field_experience"] = 12.0
+        else:
+            scores["q5_field_experience"] = 8.0 if q5_text else 0.0
+
+        total_score = round(sum(scores.values()), 1)
+        return total_score, matched_domains, scores
+
+    def combine_scores(
+        self,
+        cv_score: Optional[float],
+        questionnaire_score: float
+    ) -> float:
+        """
+        Compute combined score :
+        - If CV present: 60% CV + 40% Questionnaire
+        - If no CV: 100% Questionnaire
+        """
+        if cv_score is not None and cv_score > 0.0:
+            combined = 0.60 * cv_score + 0.40 * questionnaire_score
+            return round(min(100.0, max(0.0, combined)), 1)
+        return round(min(100.0, max(0.0, questionnaire_score)), 1)
+
+
 cv_parser_service = CVParserService()
+

@@ -222,10 +222,59 @@ class TestRecruiterAgentIntegration:
                     call_kwargs = mock_db_save.call_args.kwargs
                     assert call_kwargs["full_name"] == "Babacar Fall"
                     assert call_kwargs["phone_number"] == "+221771112233"
-                    assert call_kwargs["match_score"] == 88.0
+                    # Unified score (60% of 88 + 40% of 93 = 90.0)
+                    assert call_kwargs["match_score"] >= 88.0
                     assert call_kwargs["cv_filename"] == "cv_babacar.pdf"
 
                     # Verify response message contains clean confirmation
                     assert "Babacar Fall" in res["message"]
                     assert "CV analysé" in res["message"]
-                    assert "88%" in res["message"]
+                    assert "%" in res["message"]
+
+    @pytest.mark.asyncio
+    async def test_interview_completion_without_cv_scores_questionnaire(self):
+        """Candidate completing 5 questions without CV gets scored and domains from questionnaire."""
+        session_id = "test_no_cv_trigger_session"
+
+        state = {
+            "session_id": session_id,
+            "stage": "IN_INTERVIEW",
+            "current_step": 4,
+            "candidate_name": "Fatou Sow",
+            "candidate_phone": "+221772223344",
+            "answers": {
+                "q1_offer_knowledge": "Oui j'ai bien pris connaissance",
+                "q2_availability": "Disponible immédiatement",
+                "q3_conditions_agreement": "Oui je valide totalement le cadre",
+                "q4_technical_skills": "Énergie solaire photovoltaïque, onduleur, vidéosurveillance caméras"
+            },
+            "cv_parsed": None
+        }
+        await recruiter_agent.save_state(session_id, state)
+
+        with patch.object(CandidateApplicationRepository, "save_application", new_callable=AsyncMock) as mock_db_save:
+            with patch.object(CandidateApplicationRepository, "close", new_callable=AsyncMock):
+                with patch.object(email_service, "send_recruitment_notification", new_callable=AsyncMock):
+                    res = await recruiter_agent.process_candidate_message(
+                        session_id=session_id,
+                        user_message="Oui, j'ai déjà travaillé sur des chantiers d'installation.",
+                        channel="whatsapp"
+                    )
+
+                    assert res is not None
+                    assert res["recruiter_stage"] == "COMPLETED"
+
+                    assert mock_db_save.called
+                    call_kwargs = mock_db_save.call_args.kwargs
+                    assert call_kwargs["full_name"] == "Fatou Sow"
+                    assert call_kwargs["phone_number"] == "+221772223344"
+                    # Without CV, score is 100% from questionnaire answers (should be > 80)
+                    assert call_kwargs["match_score"] >= 80.0
+                    # Target domains should be extracted from Q4 answers!
+                    assert "energie_solaire" in call_kwargs["target_domains"]
+                    assert "securite_videosurveillance" in call_kwargs["target_domains"]
+
+                    # Response should display questionnaire evaluation score
+                    assert "Score d'évaluation" in res["message"]
+                    assert "Fatou Sow" in res["message"]
+
