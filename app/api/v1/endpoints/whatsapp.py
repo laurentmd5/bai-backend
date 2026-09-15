@@ -130,7 +130,15 @@ async def receive_webhook(
         # Return 200 — Meta must receive 200 or it will retry repeatedly
         return JSONResponse(content={"status": "received"}, status_code=200)
 
-    # Publish to RabbitMQ queue
+    # ── SRE Optimization: Edge Filtering for WhatsApp Status Updates ─────
+    # WhatsApp sends delivery receipts (sent, delivered, read) via webhooks.
+    # Acknowledge immediately with 200 OK to Meta, but NEVER publish status
+    # updates to RabbitMQ to prevent CPU, DB session, and worker thrashing.
+    if not validated.has_messages():
+        logger.debug("whatsapp_webhook_status_update_filtered")
+        return JSONResponse(content={"status": "ignored_status"}, status_code=200)
+
+    # Publish to RabbitMQ queue ONLY if real messages are present
     await rabbitmq_service.publish_webhook_event(
         payload=payload,
         raw_body=raw_body,
