@@ -1,35 +1,35 @@
 {% extends "base.html" %}
-{% block title %}Audit logs — {{ company.name or 'Admin' }}{% endblock %}
+{% block title %}{{ t.audit.page_title }}{% endblock %}
 
-{% block page_title %}Audit logs{% endblock %}
+{% block page_title %}{{ t.audit.header_title }}{% endblock %}
 {% block breadcrumb %}
-  <span class="sep">/</span><span>Sécurité</span>
-  <span class="sep">/</span><span>Audit</span>
+  <span class="sep">/</span><span>{{ t.audit.breadcrumb_security }}</span>
+  <span class="sep">/</span><span>{{ t.audit.breadcrumb_audit }}</span>
 {% endblock %}
 
 {% block content %}
 <div class="card">
   <div class="card-header">
     <div>
-      <div class="card-title">Journaux d'audit</div>
-      <div class="card-subtitle" id="audit-count">Chargement…</div>
+      <div class="card-title">{{ t.audit.card_title }}</div>
+      <div class="card-subtitle" id="audit-count">{{ t.audit.loading }}</div>
     </div>
     <div class="search-bar">
       <div class="search-input-wrap">
         <i class="fas fa-search"></i>
-        <input type="text" id="search-input" placeholder="Rechercher action, ressource, admin…" autocomplete="off">
+        <input type="text" id="search-input" placeholder="{{ t.audit.search_placeholder }}" autocomplete="off">
       </div>
       <select id="severity-filter" class="form-control" style="width:auto;min-width:130px">
-        <option value="">Toutes sévérités</option>
-        <option value="INFO">Info</option>
-        <option value="WARNING">Warning</option>
-        <option value="CRITICAL">Critical</option>
+        <option value="">{{ t.audit.severity_all }}</option>
+        <option value="INFO">{{ t.audit.severity_info }}</option>
+        <option value="WARN">{{ t.audit.severity_warning }}</option>
+        <option value="CRITICAL">{{ t.audit.severity_critical }}</option>
       </select>
       <select id="period-filter" class="form-control" style="width:auto;min-width:110px">
-        <option value="7d">7 derniers jours</option>
-        <option value="30d">30 jours</option>
-        <option value="90d">90 jours</option>
-        <option value="">Tout</option>
+        <option value="7d">{{ t.audit.period_7d }}</option>
+        <option value="30d">{{ t.audit.period_30d }}</option>
+        <option value="90d">{{ t.audit.period_90d }}</option>
+        <option value="">{{ t.audit.period_all }}</option>
       </select>
     </div>
   </div>
@@ -38,12 +38,12 @@
     <table class="data-table">
       <thead>
         <tr>
-          <th>Admin</th>
-          <th>Action</th>
-          <th>Ressource</th>
-          <th>Sévérité</th>
-          <th>IP</th>
-          <th>Date</th>
+          <th>{{ t.audit.th_admin }}</th>
+          <th>{{ t.audit.th_action }}</th>
+          <th>{{ t.audit.th_resource }}</th>
+          <th>{{ t.audit.th_severity }}</th>
+          <th>{{ t.audit.th_ip }}</th>
+          <th>{{ t.audit.th_date }}</th>
         </tr>
       </thead>
       <tbody id="audit-tbody"></tbody>
@@ -72,6 +72,7 @@ function severityBadge(s) {
   const map = {
     CRITICAL: 'badge-danger',
     WARNING:  'badge-warning',
+    WARN:     'badge-warning',
     INFO:     'badge-info',
   };
   return `<span class="badge ${map[s]||'badge-neutral'}">${s}</span>`;
@@ -91,12 +92,12 @@ async function loadAudit(page = 0) {
   if (!data) return;
 
   document.getElementById('audit-count').textContent =
-    `${data.total} entrée${data.total !== 1 ? 's' : ''}`;
+    `${data.total} {{ t.audit.js.entries }}`;
 
   if (!data.logs || !data.logs.length) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">
       <i class="fas fa-shield-alt"></i>
-      <p>Aucun log d'audit trouvé</p>
+      <p>{{ t.audit.js.no_logs }}</p>
     </div></td></tr>`;
     document.getElementById('audit-pagination').innerHTML = '';
     return;

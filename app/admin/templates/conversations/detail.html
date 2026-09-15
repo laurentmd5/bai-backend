@@ -1,10 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Détail conversation{% endblock %}
-{% block page_title %}Détail de la conversation{% endblock %}
+{% block title %}{{ t.conversations.detail_page_title }}{% endblock %}
+{% block page_title %}{{ t.conversations.detail_header_title }}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">/</span><a href="/admin/conversations" style="color:inherit;text-decoration:none;">{{ t.conversations.header_title }}</a>
+  <span class="sep">/</span><span>{{ conv_id[:8] }}…</span>
+{% endblock %}
 {% block content %}
 <div class="bg-white rounded-xl shadow-sm p-6">
     <div id="conv-detail">
-        <div class="text-center py-8">Chargement...</div>
+        <div class="text-center py-8">{{ t.conversations.loading }}</div>
     </div>
 </div>
 
@@ -27,28 +31,28 @@
         const html = `
             <div class="space-y-4">
                 <div class="grid grid-cols-2 gap-4">
-                    <div><span class="font-bold">Session:</span> ${conv.session_id}</div>
-                    <div><span class="font-bold">Date:</span> ${formatDate(conv.created_at)}</div>
-                    <div><span class="font-bold">Confiance:</span> ${((conv.confidence || 0) * 100).toFixed(0)}%</div>
-                    <div><span class="font-bold">Temps de réponse:</span> ${conv.latency_ms || 0}ms</div>
+                    <div><span class="font-bold">{{ t.conversations.detail_session }}</span> ${conv.session_id}</div>
+                    <div><span class="font-bold">{{ t.conversations.detail_date }}</span> ${formatDate(conv.created_at)}</div>
+                    <div><span class="font-bold">{{ t.conversations.detail_confidence }}</span> ${((conv.confidence || 0) * 100).toFixed(0)}%</div>
+                    <div><span class="font-bold">{{ t.conversations.detail_latency }}</span> ${conv.latency_ms || 0}ms</div>
                 </div>
                 <div class="mt-6">
-                    <h3 class="font-bold mb-2">Message utilisateur:</h3>
+                    <h3 class="font-bold mb-2">{{ t.conversations.detail_user_msg }}</h3>
                     <p class="bg-blue-50 p-4 rounded">${escapeHtml(conv.user_message)}</p>
                 </div>
                 <div>
-                    <h3 class="font-bold mb-2">Réponse du bot:</h3>
+                    <h3 class="font-bold mb-2">{{ t.conversations.detail_bot_resp }}</h3>
                     <p class="bg-green-50 p-4 rounded">${escapeHtml(conv.bot_response)}</p>
                 </div>
                 ${conv.sources && conv.sources.length ? `
                 <div>
-                    <h3 class="font-bold mb-2">Sources utilisées:</h3>
+                    <h3 class="font-bold mb-2">{{ t.conversations.detail_sources }}</h3>
                     <ul class="bg-gray-50 p-4 rounded space-y-2">
-                        ${conv.sources.map(s => `<li><strong>${escapeHtml(s.doc_name)}</strong> (Section: ${escapeHtml(s.section)}, Relevance: ${(s.relevance * 100).toFixed(0)}%)</li>`).join('')}
+                        ${conv.sources.map(s => `<li><strong>${escapeHtml(s.doc_name)}</strong> ({{ t.conversations.detail_section }}: ${escapeHtml(s.section)}, {{ t.conversations.detail_relevance }}: ${(s.relevance * 100).toFixed(0)}%)</li>`).join('')}
                     </ul>
                 </div>
                 ` : ''}
-                <button onclick="window.location.href='/admin/conversations'" class="btn btn-secondary mt-4">Retour</button>
+                <button onclick="window.location.href='/admin/conversations'" class="btn btn-secondary mt-4">{{ t.conversations.detail_btn_back }}</button>
             </div>
         `;
         document.getElementById('conv-detail').innerHTML = html;

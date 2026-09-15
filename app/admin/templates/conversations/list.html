@@ -1,34 +1,34 @@
 {% extends "base.html" %}
-{% block title %}Conversations — {{ company.name or 'Admin' }}{% endblock %}
+{% block title %}{{ t.conversations.page_title }}{% endblock %}
 
-{% block page_title %}Conversations{% endblock %}
+{% block page_title %}{{ t.conversations.header_title }}{% endblock %}
 {% block breadcrumb %}
-  <span class="sep">/</span><span>Conversations</span>
+  <span class="sep">/</span><span>{{ t.conversations.header_title }}</span>
 {% endblock %}
 
 {% block content %}
 <div class="card">
   <div class="card-header">
     <div>
-      <div class="card-title">Historique des conversations</div>
-      <div class="card-subtitle" id="conv-count">Chargement…</div>
+      <div class="card-title">{{ t.conversations.card_title }}</div>
+      <div class="card-subtitle" id="conv-count">{{ t.conversations.loading }}</div>
     </div>
     <div class="search-bar">
       <div class="search-input-wrap">
         <i class="fas fa-search"></i>
-        <input type="text" id="search-input" placeholder="Rechercher dans les messages…" autocomplete="off">
+        <input type="text" id="search-input" placeholder="{{ t.conversations.search_placeholder }}" autocomplete="off">
       </div>
       <select id="channel-filter" class="form-control" style="width:auto;min-width:130px">
-        <option value="">Tous les canaux</option>
-        <option value="whatsapp">WhatsApp</option>
-        <option value="web">Web</option>
-        <option value="api">API</option>
+        <option value="">{{ t.conversations.channel_all }}</option>
+        <option value="whatsapp">{{ t.conversations.channel_whatsapp }}</option>
+        <option value="web">{{ t.conversations.channel_web }}</option>
+        <option value="api">{{ t.conversations.channel_api }}</option>
       </select>
       <select id="period-filter" class="form-control" style="width:auto;min-width:110px">
-        <option value="">Toutes les dates</option>
-        <option value="today">Aujourd'hui</option>
-        <option value="week">Cette semaine</option>
-        <option value="month">Ce mois</option>
+        <option value="">{{ t.conversations.period_all }}</option>
+        <option value="today">{{ t.conversations.period_today }}</option>
+        <option value="week">{{ t.conversations.period_week }}</option>
+        <option value="month">{{ t.conversations.period_month }}</option>
       </select>
     </div>
   </div>
@@ -37,13 +37,13 @@
     <table class="data-table">
       <thead>
         <tr>
-          <th>Session</th>
-          <th>Message utilisateur</th>
-          <th>Réponse bot</th>
-          <th>Canal</th>
-          <th>Confiance</th>
-          <th>Date</th>
-          <th class="col-actions">Actions</th>
+          <th>{{ t.conversations.th_session }}</th>
+          <th>{{ t.conversations.th_user_message }}</th>
+          <th>{{ t.conversations.th_bot_response }}</th>
+          <th>{{ t.conversations.th_channel }}</th>
+          <th>{{ t.conversations.th_confidence }}</th>
+          <th>{{ t.conversations.th_date }}</th>
+          <th class="col-actions">{{ t.conversations.th_actions }}</th>
         </tr>
       </thead>
       <tbody id="conv-tbody"></tbody>
@@ -81,12 +81,12 @@ async function loadConversations(page = 0) {
   if (!data) return;
 
   document.getElementById('conv-count').textContent =
-    `${data.total} conversation${data.total !== 1 ? 's' : ''}`;
+    `${data.total} {{ t.conversations.js.conversations }}`;
 
   if (!data.conversations || !data.conversations.length) {
     tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state">
       <i class="fas fa-comments"></i>
-      <p>Aucune conversation trouvée</p>
+      <p>{{ t.conversations.js.no_conversations }}</p>
     </div></td></tr>`;
     document.getElementById('conv-pagination').innerHTML = '';
     return;
@@ -116,7 +116,7 @@ async function loadConversations(page = 0) {
       <td>${confidenceBadge(c.confidence)}</td>
       <td class="text-sm text-muted">${formatDate(c.created_at)}</td>
       <td class="col-actions">
-        <button class="action-btn action-view" title="Voir" onclick="window.location.href='/admin/conversations/detail/${c.id}'">
+        <button class="action-btn action-view" title="{{ t.conversations.btn_view }}" onclick="window.location.href='/admin/conversations/detail/${c.id}'">
           <i class="fas fa-eye"></i>
         </button>
       </td>
