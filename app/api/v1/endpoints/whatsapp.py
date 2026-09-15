@@ -45,6 +45,17 @@ async def process_webhook_task(payload: dict, raw_body: bytes, signature: str, a
         logger.error("process_webhook_task_failed: rag_service_missing")
         return
 
+    # Fast-fail if payload does not contain messages
+    try:
+        from app.models.request.whatsapp import WhatsAppWebhookRequest
+        payload_check = payload.get("payload", payload) if ("payload" in payload and "object" not in payload) else payload
+        wh_req = WhatsAppWebhookRequest(**payload_check)
+        if not wh_req.has_messages():
+            logger.debug("process_webhook_task_skipped_no_messages")
+            return
+    except Exception as parse_err:
+        logger.warning("process_webhook_task_parse_warning", error=str(parse_err))
+
     try:
         async with get_session_context() as db:
             session_repo = SessionRepository(db)

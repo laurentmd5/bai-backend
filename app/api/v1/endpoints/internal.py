@@ -1,4 +1,4 @@
-﻿"""
+"""
 Internal inter-service endpoints for Company Bot.
 Used by background workers to delegate heavy RAG/LLM/audio processing to the backend.
 """
@@ -56,6 +56,24 @@ async def process_internal_whatsapp_task(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Backend RAG service not ready"
         )
+
+    # ── SRE Optimization: Fast-fail webhooks without messages ────────────
+    # Unwrap nested payload if wrapped by queue publishers
+    payload_to_check = body.payload
+    if "payload" in payload_to_check and "object" not in payload_to_check:
+        payload_to_check = payload_to_check["payload"]
+
+    try:
+        from app.models.request.whatsapp import WhatsAppWebhookRequest
+        webhook_req = WhatsAppWebhookRequest(**payload_to_check)
+        if not webhook_req.has_messages():
+            logger.debug("internal_whatsapp_task_skipped_no_messages")
+            return JSONResponse(
+                content={"status": "success", "result": {"status": "ignored", "reason": "no_messages"}},
+                status_code=200
+            )
+    except Exception as parse_err:
+        logger.warning("internal_whatsapp_task_payload_parse_warning", error=str(parse_err))
 
     try:
         raw_bytes = body.raw_body.encode("utf-8") if body.raw_body else b""
