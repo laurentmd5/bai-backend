@@ -154,6 +154,19 @@ async def conversation_detail_page(request: Request, conv_id: str, admin: dict =
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Candidates & Recruitment
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/candidates", response_class=HTMLResponse)
+async def candidates_list_page(request: Request, admin: dict = Depends(get_current_admin)):
+    """List and manage job/internship candidates."""
+    return render_template("candidates/list.html", {
+        "request": request,
+        "admin": admin
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Audit logs
 # ─────────────────────────────────────────────────────────────────────────────
 
