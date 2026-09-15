@@ -61,7 +61,15 @@ def clean_text_for_tts(text: str) -> str:
     # Bullet lists (- Item -> Item)
     cleaned = re.sub(r'^\s*[-+*]\s+', '', cleaned, flags=re.MULTILINE)
     
-    # 4. Normalize spacing & punctuation
+    # 4. Expand time and common abbreviations for natural speech
+    # E.g. "14h30" -> "14 heures 30"
+    cleaned = re.sub(r'(\d+)\s*h\s*(\d{1,2})\b', r'\1 heures \2', cleaned, flags=re.IGNORECASE)
+    # Singular "1h" -> "1 heure"
+    cleaned = re.sub(r'\b1\s*h\b', '1 heure', cleaned, flags=re.IGNORECASE)
+    # Plural "48h", "72h" -> "48 heures", "72 heures"
+    cleaned = re.sub(r'(\d+)\s*h\b', r'\1 heures', cleaned, flags=re.IGNORECASE)
+
+    # 5. Normalize spacing & punctuation
     cleaned = re.sub(r'[ \t]+', ' ', cleaned)
     cleaned = re.sub(r'\n+', '\n', cleaned)
     

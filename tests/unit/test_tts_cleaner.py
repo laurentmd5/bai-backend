@@ -51,3 +51,10 @@ class TestTTSCleaner:
         assert "- Examen" not in cleaned
         assert "Examen approfondi" in cleaned
         assert "Merci infiniment" in cleaned
+        assert "sous 48 heures à 72 heures" in cleaned
+
+    def test_expands_hour_abbreviations(self):
+        """'48h', '72h', '1h', and '14h30' must be expanded to full words for natural speech."""
+        text = "Réponse sous 48h à 72h, délai max 1h ou rdv à 14h30."
+        expected = "Réponse sous 48 heures à 72 heures, délai max 1 heure ou rdv à 14 heures 30."
+        assert clean_text_for_tts(text) == expected
