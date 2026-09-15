@@ -75,8 +75,8 @@ class EdgeTTSService:
     
     # Male voices
     VOICES = {
-        "en": "en-US-GuyNeural",      # Standard English male
-        "fr": "fr-FR-HenriNeural",    # French male
+        "en": "en-CA-LiamNeural",                 # Liam (Canadian English male)
+        "fr": "fr-FR-RemyMultilingualNeural",    # Remy Multilingual (French male)
     }
     
     # Default speech rate (natural speed)
