@@ -43,12 +43,11 @@ pipeline {
         stage('Build & Push') {
             steps {
                 script {
-                    echo "Construction rapide avec BuildKit & Cache : ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
+                    echo "Construction Docker : ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
                     
-                    // Utilisation de BuildKit et --cache-from pour reutiliser les couches lourdes (FastEmbed, PyTorch, deps)
+                    // Utilisation de --cache-from pour reutiliser les couches d'images existantes
                     sh """
-                        DOCKER_BUILDKIT=1 docker build \
-                            --build-arg BUILDKIT_INLINE_CACHE=1 \
+                        docker build \
                             --cache-from ${DOCKER_IMAGE_NAME}:latest \
                             -t ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} \
                             -t ${DOCKER_IMAGE_NAME}:latest \
