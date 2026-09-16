@@ -11,7 +11,6 @@ FROM python:3.13-slim-bookworm AS builder
 # Set build environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Install build dependencies
@@ -25,9 +24,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Python dependencies
+# Install Python dependencies with pip caching
 COPY requirements.txt .
-RUN pip install --upgrade pip setuptools wheel && \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip setuptools wheel && \
     pip install -r requirements.txt
 
 # =============================================================================

@@ -85,10 +85,9 @@ pipeline {
             steps {
                 sh """
                     cd ${DEPLOY_PATH}
-                    docker compose -f ${COMPOSE_FILE} down --remove-orphans || true
-                    docker compose -f ${COMPOSE_FILE} up -d --force-recreate
+                    docker compose -f ${COMPOSE_FILE} up -d --no-recreate postgres redis rabbitmq qdrant
+                    docker compose -f ${COMPOSE_FILE} up -d --no-deps --force-recreate backend worker
                 """
-                sleep(time: 20, unit: 'SECONDS')
             }
         }
 

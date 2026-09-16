@@ -60,17 +60,79 @@ def read_txt(filepath: Path) -> str:
         return ""
 
 
-async def index_all_documents():
-    """Index all documents in the /app/data directory using DocumentProcessor."""
-    logger.info("Starting Qdrant initialization...")
+import argparse
+
+async def index_all_documents(force: bool = False, check_only: bool = False):
+    """
+    Index all documents in the /app/data directory using DocumentProcessor.
+    Idempotent: skips already indexed documents unless force=True.
+    """
+    logger.info("Initializing RAG service and verifying Qdrant status...", force=force)
     
     rag = RAGService()
     await rag.initialize()
     
+    # 1. Check existing collection stats
+    try:
+        stats = await rag.get_collection_stats()
+        points_count = stats.get("points_count", 0)
+        existing_docs = set(stats.get("documents", []))
+    except Exception as e:
+        logger.warning("could_not_fetch_stats", error=str(e))
+        points_count = 0
+        existing_docs = set()
+    
+    logger.info("qdrant_current_state", points_count=points_count, unique_documents=len(existing_docs))
+    
+    if check_only:
+        print(f"Qdrant points: {points_count}, Documents: {len(existing_docs)}")
+        return
+        
     data_dir = Path("/app/data")
     if not data_dir.exists():
-        logger.error("data_directory_not_found", path=str(data_dir))
+        # Fallback to local data dir if running outside docker container
+        data_dir = Path(__file__).resolve().parent.parent / "data"
+        
+    if not data_dir.exists():
+        logger.warning("data_directory_not_found", path=str(data_dir))
         return
+    
+    # Find all document files (including subdirectories like data/knowledge)
+    extensions = [".docx", ".pdf", ".txt", ".md"]
+    candidate_files = []
+    for ext in extensions:
+        candidate_files.extend(data_dir.glob(f"*{ext}"))
+        candidate_files.extend(data_dir.glob(f"**/*{ext}"))
+    
+    # Deduplicate resolved paths
+    documents = list({p.resolve(): p for p in candidate_files}.values())
+    
+    if not documents:
+        logger.info("no_data_documents_found", directory=str(data_dir))
+        return
+    
+    # 2. Check if all documents are already indexed
+    if not force and points_count > 0:
+        missing_docs = [doc for doc in documents if doc.name not in existing_docs]
+        if not missing_docs:
+            logger.info(
+                "qdrant_already_initialized",
+                points_count=points_count,
+                documents_count=len(existing_docs),
+                msg="All documents are already indexed in Qdrant. Initialization skipped (0s)."
+            )
+            return
+        else:
+            logger.info(
+                "qdrant_incremental_indexing",
+                total_files=len(documents),
+                already_indexed=len(existing_docs),
+                to_index=len(missing_docs),
+                new_files=[d.name for d in missing_docs],
+            )
+            documents = missing_docs
+            
+    logger.info("indexing_start", count=len(documents), directory=str(data_dir))
     
     # Initialize document processor for intelligent chunking
     processor = DocumentProcessor(
@@ -78,18 +140,6 @@ async def index_all_documents():
         chunk_overlap=50,
         supported_extensions=[".docx", ".pdf", ".txt", ".md"]
     )
-    
-    # Find all document files
-    extensions = [".docx", ".pdf", ".txt", ".md"]
-    documents = []
-    for ext in extensions:
-        documents.extend(data_dir.glob(f"*{ext}"))
-    
-    if not documents:
-        logger.warning("no_documents_found", directory=str(data_dir))
-        return
-    
-    logger.info("indexing_start", count=len(documents), directory=str(data_dir))
     
     total_chunks = 0
     
@@ -115,11 +165,8 @@ async def index_all_documents():
             # Create document and split into chunks using DocumentProcessor
             logger.info("processing_document", name=doc_path.name, content_length=len(content))
             
-            # Create a simple document object that DocumentProcessor can handle
             doc = processor._create_document(content, str(doc_path))
             chunks = processor.chunk_document(doc)
-            
-            # Extract chunk texts
             chunk_texts = [chunk.page_content for chunk in chunks]
             
             logger.info("indexing_document", name=doc_path.name, chunks=len(chunk_texts))
@@ -128,7 +175,7 @@ async def index_all_documents():
                 chunks=chunk_texts,
                 document_name=doc_path.name,
                 section=doc_path.stem[:50],
-                language="en",
+                language="fr",
             )
             total_chunks += indexed
             logger.info("document_indexed", name=doc_path.name, chunks=indexed)
@@ -138,11 +185,20 @@ async def index_all_documents():
     
     # Show collection stats
     try:
-        stats = await rag._vector_store.get_collection_info()
-        logger.info("indexing_complete", total_chunks=total_chunks, points_count=stats.get("points_count", 0))
+        final_stats = await rag._vector_store.get_collection_info()
+        logger.info("indexing_complete", total_chunks_added=total_chunks, points_count=final_stats.get("points_count", 0))
     except Exception as e:
-        logger.info("indexing_complete", total_chunks=total_chunks)
+        logger.info("indexing_complete", total_chunks_added=total_chunks)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Initialize or update Qdrant RAG vector store")
+    parser.add_argument("--force", action="store_true", help="Force re-indexing of all documents even if already indexed")
+    parser.add_argument("--check-only", action="store_true", help="Only check and print current Qdrant index status")
+    args = parser.parse_args()
+    
+    asyncio.run(index_all_documents(force=args.force, check_only=args.check_only))
 
 
 if __name__ == "__main__":
-    asyncio.run(index_all_documents())
+    main()

@@ -43,13 +43,22 @@ pipeline {
         stage('Build & Push') {
             steps {
                 script {
-                    echo "Construction de l'image : ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
-                    docker.build("${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}", "-f Dockerfile .")
+                    echo "Construction rapide avec BuildKit & Cache : ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
                     
-                    echo "Push de l'image vers Docker Hub..."
+                    // Utilisation de BuildKit et --cache-from pour reutiliser les couches lourdes (FastEmbed, PyTorch, deps)
+                    sh """
+                        DOCKER_BUILDKIT=1 docker build \
+                            --build-arg BUILDKIT_INLINE_CACHE=1 \
+                            --cache-from ${DOCKER_IMAGE_NAME}:latest \
+                            -t ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} \
+                            -t ${DOCKER_IMAGE_NAME}:latest \
+                            -f Dockerfile .
+                    """
+                    
+                    echo "Push differentiel vers Docker Hub (seules les couches modifiees sont transmises)..."
                     docker.withRegistry('https://index.docker.io/v1/', "${DOCKER_HUB_CREDENTIALS_ID}") {
-                        docker.image("${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}").push()
-                        docker.image("${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}").push('latest')
+                        sh "docker push ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
+                        sh "docker push ${DOCKER_IMAGE_NAME}:latest"
                     }
                 }
             }
@@ -75,8 +84,7 @@ pipeline {
 
         stage('Deploiement & Migration') {
             steps {
-                echo "Preparation du script de deploiement..."
-                // Utilisation de writeFile pour eviter les problemes d'echappement Groovy/Bash via SSH
+                echo "Preparation du script de deploiement ultra-rapide (Zero Downtime DB)..."
                 writeFile file: 'deploy.sh', text: """#!/bin/bash
 set -e
 
@@ -84,63 +92,66 @@ cd ${DEPLOY_PATH}
 export DOMAIN=${DOMAIN}
 export BACKEND_IMAGE=${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
 
-echo 'Pull de la nouvelle image depuis Docker Hub...'
+echo 'Pull de la nouvelle image applicative...'
 docker pull ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
+docker tag ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} ${DOCKER_IMAGE_NAME}:latest || true
 
-echo 'Redemarrage des conteneurs...'
-docker compose -f ${COMPOSE_FILE} down --remove-orphans || true
-docker compose -f ${COMPOSE_FILE} up -d --force-recreate
+# 1. S'assurer que les bases de donnees d'infrastructure tournent (sans les eteindre ni les recreer)
+echo 'Verification des bases de donnees (Postgres, Redis, RabbitMQ, Qdrant)...'
+docker compose -f ${COMPOSE_FILE} up -d --no-recreate postgres redis rabbitmq qdrant
 
-echo 'Attente du demarrage (10s)...'
-sleep 10
+# 2. Redemarrer UNIQUEMENT backend et worker (Zero coupure DB, prise en compte immediate)
+echo 'Redemarrage cible des conteneurs applicatifs (backend & worker)...'
+docker compose -f ${COMPOSE_FILE} up -d --no-deps --force-recreate backend worker
 
+# 3. Migrations DB idempotentes
 echo 'Application du schema de base de donnees...'
 docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/db_migrate.py
 
-echo 'Verification et creation admin initial...'
+# 4. Creation admin initial uniquement si absent
 ADMIN_COUNT=\$(docker compose -f ${COMPOSE_FILE} exec -T postgres psql -U barrowai -d barrowai_poc -tAq -c 'SELECT COUNT(*) FROM admin_users;' 2>/dev/null || echo 0)
 
 if [ "\$ADMIN_COUNT" = "0" ]; then
-    echo 'Creation du compte initial...'
+    echo 'Creation du compte admin initial...'
     docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/create_admin.py --email admin@pace.gm --name 'PACE Admin' --role superadmin --password Admin123!
 else
-    echo 'Administrateurs existants. Creation ignoree.'
+    echo "Administrateurs existants (\${ADMIN_COUNT}). Creation ignoree."
 fi
 
-echo 'Initialisation de Qdrant...'
+# 5. Verification Qdrant idempotente (skip instantane en 0s si deja initialise)
+echo 'Verification Qdrant...'
 docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/init_qdrant.py || true
 """
                 
-                echo "Execution du script sur le VPS..."
+                echo "Execution du deploiement sur le VPS..."
                 sshagent (credentials: ["${VPS_SSH_CREDENTIALS_ID}"]) {
                     sh """
                         scp -o StrictHostKeyChecking=no deploy.sh ${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/deploy.sh
                         ssh -o StrictHostKeyChecking=no ${VPS_USER}@${VPS_HOST} "bash ${DEPLOY_PATH}/deploy.sh"
                     """
                 }
-                sleep(time: 15, unit: 'SECONDS')
             }
         }
 
         stage('Verifier') {
             steps {
-                echo "Verification locale de la sante du service sur le VPS (http://localhost:8000/health/live)"
+                echo "Verification de sante reactif (polling rapide sur http://localhost:8000/health/live)"
                 sshagent (credentials: ["${VPS_SSH_CREDENTIALS_ID}"]) {
                     script {
                         def ok = false
-                        for (int i = 0; i < 20; i++) {
+                        for (int i = 0; i < 15; i++) {
                             def status = sh(
                                 script: "ssh -o StrictHostKeyChecking=no ${VPS_USER}@${VPS_HOST} \"curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health/live || echo 000\"",
                                 returnStdout: true
                             ).trim()
                             if (status == '200') {
                                 ok = true
-                                echo "Service healthy (tentative ${i + 1})"
+                                echo "Service healthy confirme en tentative ${i + 1} !"
                                 break
                             }
-                            sleep(time: 5, unit: 'SECONDS')
+                            sleep(time: 2, unit: 'SECONDS')
                         }
-                        if (!ok) error("Service non healthy apres 20 tentatives")
+                        if (!ok) error("Service non healthy apres verifications")
                     }
                 }
             }
@@ -148,9 +159,10 @@ docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/init_qdrant.py 
 
         stage('Nettoyer') {
             steps {
-                echo "Nettoyage..."
+                echo "Nettoyage des artefacts temporaires..."
                 sh 'rm -f deploy.sh || true'
-                sh 'docker image prune -f || true'
+                // Nettoyer uniquement les images perimees sans purger le cache des builds recents
+                sh 'docker image prune -f --filter "until=48h" || true'
             }
         }
     }
@@ -161,12 +173,12 @@ docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/init_qdrant.py 
 ========================================
      DEPLOIEMENT VPS REUSSI !
 ========================================
-  Backend ecoute localement sur le port 8000 du VPS.
-  Veuillez configurer Nginx pour pointer ${DOMAIN} vers http://localhost:8000
+  Backend actif sur le VPS (${VPS_HOST}).
+  Domaine : https://${DOMAIN} (ou http://${VPS_HOST}:8000)
 ========================================"""
         }
         failure {
-            echo "Echec du deploiement. Verifiez les logs."
+            echo "Echec du deploiement. Verifiez les logs ci-dessus."
         }
     }
 }
