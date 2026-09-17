@@ -400,7 +400,7 @@ class ChatService:
                 response_metadata["intent_detected"] = "hostile_blocked"
                 
                 return {
-                    "message": self.HOSTILE_CONTENT_RESPONSE.get(language, self.HOSTILE_CONTENT_RESPONSE["en"]),
+                    "message": self.HOSTILE_CONTENT_RESPONSE.get(language, self.HOSTILE_CONTENT_RESPONSE["fr"]),
                     "session_id": session_id or str(uuid.uuid4()),
                     "sources": [],
                     "confidence": None,
@@ -415,7 +415,7 @@ class ChatService:
                 response_metadata["intent_detected"] = "injection_blocked"
                 
                 return {
-                    "message": self.HOSTILE_CONTENT_RESPONSE.get(language, self.HOSTILE_CONTENT_RESPONSE["en"]),
+                    "message": self.HOSTILE_CONTENT_RESPONSE.get(language, self.HOSTILE_CONTENT_RESPONSE["fr"]),
                     "session_id": session_id or str(uuid.uuid4()),
                     "sources": [],
                     "confidence": None,
@@ -428,7 +428,7 @@ class ChatService:
             except ValidationException as e:
                 logger.warning("validation_failed", error=str(e), session_id=session_id)
                 return {
-                    "message": self.TECHNICAL_ERROR_RESPONSE.get(language, self.TECHNICAL_ERROR_RESPONSE["en"]),
+                    "message": self.TECHNICAL_ERROR_RESPONSE.get(language, self.TECHNICAL_ERROR_RESPONSE["fr"]),
                     "session_id": session_id or str(uuid.uuid4()),
                     "sources": [],
                     "confidence": None,
@@ -710,7 +710,7 @@ class ChatService:
                         )
                         response_metadata["fallback_triggered"] = True
                         
-                        fallback_message = self.FALLBACK_RESPONSES.get(language, self.FALLBACK_RESPONSES["en"])
+                        fallback_message = self.FALLBACK_RESPONSES.get(language, self.FALLBACK_RESPONSES["fr"])
                         
                         # Update session
                         await session_repo.touch_session(session.id)
@@ -839,7 +839,7 @@ class ChatService:
                     if not generated_response:
                         response_metadata["fallback_triggered"] = True
                         
-                        fallback_message = self.TECHNICAL_ERROR_RESPONSE.get(language, self.TECHNICAL_ERROR_RESPONSE["en"])
+                        fallback_message = self.TECHNICAL_ERROR_RESPONSE.get(language, self.TECHNICAL_ERROR_RESPONSE["fr"])
                         
                         await session_repo.touch_session(session.id)
                         

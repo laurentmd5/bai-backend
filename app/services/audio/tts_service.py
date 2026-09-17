@@ -137,6 +137,12 @@ class EdgeTTSService:
         if (french_chars or has_french_vocab) and resolved_language != "fr":
             logger.info("tts_language_forced_to_french_due_to_content", detected_in_text=True)
             resolved_language = "fr"
+        elif not (french_chars or has_french_vocab) and resolved_language != "en":
+            english_words = {"sorry", "currently", "experiencing", "temporary", "technical", "difficulty", "please", "contact", "team", "hello", "welcome", "thank", "you"}
+            has_english_vocab = len(set(re.findall(r'\b\w+\b', speech_text.lower())) & english_words) >= 2
+            if has_english_vocab:
+                logger.info("tts_language_forced_to_english_due_to_content", detected_in_text=True)
+                resolved_language = "en"
         
         # Voice selection
         if voice:

@@ -323,6 +323,11 @@ class Settings(BaseSettings):
         password = self.RABBITMQ_PASSWORD.get_secret_value()
         return f"amqp://{self.RABBITMQ_USER}:{password}@{self.RABBITMQ_HOST}:{self.RABBITMQ_PORT}/"
 
+    @property
+    def RABBITMQ_WHATSAPP_QUEUE(self) -> str:
+        """Alias for RABBITMQ_WEBHOOK_QUEUE."""
+        return self.RABBITMQ_WEBHOOK_QUEUE
+
     # =========================================================================
     # INTERNAL SERVICE COMMUNICATION
     # =========================================================================

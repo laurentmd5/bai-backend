@@ -1,4 +1,4 @@
-﻿import json
+import json
 from typing import Dict, Any, Tuple, Optional
 from app.services.interfaces.llm_provider import ILLMProvider
 from app.core.logging import get_logger
@@ -34,7 +34,7 @@ class QueryTransformer:
         The system has a knowledge base consisting of official company documents about products, services, technical documentation, and support information.
         
         Your task is to analyze the user's raw input and output a JSON object with the following fields:
-        1. "detected_language": Detect the language of the user's input. Detect the primary language. Output "en" for English or "fr" for French. If uncertain, default to "en".
+        1. "detected_language": Detect the language of the user's input. Detect the primary language. Output "en" for English or "fr" for French. If uncertain, default to "fr".
         2. "is_casual_conversation": true if the input is just a greeting, chit-chat, or clearly doesn't require searching a document database. false otherwise.
         3. "optimized_search_query": Translate the query to standard English, fix any spelling/grammar errors, and expand it with highly relevant keywords that might appear in official documents. 
            CRITICAL: If conversation history is provided, and the user's input is short (e.g., "Yes", "And?", "What about health?"), use the context from the history to formulate a complete, standalone search query.
@@ -138,7 +138,7 @@ class QueryTransformer:
                     logger.error("groq_fallback_for_query_transformer_failed", error=str(groq_e))
                     
             return {
-                "detected_language": "en", # Fallback
+                "detected_language": None,  # Preserves existing session language rather than forcing English
                 "is_casual_conversation": False,
                 "optimized_search_query": raw_query,
                 "hypothetical_document": None

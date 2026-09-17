@@ -55,3 +55,49 @@ class TestTTSRate:
             mock_communicate.assert_called_once()
             _, kwargs = mock_communicate.call_args
             assert kwargs.get("rate") == "+50%"
+
+    @pytest.mark.asyncio
+    async def test_synthesize_switches_to_english_voice_when_english_text(self):
+        """English text must use English voice Liam even if language='fr' was requested."""
+        service = EdgeTTSService()
+
+        async def mock_stream():
+            yield {"type": "audio", "data": b"english_audio"}
+
+        with patch("edge_tts.Communicate") as mock_communicate:
+            mock_instance = MagicMock()
+            mock_instance.stream = mock_stream
+            mock_communicate.return_value = mock_instance
+
+            await service.synthesize(
+                "Sorry, we are currently experiencing a temporary technical difficulty. Please try again.",
+                language="fr"
+            )
+
+            mock_communicate.assert_called_once()
+            args, _ = mock_communicate.call_args
+            voice_used = args[1]
+            assert voice_used == "en-CA-LiamNeural"
+
+    @pytest.mark.asyncio
+    async def test_synthesize_keeps_french_voice_when_french_text(self):
+        """French text must use French voice Henri."""
+        service = EdgeTTSService()
+
+        async def mock_stream():
+            yield {"type": "audio", "data": b"french_audio"}
+
+        with patch("edge_tts.Communicate") as mock_communicate:
+            mock_instance = MagicMock()
+            mock_instance.stream = mock_stream
+            mock_communicate.return_value = mock_instance
+
+            await service.synthesize(
+                "Désolé, nous rencontrons actuellement une difficulté technique momentanée.",
+                language="fr"
+            )
+
+            mock_communicate.assert_called_once()
+            args, _ = mock_communicate.call_args
+            voice_used = args[1]
+            assert voice_used == "fr-FR-HenriNeural"

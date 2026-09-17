@@ -171,7 +171,7 @@ async def receive_webhook(
 
     logger.info(
         "whatsapp_message_enqueued",
-        queue=settings.RABBITMQ_WHATSAPP_QUEUE,
+        queue=settings.RABBITMQ_WEBHOOK_QUEUE,
         sender=sender_masked,
     )
 
