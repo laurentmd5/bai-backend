@@ -87,18 +87,18 @@ class EdgeTTSService:
         "fr": "fr-FR-HenriNeural",    # Henri (Monolingual French male - consistent native prosody)
     }
     
-    # Default speech rate (natural speed)
-    DEFAULT_RATE = "+0%"   # Natural speed (slowdown removed)
+    # Default speech rate (1.25x playback speed)
+    DEFAULT_RATE = "+25%"
     DEFAULT_VOLUME = "+0%"
     
     MAX_CACHE_SIZE = 100
     
     def __init__(self):
         self._cache: Dict[str, bytes] = {}
-        # Allow override via environment variables
-        self._voice_override = os.getenv("TTS_VOICE", "")
-        self._rate = os.getenv("TTS_RATE", self.DEFAULT_RATE)
-        self._volume = os.getenv("TTS_VOLUME", self.DEFAULT_VOLUME)
+        # Allow override via settings or environment variables
+        self._voice_override = getattr(settings, "TTS_VOICE", "") or os.getenv("TTS_VOICE", "")
+        self._rate = getattr(settings, "TTS_RATE", self.DEFAULT_RATE) or os.getenv("TTS_RATE", self.DEFAULT_RATE)
+        self._volume = getattr(settings, "TTS_VOLUME", self.DEFAULT_VOLUME) or os.getenv("TTS_VOLUME", self.DEFAULT_VOLUME)
     
     async def synthesize(
         self,

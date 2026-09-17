@@ -118,6 +118,12 @@ class OutputValidator:
                 validation_metadata["fixes_applied"].append("cleaned_leaked_prompt_markers")
                 final_response = cleaned.strip()
 
+        # Step 1.6: Deduplicate repeated blocks, paragraphs or sentences (LLM stutter)
+        deduplicated = self._deduplicate_repeated_blocks(final_response)
+        if deduplicated != final_response:
+            validation_metadata["fixes_applied"].append("deduplicated_repeated_blocks")
+            final_response = deduplicated
+
         # Step 2: Slogan check skipped (generic bot)
         validation_metadata["validations_performed"].append("slogan_check_skipped")
 
@@ -270,6 +276,67 @@ class OutputValidator:
         
         return truncated
     
+    def _deduplicate_repeated_blocks(self, text: str) -> str:
+        """
+        Deduplicate repeated blocks, paragraphs, and consecutive identical sentences.
+        Prevents LLM stuttering bugs where identical chunks or paragraphs are generated repeatedly.
+        """
+        if not text:
+            return text
+
+        # 1. Whole text repeated (e.g. text + \n\n + text)
+        stripped = text.strip()
+        mid = len(stripped) // 2
+        for offset in range(-15, 16):
+            test_mid = mid + offset
+            if 0 < test_mid < len(stripped):
+                first_half = stripped[:test_mid].rstrip()
+                second_half = stripped[test_mid:].lstrip()
+                if first_half and first_half == second_half and len(first_half) >= 30:
+                    text = first_half
+                    stripped = text.strip()
+                    break
+
+        # 2. Paragraph-level cycle deduplication (e.g. [P1, P2, P1, P2] or [P1, P1])
+        paragraphs = text.split("\n\n")
+        if len(paragraphs) >= 2:
+            changed = True
+            while changed:
+                changed = False
+                n = len(paragraphs)
+                for k in range(1, (n // 2) + 1):
+                    for i in range(n - 2 * k + 1):
+                        slice1 = [p.strip().lower() for p in paragraphs[i : i + k]]
+                        slice2 = [p.strip().lower() for p in paragraphs[i + k : i + 2 * k]]
+                        if slice1 == slice2 and any(len(p) > 10 for p in slice1):
+                            paragraphs = paragraphs[: i + k] + paragraphs[i + 2 * k :]
+                            changed = True
+                            break
+                    if changed:
+                        break
+            text = "\n\n".join(paragraphs)
+
+        # 3. Line-level and consecutive sentence-level deduplication within paragraphs
+        cleaned_paragraphs = []
+        pattern_sentence = re.compile(r'([A-ZÀ-ÿ0-9][^.!?\n]{15,}[.!?])\s+\1', re.IGNORECASE)
+        for p in text.split("\n\n"):
+            lines = p.split("\n")
+            new_lines = []
+            for line in lines:
+                if not new_lines or line.strip().lower() != new_lines[-1].strip().lower() or len(line.strip()) < 15:
+                    new_lines.append(line)
+            cleaned_p = "\n".join(new_lines)
+            
+            # Deduplicate consecutive identical sentences
+            prev_p = ""
+            while prev_p != cleaned_p:
+                prev_p = cleaned_p
+                cleaned_p = pattern_sentence.sub(r'\1', cleaned_p)
+
+            cleaned_paragraphs.append(cleaned_p)
+
+        return "\n\n".join(cleaned_paragraphs)
+
     def _get_fallback_response(self) -> str:
         """Get a safe fallback response."""
         from app.core.company_config import company

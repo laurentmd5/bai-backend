@@ -149,11 +149,30 @@ async def receive_webhook(
         logger.debug("whatsapp_webhook_status_update_filtered")
         return JSONResponse(content={"status": "ignored_status"}, status_code=200)
 
+    msgs = validated.get_messages()
+    sender_masked = f"...{msgs[0].from_[-4:]}" if msgs and hasattr(msgs[0], 'from_') and msgs[0].from_ else "unknown"
+    msg_type = getattr(msgs[0], 'type', 'unknown') if msgs else "unknown"
+    contact_name = validated.get_contact_name_for_sender()
+
+    logger.info(
+        "whatsapp_message_received",
+        message_count=len(msgs),
+        sender=sender_masked,
+        contact_name=contact_name,
+        message_type=msg_type,
+    )
+
     # Publish to RabbitMQ queue ONLY if real messages are present
     await rabbitmq_service.publish_webhook_event(
         payload=payload,
         raw_body=raw_body,
         signature=signature,
+    )
+
+    logger.info(
+        "whatsapp_message_enqueued",
+        queue=settings.RABBITMQ_WHATSAPP_QUEUE,
+        sender=sender_masked,
     )
 
     return JSONResponse(content={"status": "received"}, status_code=200)

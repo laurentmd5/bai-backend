@@ -1,4 +1,4 @@
-﻿"""
+"""
 Lightweight RabbitMQ Worker for Company Bot (Solution 3).
 Delegates all heavy AI/ML processing to the backend via internal HTTP API.
 Maintains an ultra-low memory footprint (~50-70 MB).
@@ -65,12 +65,14 @@ async def process_webhook_task(payload: dict, raw_body: bytes, signature: str | 
         "signature": signature,
     }
     
+    logger.info("worker_processing_webhook_task", has_payload=bool(payload))
+
     try:
         async with httpx.AsyncClient(timeout=90.0) as client:
             response = await client.post(endpoint, json=body, headers=headers)
             
             if response.status_code == 200:
-                logger.info("webhook_task_delegated_successfully", endpoint=endpoint)
+                logger.info("webhook_task_delegated_successfully", endpoint=endpoint, status_code=response.status_code)
             else:
                 logger.error(
                     "webhook_task_delegation_error_response",

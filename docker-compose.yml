@@ -246,7 +246,8 @@ services:
       HF_TOKEN: ${HF_TOKEN}
       GROQ_API_KEY: ${GROQ_API_KEY}
       
-      # Oolel TTS
+      # TTS (Edge TTS & Oolel)
+      TTS_RATE: ${TTS_RATE:-+25%}
       OOLEL_API_URL: ${OOLEL_API_URL}
       OOLEL_TTS_TIMEOUT: ${OOLEL_TTS_TIMEOUT:-90}
       
@@ -368,7 +369,8 @@ services:
       HF_TOKEN: ${HF_TOKEN}
       GROQ_API_KEY: ${GROQ_API_KEY}
       
-      # Oolel TTS
+      # TTS (Edge TTS & Oolel)
+      TTS_RATE: ${TTS_RATE:-+25%}
       OOLEL_API_URL: ${OOLEL_API_URL}
       OOLEL_TTS_TIMEOUT: ${OOLEL_TTS_TIMEOUT:-90}
       

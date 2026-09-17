@@ -504,6 +504,20 @@ class Settings(BaseSettings):
         description="Timeout for Oolel TTS API in seconds"
     )
     
+    # Edge TTS Settings
+    TTS_RATE: str = Field(
+        default="+25%",
+        description="Speech synthesis rate modifier for Edge TTS (e.g. +25% for 1.25x speed)"
+    )
+    TTS_VOLUME: str = Field(
+        default="+0%",
+        description="Speech synthesis volume modifier for Edge TTS"
+    )
+    TTS_VOICE: str = Field(
+        default="",
+        description="Optional Edge TTS voice override"
+    )
+    
     # =========================================================================
     # SECURITY SETTINGS
     # =========================================================================
