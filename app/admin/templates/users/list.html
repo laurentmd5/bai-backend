@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}{{ t.users.page_title }}{% endblock %}
+{% block page_title %}{{ t.users.header_title }}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">/</span><span>{{ t.users.breadcrumb_users }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">{{ t.users.card_title }}</div>
+      <div class="card-subtitle" id="users-count">{{ t.users.loading }}</div>
+    </div>
+    <div class="search-bar">
+      <div class="search-input-wrap">
+        <i class="fas fa-search"></i>
+        <input type="text" id="search-input" placeholder="{{ t.users.search_placeholder }}" autocomplete="off">
+      </div>
+      <select id="role-filter" class="form-control" style="width:auto;min-width:130px">
+        <option value="">{{ t.users.role_all }}</option>
+        <option value="SUPERADMIN">{{ t.users.role_superadmin }}</option>
+        <option value="ADMIN">{{ t.users.role_admin }}</option>
+        <option value="AUDITOR">{{ t.users.role_auditor }}</option>
+        <option value="VIEWER">{{ t.users.role_viewer }}</option>
+      </select>
+      <a href="/admin/users/create" class="btn btn-primary btn-sm">
+        <i class="fas fa-plus"></i> {{ t.users.add_btn }}
+      </a>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>{{ t.users.th_user }}</th>
+          <th>{{ t.users.th_role }}</th>
+          <th>{{ t.users.th_2fa }}</th>
+          <th>{{ t.users.th_status }}</th>
+          <th>{{ t.users.th_created }}</th>
+          <th class="col-actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="users-tbody"></tbody>
+    </table>
+  </div>
+  <div id="users-pagination"></div>
+</div>
+
+<!-- Confirm delete modal -->
+<div class="modal-overlay hidden" id="delete-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title"><i class="fas fa-exclamation-triangle" style="color:var(--danger);margin-right:.5rem"></i>{{ t.users.modal_title }}</span>
+      <button class="modal-close" onclick="closeDeleteModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.9rem;color:var(--text-secondary)">{{ t.users.modal_body }} <strong id="delete-user-name"></strong>. {{ t.users.modal_warning }}</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeDeleteModal()">{{ t.users.btn_cancel }}</button>
+      <button class="btn btn-danger" id="confirm-delete-btn"><i class="fas fa-user-slash"></i> {{ t.users.btn_deactivate }}</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block extra_js %}
+<script>
+let currentPage = 0;
+const PAGE_LIMIT = 10;
+let searchQuery = '';
+let roleFilter  = '';
+let pendingDeleteId = null;
+
+async function loadUsers(page = 0) {
+  const tbody = document.getElementById('users-tbody');
+  tbody.innerHTML = skeletonRows(6, 4);
+  currentPage = page;
+
+  const params = new URLSearchParams({ limit: PAGE_LIMIT, offset: page * PAGE_LIMIT });
+  if (searchQuery) params.set('search', searchQuery);
+  if (roleFilter)  params.set('role', roleFilter);
+
+  const data = await apiJSON(`/users?${params}`);
+  if (!data) return;
+
+  document.getElementById('users-count').textContent =
+    `${data.total} ${data.total !== 1 ? '{{ t.users.js.accounts }}s' : '{{ t.users.js.accounts }}'}`;
+
+  if (!data.users || !data.users.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">
+      <i class="fas fa-users-slash"></i>
+      <p>{{ t.users.js.no_users }}</p>
+    </div></td></tr>`;
+    document.getElementById('users-pagination').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = data.users.map(u => {
+    const roleClass = {SUPERADMIN:'badge-danger',ADMIN:'badge-info',AUDITOR:'badge-warning',VIEWER:'badge-neutral'}[u.role]||'badge-neutral';
+    return `<tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:.75rem">
+          <div class="sidebar-avatar" style="width:32px;height:32px;font-size:.75rem;background:var(--primary-muted);color:var(--primary);flex-shrink:0">
+            ${escapeHtml((u.full_name||u.email||'?')[0]).toUpperCase()}
+          </div>
+          <div>
+            <div style="font-weight:600;font-size:.875rem">${escapeHtml(u.full_name||'—')}</div>
+            <div class="text-xs text-muted">${escapeHtml(u.email)}</div>
+          </div>
+        </div>
+      </td>
+      <td><span class="badge ${roleClass}">${u.role}</span></td>
+      <td>
+        ${u.two_factor_enabled
+          ? '<span class="badge badge-success"><span class="badge-dot"></span>{{ t.users.js.enabled }}</span>'
+          : '<span class="badge badge-neutral">{{ t.users.js.disabled }}</span>'}
+      </td>
+      <td>
+        ${u.is_active
+          ? '<span class="badge badge-success"><span class="badge-dot"></span>{{ t.users.js.active }}</span>'
+          : '<span class="badge badge-danger"><span class="badge-dot"></span>{{ t.users.js.inactive }}</span>'}
+      </td>
+      <td class="text-muted text-sm">${formatDateShort(u.created_at)}</td>
+      <td class="col-actions">
+        <button class="action-btn action-edit" title="{{ t.users.js.edit }}" onclick="editUser('${u.id}')">
+          <i class="fas fa-pencil"></i>
+        </button>
+        <button class="action-btn action-delete" title="{{ t.users.js.deactivate }}" onclick="openDeleteModal('${u.id}','${escapeHtml(u.email)}')">
+          <i class="fas fa-user-slash"></i>
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  renderPagination(
+    document.getElementById('users-pagination'),
+    data.total, page, PAGE_LIMIT,
+    p => loadUsers(p)
+  );
+}
+
+function editUser(id) { window.location.href = `/admin/users/edit/${id}`; }
+
+function openDeleteModal(id, name) {
+  pendingDeleteId = id;
+  document.getElementById('delete-user-name').textContent = name;
+  document.getElementById('delete-modal').classList.remove('hidden');
+}
+function closeDeleteModal() {
+  document.getElementById('delete-modal').classList.add('hidden');
+  pendingDeleteId = null;
+}
+
+document.getElementById('confirm-delete-btn').addEventListener('click', async () => {
+  if (!pendingDeleteId) return;
+  const data = await apiJSON(`/users/${pendingDeleteId}`, { method: 'DELETE' });
+  if (data !== null) {
+    showToast('{{ t.users.js.success_deactivate }}', 'success');
+    closeDeleteModal();
+    loadUsers(currentPage);
+  }
+});
+
+// Search
+const debouncedSearch = debounce(val => { searchQuery = val; loadUsers(0); });
+document.getElementById('search-input').addEventListener('input', e => debouncedSearch(e.target.value.trim()));
+document.getElementById('role-filter').addEventListener('change', e => { roleFilter = e.target.value; loadUsers(0); });
+
+// Close modal on overlay click
+document.getElementById('delete-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeDeleteModal();
+});
+
+loadUsers();
+</script>
+{% endblock %}

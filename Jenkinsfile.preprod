@@ -1,0 +1,183 @@
+// Déploiement sur VPS (Préproduction) via SSH
+// Jenkins reste sur la VM Ubuntu locale
+
+pipeline {
+    agent any
+    
+    environment {
+        // Configuration Docker Hub (À configurer dans les credentials Jenkins)
+        DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-credentials'
+        DOCKER_IMAGE_NAME = 'laurentmd5/barrow-backend' 
+        DOCKER_IMAGE_TAG = "${BUILD_NUMBER}"
+        
+        // Configuration VPS (À configurer dans les credentials Jenkins)
+        VPS_HOST = '167.86.106.160'
+        VPS_USER = 'deployer'
+        VPS_SSH_CREDENTIALS_ID = 'vps-preprod-ssh'
+        DEPLOY_PATH = '/opt/barrow-ai-preprod'
+        
+        // Fichiers
+        COMPOSE_FILE = 'docker-compose.yml'
+        DOMAIN = 'barrowai.sse.sn'
+    }
+    
+    options {
+        timestamps()
+        timeout(time: 60, unit: 'MINUTES')
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+    
+    stages {
+        
+        stage('Clone') {
+            steps {
+                echo 'Clonage du depot GitHub sur la VM Jenkins...'
+                checkout scm
+                script {
+                    currentBuild.displayName = "#${BUILD_NUMBER} - ${GIT_COMMIT.take(8)}"
+                }
+            }
+        }
+        
+        stage('Build & Push') {
+            steps {
+                script {
+                    echo "Construction Docker : ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
+                    
+                    // Utilisation de --cache-from pour reutiliser les couches d'images existantes
+                    sh """
+                        docker build \
+                            --cache-from ${DOCKER_IMAGE_NAME}:latest \
+                            -t ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} \
+                            -t ${DOCKER_IMAGE_NAME}:latest \
+                            -f Dockerfile .
+                    """
+                    
+                    echo "Push differentiel vers Docker Hub (seules les couches modifiees sont transmises)..."
+                    docker.withRegistry('https://index.docker.io/v1/', "${DOCKER_HUB_CREDENTIALS_ID}") {
+                        sh "docker push ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
+                        sh "docker push ${DOCKER_IMAGE_NAME}:latest"
+                    }
+                }
+            }
+        }
+        
+        stage('Transfert Config') {
+            steps {
+                echo "Transfert des fichiers de configuration vers le VPS (${VPS_HOST})..."
+                sshagent (credentials: ["${VPS_SSH_CREDENTIALS_ID}"]) {
+                    sh """
+                        # Creer l'arborescence
+                        ssh -o StrictHostKeyChecking=no ${VPS_USER}@${VPS_HOST} "mkdir -p ${DEPLOY_PATH}/logs ${DEPLOY_PATH}/scripts"
+
+                        # Transferer docker-compose
+                        scp -o StrictHostKeyChecking=no ${WORKSPACE}/${COMPOSE_FILE} ${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/
+                        
+                        # Transferer les scripts
+                        scp -o StrictHostKeyChecking=no -r ${WORKSPACE}/scripts/* ${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/scripts/
+                    """
+                }
+            }
+        }
+
+        stage('Deploiement & Migration') {
+            steps {
+                echo "Preparation du script de deploiement ultra-rapide (Zero Downtime DB)..."
+                writeFile file: 'deploy.sh', text: """#!/bin/bash
+set -e
+
+cd ${DEPLOY_PATH}
+export DOMAIN=${DOMAIN}
+export BACKEND_IMAGE=${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
+
+echo 'Pull de la nouvelle image applicative...'
+docker pull ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
+docker tag ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} ${DOCKER_IMAGE_NAME}:latest || true
+
+# 1. S'assurer que les bases de donnees d'infrastructure tournent (sans les eteindre ni les recreer)
+echo 'Verification des bases de donnees (Postgres, Redis, RabbitMQ, Qdrant)...'
+docker compose -f ${COMPOSE_FILE} up -d --no-recreate postgres redis rabbitmq qdrant
+
+# 2. Redemarrer UNIQUEMENT backend et worker (Zero coupure DB, prise en compte immediate)
+echo 'Redemarrage cible des conteneurs applicatifs (backend & worker)...'
+docker compose -f ${COMPOSE_FILE} up -d --no-deps --force-recreate backend worker
+
+# 3. Migrations DB idempotentes
+echo 'Application du schema de base de donnees...'
+docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/db_migrate.py
+
+# 4. Creation admin initial uniquement si absent
+ADMIN_COUNT=\$(docker compose -f ${COMPOSE_FILE} exec -T postgres psql -U barrowai -d barrowai_poc -tAq -c 'SELECT COUNT(*) FROM admin_users;' 2>/dev/null || echo 0)
+
+if [ "\$ADMIN_COUNT" = "0" ]; then
+    echo 'Creation du compte admin initial...'
+    docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/create_admin.py --email admin@pace.gm --name 'PACE Admin' --role superadmin \${ADMIN_BOOTSTRAP_PASSWORD:+--password "\$ADMIN_BOOTSTRAP_PASSWORD"}
+else
+    echo "Administrateurs existants (\${ADMIN_COUNT}). Creation ignoree."
+fi
+
+# 5. Verification Qdrant idempotente (skip instantane en 0s si deja initialise)
+echo 'Verification Qdrant...'
+docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/init_qdrant.py || true
+"""
+                
+                echo "Execution du deploiement sur le VPS..."
+                sshagent (credentials: ["${VPS_SSH_CREDENTIALS_ID}"]) {
+                    sh """
+                        scp -o StrictHostKeyChecking=no deploy.sh ${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/deploy.sh
+                        ssh -o StrictHostKeyChecking=no ${VPS_USER}@${VPS_HOST} "bash ${DEPLOY_PATH}/deploy.sh"
+                    """
+                }
+            }
+        }
+
+        stage('Verifier') {
+            steps {
+                echo "Verification de sante reactif (polling rapide sur http://localhost:8000/health/live)"
+                sshagent (credentials: ["${VPS_SSH_CREDENTIALS_ID}"]) {
+                    script {
+                        def ok = false
+                        for (int i = 0; i < 15; i++) {
+                            def status = sh(
+                                script: "ssh -o StrictHostKeyChecking=no ${VPS_USER}@${VPS_HOST} \"curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health/live || echo 000\"",
+                                returnStdout: true
+                            ).trim()
+                            if (status == '200') {
+                                ok = true
+                                echo "Service healthy confirme en tentative ${i + 1} !"
+                                break
+                            }
+                            sleep(time: 2, unit: 'SECONDS')
+                        }
+                        if (!ok) error("Service non healthy apres verifications")
+                    }
+                }
+            }
+        }
+
+        stage('Nettoyer') {
+            steps {
+                echo "Nettoyage des artefacts temporaires..."
+                sh 'rm -f deploy.sh || true'
+                // Nettoyer uniquement les images perimees sans purger le cache des builds recents
+                sh 'docker image prune -f --filter "until=48h" || true'
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo """
+========================================
+     DEPLOIEMENT VPS REUSSI !
+========================================
+  Backend actif sur le VPS (${VPS_HOST}).
+  Domaine : https://${DOMAIN} (ou http://${VPS_HOST}:8000)
+========================================"""
+        }
+        failure {
+            echo "Echec du deploiement. Verifiez les logs ci-dessus."
+        }
+    }
+}

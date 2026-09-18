@@ -9,7 +9,7 @@ from typing import Optional
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config, AsyncEngine
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 
 from alembic import context
 
@@ -31,7 +31,8 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Set SQLAlchemy URL from settings
+# Set sync URL for offline mode (SQL generation only)
+# Online/async mode uses settings.database_url (asyncpg) directly — see run_async_migrations()
 config.set_main_option("sqlalchemy.url", settings.sync_database_url)
 
 # Add model metadata for autogenerate
@@ -82,19 +83,22 @@ def do_run_migrations(connection: Connection) -> None:
 async def run_async_migrations() -> None:
     """
     Run migrations in 'online' mode with async engine.
+
+    We build the engine directly from settings.database_url (asyncpg) instead
+    of reading from alembic.ini, because alembic.ini stores the *sync* URL
+    (psycopg2) used for offline SQL generation only.
     """
     connectable: Optional[AsyncEngine] = None
-    
+
     try:
-        connectable = async_engine_from_config(
-            config.get_section(config.config_ini_section, {}),
-            prefix="sqlalchemy.",
+        connectable = create_async_engine(
+            settings.database_url,  # asyncpg — required for async engine
             poolclass=pool.NullPool,
         )
 
         async with connectable.connect() as connection:
             await connection.run_sync(do_run_migrations)
-            
+
     finally:
         if connectable:
             await connectable.dispose()

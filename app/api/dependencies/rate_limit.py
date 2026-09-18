@@ -1,5 +1,5 @@
-"""
-Rate limiting dependency for BARROW.AI endpoints.
+﻿"""
+Rate limiting dependency for Company Bot endpoints.
 """
 
 from fastapi import Request, HTTPException, status

@@ -1,5 +1,5 @@
-"""
-Redis client module for BARROW.AI backend.
+﻿"""
+Redis client module for Company Bot backend.
 Provides async Redis connection pooling, health checks, and comprehensive caching utilities.
 Implements connection retry logic, circuit breaker pattern, and graceful degradation.
 """
@@ -24,7 +24,7 @@ from redis.exceptions import (
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.exceptions import BarrowAIException, ErrorCode
+from app.core.exceptions import BotException, ErrorCode
 
 logger = get_logger(__name__)
 
@@ -50,7 +50,7 @@ class RedisErrorCode(str, Enum):
     OPERATION_FAILED = "REDIS_OPERATION_FAILED"
 
 
-class RedisException(BarrowAIException):
+class RedisException(BotException):
     """Redis-specific exception with circuit breaker awareness."""
     
     def __init__(
@@ -472,3 +472,4 @@ def setup_redis_hooks(app):
     async def shutdown_redis():
         """Close Redis connections on application shutdown."""
         await close_redis()
+

@@ -1,5 +1,5 @@
 """
-WhatsApp Service for BARROW.AI.
+WhatsApp Service for Company Bot.
 Integrates with Meta WhatsApp Cloud API for bidirectional messaging.
 """
 
@@ -19,20 +19,53 @@ from tenacity import (
     before_sleep_log,
 )
 
-from app.core.config import settings
+from app.core.config import settings, Environment
 from app.core.logging import get_logger
-from app.core.exceptions import BarrowAIException, ErrorCode
+from app.core.exceptions import BotException, ErrorCode
+from app.core.metrics import whatsapp_messages_received_total, voice_message_processed_total
 from app.services.cache.redis_cache import cache_service, CacheNamespace
 from app.services.chat_service import ChatService
 from app.services.validation.input_validator import InputValidator
 from app.services.validation.security_validator import SecurityValidator
+from app.services.audio.audio_validator import AudioValidator
+from app.services.audio.media_utils import download_media, upload_media, send_audio_message, convert_to_ogg_opus
+from app.services.audio.whisper_service import whisper
+from app.services.audio.tts_service import tts
 from app.repositories.session_repository import SessionRepository
+import re
 from app.models.request.whatsapp import WhatsAppWebhookRequest, WhatsAppMessage
 
 logger = get_logger(__name__)
 
 
-class WhatsAppException(BarrowAIException):
+def format_for_whatsapp(text: str) -> str:
+    """
+    Convert standard Markdown (LLM / Python templates) into native WhatsApp formatting:
+    - Standard Markdown bold **text** -> WhatsApp bold *text*
+    - Standard Markdown strikethrough ~~text~~ -> WhatsApp strikethrough ~text~
+    - Fix any mismatched or triple asterisks (e.g. ***bold*** or **bold*) -> *bold*
+    """
+    if not text:
+        return text
+    
+    # 1. Convert standard Markdown bold **text** -> WhatsApp bold *text*
+    formatted = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
+    
+    # 2. Convert standard Markdown strikethrough ~~text~~ -> WhatsApp strikethrough ~text~
+    formatted = re.sub(r'~~(.+?)~~', r'~\1~', formatted)
+    
+    # 3. Clean any triple asterisks ***text*** -> *text*
+    formatted = re.sub(r'\*\*\*(.+?)\*\*\*', r'*\1*', formatted)
+    
+    # 4. Clean accidental mismatched double/single asterisks (e.g. **word* or *word**)
+    formatted = re.sub(r'\*\*([^*]+)\*', r'*\1*', formatted)
+    formatted = re.sub(r'\*([^*]+)\*\*', r'*\1*', formatted)
+    
+    return formatted
+
+
+
+class WhatsAppException(BotException):
     """WhatsApp-specific exception."""
     
     def __init__(self, message: str, code: Optional[int] = None, original_error: Optional[Exception] = None):
@@ -72,7 +105,7 @@ class WhatsAppInvalidPhoneException(WhatsAppException):
 
 class WhatsAppService:
     """
-    WhatsApp Cloud API service for BARROW.AI.
+    WhatsApp Cloud API service for Company Bot.
     
     Handles:
     - Webhook verification
@@ -233,10 +266,20 @@ class WhatsAppService:
         Returns:
             Processing result
         """
-        # Validate signature if provided
-        if signature and not self._validate_signature(signature, raw_body):
+        # C-03 FIX: Validate signature before processing
+        require_sig = getattr(settings, "WHATSAPP_REQUIRE_SIGNATURE", True)
+        if not signature:
+            if require_sig and settings.ENVIRONMENT in (Environment.PRODUCTION, Environment.STAGING):
+                logger.warning("whatsapp_webhook_missing_signature_rejected")
+                return {"status": "error", "reason": "missing_signature"}
+        elif not self._validate_signature(signature, raw_body):
             logger.warning("whatsapp_webhook_invalid_signature")
             return {"status": "error", "reason": "invalid_signature"}
+        
+        # SÉCURITÉ : Déballer le payload s'il est doublement encapsulé (ex: via RabbitMQ)
+        if "payload" in payload and "object" not in payload:
+            logger.info("unwrapping_nested_payload")
+            payload = payload["payload"]
         
         try:
             webhook_request = WhatsAppWebhookRequest(**payload)
@@ -255,11 +298,13 @@ class WhatsAppService:
         
         for message in messages:
             try:
-                await self._process_incoming_message(message)
+                contact_name = webhook_request.get_contact_name_for_sender(message.phone_number)
+                await self._process_incoming_message(message, contact_name=contact_name)
                 processed_count += 1
             except Exception as e:
                 logger.error("whatsapp_message_processing_failed", error=str(e), message_id=message.id)
                 errors.append({"message_id": message.id, "error": str(e)})
+
         
         return {
             "status": "success",
@@ -268,13 +313,15 @@ class WhatsAppService:
             "errors": errors if errors else None,
         }
     
-    async def _process_incoming_message(self, message: WhatsAppMessage) -> None:
+    async def _process_incoming_message(self, message: WhatsAppMessage, contact_name: Optional[str] = None) -> None:
         """
         Process a single incoming WhatsApp message.
         
         Args:
             message: Parsed WhatsApp message
+            contact_name: Optional sender profile display name
         """
+
         phone_number = message.phone_number
         message_id = message.message_id
         
@@ -320,21 +367,46 @@ class WhatsAppService:
                 await self._handle_start_command(phone_number)
                 return
         
-        # Only process text messages for now (POC)
-        if not message.is_text or not message.text_content:
-            await self.send_text_message(
-                to_number=phone_number,
-                text="I can only process text messages at the moment. Please type your question.",
-            )
+        # Handle voice / audio messages
+        if message.type == "audio" or (hasattr(message, 'audio') and message.audio):
+            whatsapp_messages_received_total.labels(type="voice").inc()
+            await self._handle_voice_message(message, phone_number)
+            return
+
+        # Handle document / CV messages (PDF, DOCX)
+        if message.type == "document" or (hasattr(message, 'document') and message.document):
+            whatsapp_messages_received_total.labels(type="document").inc()
+            await self._handle_document_message(message, phone_number)
             return
         
-        user_message = message.text_content
+        # Only process text messages for now (POC)
+        if not message.is_text or not message.text_content:
+            whatsapp_messages_received_total.labels(type="other").inc()
+            await self.send_text_message(
+                to_number=phone_number,
+                text="I can only process text, voice, or document (CV PDF/Word) messages at the moment.",
+            )
+            return
+
         
+        # Record text message
+        whatsapp_messages_received_total.labels(type="text").inc()
+        
+        user_message = message.text_content
+
+        # Detect language from the user's own text
+        detected_language = self._input_validator.detect_language(user_message)
+        logger.info(
+            "whatsapp_text_language_detected",
+            phone=phone_number[-4:],
+            language=detected_language,
+        )
+
         # Validate input
         try:
             is_valid, sanitized_message, _ = self._input_validator.validate_chat_message(
                 message=user_message,
-                language="en",  # Could detect from message
+                language=detected_language,
                 channel="whatsapp",
             )
         except Exception as e:
@@ -344,17 +416,23 @@ class WhatsAppService:
                 text="I couldn't process that message. Please try again with a different question.",
             )
             return
-        
-        # Process through chat service
+
+        # Process through chat service with the detected language
         response = await self._chat_service.process_message(
             message=sanitized_message,
             session_id=None,  # Will be created/retrieved based on phone
-            language="en",
+            language=detected_language,
             channel="whatsapp",
             ip_address=None,
             user_agent="WhatsApp",
-            metadata={"phone_number": phone_number},
+            metadata={
+                "phone_number": phone_number,
+                "detected_language": detected_language,
+                "contact_name": contact_name,
+                "user_name": contact_name,
+            },
         )
+
         
         # Send response
         response_text = response.get("message", "")
@@ -393,9 +471,9 @@ class WhatsAppService:
         await self.send_text_message(
             to_number=phone_number,
             text=(
-                "You have been unsubscribed from AskBarrow.ai messages. "
+                "You have been unsubscribed from AskCompany Bot messages. "
                 "You can restart the conversation anytime by sending 'START'.\n\n"
-                "Ask. Know. Decide. - One Gambia. One People. One Barrow."
+                ""
             ),
         )
         
@@ -420,14 +498,381 @@ class WhatsAppService:
         await self.send_text_message(
             to_number=phone_number,
             text=(
-                "Welcome back to AskBarrow.ai! You are now resubscribed. "
+                "Welcome back to AskCompany Bot! You are now resubscribed. "
                 "How can I help you today?\n\n"
-                "Ask. Know. Decide. - One Gambia. One People. One Barrow."
+                ""
             ),
         )
         
         logger.info("whatsapp_user_opted_in", phone=phone_number[-4:])
     
+    async def _keep_typing_indicator_alive(
+        self,
+        message_id: Optional[str],
+        stop_event: asyncio.Event,
+    ) -> None:
+        """
+        Periodically refreshes the WhatsApp typing indicator while background processing runs.
+        Meta auto-dismisses the typing indicator after 25s; we refresh every 20s.
+        """
+        if not message_id:
+            return
+        while not stop_event.is_set():
+            await self.send_typing_indicator(message_id)
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=20.0)
+            except (asyncio.TimeoutError, TimeoutError):
+                pass
+            except Exception as e:
+                logger.debug("typing_indicator_keepalive_interrupted", error=str(e))
+                break
+
+    async def _handle_voice_message(self, message: WhatsAppMessage, phone_number: str) -> None:
+        """Process an incoming voice message."""
+        media_id = None
+        if message.audio and message.audio.id:
+            media_id = message.audio.id
+        else:
+            await self.send_text_message(
+                to_number=phone_number,
+                text="J'ai bien reçu un message audio mais le fichier est introuvable. Veuillez réessayer."
+            )
+            return
+
+        # Start native typing indicator (replaces intrusive text message)
+        stop_typing = asyncio.Event()
+        msg_id = getattr(message, "id", None)
+        typing_task = asyncio.create_task(
+            self._keep_typing_indicator_alive(msg_id, stop_typing)
+        )
+
+        try:
+            # Download media
+            client = await self._get_client()
+            audio_bytes = await download_media(
+                media_id=media_id,
+                access_token=self._access_token,
+                api_version=self._api_version,
+                phone_number_id=self._phone_number_id,
+                client=client
+            )
+            
+            if not audio_bytes:
+                await self.send_text_message(
+                    to_number=phone_number,
+                    text="Je n'ai pas pu télécharger votre message vocal. Veuillez réessayer."
+                )
+                return
+            
+            # Validate audio
+            is_valid, error_msg = AudioValidator.validate(audio_bytes)
+            if not is_valid:
+                await self.send_text_message(
+                    to_number=phone_number,
+                    text=f"Votre message vocal n'a pas pu être traité : {error_msg}. Veuillez essayer un message plus court ou poser votre question par écrit."
+                )
+                return
+            
+            # Transcribe with automatic language detection (defaults to French)
+            transcribed_text, whisper_lang = await whisper.transcribe_detect(audio_bytes)
+            if not transcribed_text:
+                voice_message_processed_total.labels(status="transcription_failed").inc()
+                await self.send_text_message(
+                    to_number=phone_number,
+                    text="Je n'ai pas bien compris votre message vocal. Pourriez-vous le répéter ou poser votre question par écrit ?"
+                )
+                return
+
+            # Check active session language for conversation inertia
+            session_lang = "fr"
+            try:
+                active_session = await self._session_repo.get_by_external_id(
+                    external_id=phone_number,
+                    channel="whatsapp"
+                )
+                if active_session and active_session.language:
+                    session_lang = active_session.language
+            except Exception as e:
+                logger.debug("session_language_lookup_skipped", error=str(e))
+
+            # Check for unambiguous French conversational words
+            words = set(re.findall(r'\b\w+\b', transcribed_text.lower()))
+            french_keywords = {
+                "oui", "ouais", "ouep", "non", "nan", "ok", "d'accord", "daccord", "dac", "merci",
+                "bonjour", "salut", "bonsoir", "stage", "stages", "stagiaire", "stagiaires", "emploi",
+                "candidat", "candidature", "developpeur", "developpement", "web", "cv", "informatique",
+                "reseau", "reseaux", "voila", "exact", "exactement", "absolument", "parfait", "compris",
+                "disponible", "disponibilite", "terrain", "site"
+            }
+            has_french_keyword = bool(words & french_keywords)
+
+            # Refine language detection with session inertia & semantic keyword lock
+            text_lang = self._input_validator.detect_language(transcribed_text)
+            word_count = len(transcribed_text.split())
+
+            if has_french_keyword:
+                detected_language = "fr"
+            elif session_lang == "fr" and whisper_lang == "fr":
+                # Both session and Whisper acoustic detector agree on French.
+                # Never let text_lang switch to English due to phonetic hallucinations.
+                detected_language = "fr"
+            elif whisper_lang == "fr" and text_lang != "en":
+                detected_language = "fr"
+            elif word_count < 3 and session_lang in ["fr", "en"]:
+                # Short answers inherit the ongoing session's language
+                detected_language = session_lang
+            elif session_lang == "fr" and text_lang == "en" and whisper_lang == "fr":
+                # Protect French session against Whisper hallucinating English words
+                detected_language = "fr"
+            elif text_lang in ["en", "fr"] and word_count >= 4 and whisper_lang != "fr":
+                # Only switch to English if Whisper did NOT detect French and the transcript is robustly English
+                detected_language = text_lang
+            elif whisper_lang in ["en", "fr"] and whisper_lang == session_lang:
+                detected_language = whisper_lang
+            else:
+                detected_language = session_lang or "fr"
+
+            logger.info(
+                "whatsapp_voice_language_detected",
+                phone=phone_number[-4:],
+                whisper_lang=whisper_lang,
+                text_lang=text_lang,
+                session_lang=session_lang,
+                final_lang=detected_language,
+            )
+
+            # Validate
+            try:
+                is_valid, sanitized_message, _ = self._input_validator.validate_chat_message(
+                    message=transcribed_text,
+                    language=detected_language,
+                    channel="whatsapp",
+                )
+            except Exception as e:
+                logger.warning("voice_input_validation_failed", error=str(e))
+                await self.send_text_message(
+                    to_number=phone_number,
+                    text="J'ai eu des difficultés à comprendre votre message. Pourriez-vous réessayer ou l'écrire par texte ?"
+                )
+                return
+
+            response = await self._chat_service.process_message(
+                message=sanitized_message,
+                session_id=None,
+                language=detected_language,
+                channel="whatsapp",
+                ip_address=None,
+                user_agent="WhatsApp",
+                metadata={
+                    "phone_number": phone_number,
+                    "is_voice": True,
+                    "detected_language": detected_language,
+                },
+            )
+
+            response_text = response.get("message", "")
+            if not response_text:
+                response_text = "I'm not sure how to answer that. Please try again." if detected_language == "en" \
+                    else "Je ne suis pas sûr de pouvoir répondre à cela. Veuillez réessayer."
+
+            # Synthesize voice response using unified TTS service
+            audio_response = await tts.synthesize(response_text, language=detected_language)
+            
+            if audio_response:
+                # Check if it's a WAV file (RIFF header) and convert to OGG Opus if needed
+                mime_type = "audio/mpeg"
+                if audio_response.startswith(b"RIFF"):
+                    logger.info("converting_wav_to_ogg", phone=phone_number[-4:])
+                    audio_response = await convert_to_ogg_opus(audio_response)
+                    mime_type = "audio/ogg"
+
+                media_id = await upload_media(
+                    audio_bytes=audio_response,
+                    access_token=self._access_token,
+                    api_version=self._api_version,
+                    phone_number_id=self._phone_number_id,
+                    client=client,
+                    mime_type=mime_type
+                )
+                if media_id:
+                    await send_audio_message(
+                        to_number=phone_number,
+                        audio_id=media_id,
+                        send_message_func=self._send_message
+                    )
+                    logger.info("voice_response_sent", phone=phone_number[-4:])
+                    # Record successful voice message processing
+                    voice_message_processed_total.labels(status="success").inc()
+                    return
+                else:
+                    # Media upload failed
+                    voice_message_processed_total.labels(status="upload_failed").inc()
+            else:
+                # TTS synthesis failed
+                voice_message_processed_total.labels(status="tts_failed").inc()
+            
+            # Fallback to text response
+            await self.send_text_message(to_number=phone_number, text=response_text)
+        finally:
+            stop_typing.set()
+            try:
+                await typing_task
+            except Exception:
+                pass
+
+    async def _handle_document_message(self, message: WhatsAppMessage, phone_number: str) -> None:
+        """Process an incoming document / CV message."""
+        doc = getattr(message, 'document', None)
+        if not doc or not doc.id:
+            await self.send_text_message(
+                to_number=phone_number,
+                text="Document reçu sans identifiant média valide. Veuillez réessayer."
+            )
+            return
+
+        filename = doc.filename or "cv_document.pdf"
+        mime_type = doc.mime_type or "application/pdf"
+
+        logger.info("whatsapp_document_received", phone=phone_number[-4:], filename=filename, mime_type=mime_type)
+
+        await self.send_text_message(
+            to_number=phone_number,
+            text=f"📥 Document reçu (`{filename}`). Analyse du CV par l'Agent Recruteur NETSYSTEME en cours…"
+        )
+
+        client = await self._get_client()
+        media_bytes = await download_media(
+            media_id=doc.id,
+            access_token=self._access_token,
+            api_version=self._api_version,
+            phone_number_id=self._phone_number_id,
+            client=client
+        )
+
+        contact_email = settings.COMPANY_CONTACT_EMAIL or settings.RECRUITER_NOTIFICATION_EMAIL
+        contact_phone = settings.COMPANY_CONTACT_PHONE
+
+        if not media_bytes:
+            email_info = f" ou l'adresser par email à {contact_email}" if contact_email else ""
+            await self.send_text_message(
+                to_number=phone_number,
+                text=f"Impossible de télécharger votre document. Veuillez le renvoyer{email_info}."
+            )
+            return
+
+        try:
+            from app.services.admin.document_parser import parse_document_content
+            from app.services.recruitment.recruiter_agent import recruiter_agent
+
+            extracted_text = await parse_document_content(
+                content=media_bytes,
+                content_type=mime_type,
+                filename=filename
+            )
+
+            session = await self._get_or_create_session(phone_number)
+            session_id = str(session.id) if session else phone_number
+
+            recruiter_res = await recruiter_agent.handle_cv_submission(
+                session_id=session_id,
+                raw_text=extracted_text,
+                filename=filename,
+                phone_number=phone_number,
+                channel="whatsapp"
+            )
+
+            await self.send_text_message(
+                to_number=phone_number,
+                text=recruiter_res.get("message", "Votre CV a été analysé avec succès.")
+            )
+
+        except Exception as e:
+            logger.error("whatsapp_cv_processing_error", error=str(e), phone=phone_number[-4:])
+            email_mention = f" par email à **{contact_email}**" if contact_email else ""
+            phone_mention = f" ou par téléphone au **{contact_phone}**" if contact_phone else ""
+            reach_text = f" Nous vous invitons à adresser votre candidature{email_mention}{phone_mention}." if (email_mention or phone_mention) else ""
+            await self.send_text_message(
+                to_number=phone_number,
+                text=f"✅ Document `{filename}` bien reçu.{reach_text}"
+            )
+    
+    async def send_typing_indicator(self, message_id: str) -> bool:
+        """
+        Send native WhatsApp typing indicator and mark message as read.
+        Displays 'typing...' in WhatsApp client header without adding text bubbles.
+        Auto-dismissed after 25s or when the next message is sent.
+
+        Args:
+            message_id: The WhatsApp message ID from the webhook.
+
+        Returns:
+            True if sent successfully, False otherwise.
+        """
+        if not message_id:
+            return False
+
+        url = f"{self.BASE_URL}/{self._api_version}/{self._phone_number_id}/messages"
+        payload = {
+            "messaging_product": "whatsapp",
+            "status": "read",
+            "message_id": message_id,
+            "typing_indicator": {
+                "type": "text"
+            }
+        }
+
+        try:
+            client = await self._get_client()
+            response = await client.post(url, json=payload)
+            if response.status_code == 200:
+                logger.debug("whatsapp_typing_indicator_sent", message_id=message_id)
+                return True
+            else:
+                # Fallback to standard status: read if typing_indicator is not supported
+                logger.debug(
+                    "whatsapp_typing_indicator_fallback_read",
+                    status_code=response.status_code,
+                    body=response.text[:200]
+                )
+                fallback_payload = {
+                    "messaging_product": "whatsapp",
+                    "status": "read",
+                    "message_id": message_id,
+                }
+                await client.post(url, json=fallback_payload)
+                return False
+        except Exception as e:
+            logger.debug("whatsapp_typing_indicator_error", error=str(e), message_id=message_id)
+            return False
+
+    async def mark_message_as_read(self, message_id: str) -> bool:
+        """
+        Mark incoming message as read (blue checks).
+
+        Args:
+            message_id: The WhatsApp message ID.
+
+        Returns:
+            True if successfully marked as read, False otherwise.
+        """
+        if not message_id:
+            return False
+
+        url = f"{self.BASE_URL}/{self._api_version}/{self._phone_number_id}/messages"
+        payload = {
+            "messaging_product": "whatsapp",
+            "status": "read",
+            "message_id": message_id,
+        }
+
+        try:
+            client = await self._get_client()
+            response = await client.post(url, json=payload)
+            return response.status_code == 200
+        except Exception as e:
+            logger.debug("whatsapp_mark_read_error", error=str(e), message_id=message_id)
+            return False
+
     async def send_text_message(
         self,
         to_number: str,
@@ -445,17 +890,19 @@ class WhatsAppService:
         Returns:
             API response dict
         """
+        formatted_body = format_for_whatsapp(text)
         async with self._message_semaphore:
             return await self._send_message(
                 to_number=to_number,
                 message_type="text",
                 payload={
                     "text": {
-                        "body": text,
+                        "body": formatted_body,
                         "preview_url": preview_url,
                     }
                 },
             )
+
     
     async def send_template_message(
         self,
@@ -720,8 +1167,7 @@ class WhatsAppService:
         Returns:
             Truncated text
         """
-        slogan = "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        
+                
         if len(text) <= self.MAX_MESSAGE_LENGTH:
             return text
         
@@ -871,3 +1317,6 @@ class WhatsAppService:
         except Exception as e:
             logger.error("get_business_profile_failed", error=str(e))
             return {"status": "error", "error": str(e)}
+
+
+

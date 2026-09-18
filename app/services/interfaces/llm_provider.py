@@ -1,5 +1,5 @@
-"""
-LLM Provider interface for BARROW.AI.
+﻿"""
+LLM Provider interface for Company Bot.
 Defines abstract base class for language model providers.
 Enables dependency inversion for easy swapping between Gemini and Ollama.
 """

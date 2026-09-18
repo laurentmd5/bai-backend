@@ -1,5 +1,5 @@
-"""
-LLM services package for BARROW.AI.
+﻿"""
+LLM services package for Company Bot.
 Contains concrete implementations of LLM providers.
 """
 

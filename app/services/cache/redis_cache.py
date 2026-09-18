@@ -1,5 +1,5 @@
-"""
-Redis cache service for BARROW.AI.
+﻿"""
+Redis cache service for Company Bot.
 Provides comprehensive caching strategies for RAG responses, embeddings, sessions, and rate limiting.
 Implements cache stampede prevention, TTL management, and serialization.
 """
@@ -37,6 +37,7 @@ class CacheNamespace(str, Enum):
     ADMIN_SESSION = "admin:session"
     CSRF_TOKEN = "csrf"
     LOCK = "lock"
+    OOLEL_TTS = "oolel:tts"
 
 
 class RedisCacheService:
@@ -54,6 +55,15 @@ class RedisCacheService:
         if not self._client:
             self._client = await get_redis()
         return self._client
+    
+    async def is_connected(self) -> bool:
+        """Check if Redis is reachable."""
+        try:
+            client = await self._get_client()
+            await client.ping()
+            return True
+        except Exception:
+            return False
     
     def _make_key(self, namespace: CacheNamespace, *parts: str) -> str:
         """
@@ -594,23 +604,25 @@ class RedisCacheService:
         normalized = ''.join(c for c in normalized if c.isalnum() or c.isspace())
         return hashlib.sha256(normalized.encode()).hexdigest()
     
-    async def get_rag_response(self, question: str) -> Optional[Dict[str, Any]]:
+    async def get_rag_response(self, question: str, session_id: str = "global") -> Optional[Dict[str, Any]]:
         """
         Get cached RAG response for a question.
         
         Args:
             question: User question
+            session_id: Contextual session ID
             
         Returns:
             Cached response dict or None
         """
         question_hash = self._hash_question(question)
-        return await self.get(CacheNamespace.RAG_RESPONSE, question_hash)
+        return await self.get(CacheNamespace.RAG_RESPONSE, session_id, question_hash)
     
     async def set_rag_response(
         self,
         question: str,
         response: Dict[str, Any],
+        session_id: str = "global",
         ttl: Optional[int] = None
     ) -> bool:
         """
@@ -619,6 +631,7 @@ class RedisCacheService:
         Args:
             question: User question
             response: Response dict to cache
+            session_id: Contextual session ID
             ttl: Optional TTL override
             
         Returns:
@@ -628,6 +641,7 @@ class RedisCacheService:
         question_hash = self._hash_question(question)
         return await self.set(
             CacheNamespace.RAG_RESPONSE,
+            session_id,
             question_hash,
             value=response,
             ttl=ttl
@@ -669,6 +683,53 @@ class RedisCacheService:
             CacheNamespace.RAG_EMBEDDING,
             text_hash,
             value=embedding,
+            ttl=ttl
+        )
+    
+    async def get_oolel_tts(self, text: str) -> Optional[bytes]:
+        """
+        Get cached Oolel TTS audio for text.
+        
+        Args:
+            text: Text that was spoken
+            
+        Returns:
+            bytes or None
+        """
+        import base64
+        text_hash = hashlib.sha256(text.encode()).hexdigest()
+        cached_b64 = await self.get(CacheNamespace.OOLEL_TTS, text_hash)
+        if cached_b64:
+            try:
+                return base64.b64decode(cached_b64)
+            except Exception as e:
+                logger.error("failed_to_decode_cached_oolel_audio", error=str(e))
+        return None
+    
+    async def set_oolel_tts(
+        self,
+        text: str,
+        audio_bytes: bytes,
+        ttl: Optional[int] = 2592000  # 30 days default
+    ) -> bool:
+        """
+        Cache Oolel TTS audio for text.
+        
+        Args:
+            text: Text that was spoken
+            audio_bytes: Raw audio bytes
+            ttl: Optional TTL override
+            
+        Returns:
+            bool: True if successful
+        """
+        import base64
+        text_hash = hashlib.sha256(text.encode()).hexdigest()
+        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+        return await self.set(
+            CacheNamespace.OOLEL_TTS,
+            text_hash,
+            value=audio_b64,
             ttl=ttl
         )
     
@@ -890,6 +951,41 @@ class RedisCacheService:
             bool: True if already processed
         """
         return await self.exists(CacheNamespace.WHATSAPP_PROCESSED, message_id)
+    
+    # =========================================================================
+    # Audio Transcript Caching
+    # =========================================================================
+    
+    async def get_audio_transcript(self, audio_hash: str) -> Optional[str]:
+        """
+        Get cached transcript for an audio hash.
+        
+        Args:
+            audio_hash: Hash of the audio file
+            
+        Returns:
+            Cached transcript or None
+        """
+        return await self.get(CacheNamespace.RAG_RESPONSE, f"audio:transcript:{audio_hash}")
+    
+    async def set_audio_transcript(self, audio_hash: str, transcript: str, ttl: int) -> bool:
+        """
+        Cache a transcribed audio.
+        
+        Args:
+            audio_hash: Hash of the audio file
+            transcript: Transcribed text
+            ttl: Time to live in seconds
+            
+        Returns:
+            bool: True if successful
+        """
+        return await self.set(
+            CacheNamespace.RAG_RESPONSE,
+            f"audio:transcript:{audio_hash}",
+            value=transcript,
+            ttl=ttl
+        )
     
     # =========================================================================
     # JWT Blacklist

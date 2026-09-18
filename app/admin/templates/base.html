@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}{{ t.base.title }}{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/admin/static/css/admin.css">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+<div class="admin-layout">
+  <!-- ── Sidebar ──────────────────────────────────────────── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-brand-icon"><i class="fas fa-robot"></i></div>
+      <div class="sidebar-brand-text">
+        <div class="sidebar-brand-name">{{ company.name or 'NETSYSTEME' }}</div>
+        <div class="sidebar-brand-sub">{{ company.bot_name or 'NetBot' }} Admin</div>
+      </div>
+    </div>
+
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">{{ t.base.navigation }}</div>
+
+      <a href="/admin/dashboard" class="nav-item" data-path="/admin/dashboard">
+        <i class="fas fa-chart-line nav-icon"></i>
+        <span>{{ t.base.dashboard }}</span>
+      </a>
+      <a href="/admin/knowledge" class="nav-item" data-path="/admin/knowledge">
+        <i class="fas fa-database nav-icon"></i>
+        <span>{{ t.base.knowledge_base }}</span>
+      </a>
+      <a href="/admin/users" class="nav-item" data-path="/admin/users">
+        <i class="fas fa-user-shield nav-icon"></i>
+        <span>{{ t.base.administrators }}</span>
+      </a>
+      <a href="/admin/conversations" class="nav-item" data-path="/admin/conversations">
+        <i class="fas fa-comments nav-icon"></i>
+        <span>{{ t.base.conversations }}</span>
+      </a>
+      <a href="/admin/candidates" class="nav-item" data-path="/admin/candidates">
+        <i class="fas fa-user-tie nav-icon"></i>
+        <span>{{ t.base.candidates }}</span>
+      </a>
+
+      <div class="nav-section-label" style="margin-top:.75rem">{{ t.base.security }}</div>
+
+      <a href="/admin/audit" class="nav-item" data-path="/admin/audit">
+        <i class="fas fa-shield-alt nav-icon"></i>
+        <span>{{ t.base.audit_logs }}</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-avatar">
+        {{ (admin.full_name or admin.email or 'A')[0]|upper }}
+      </div>
+      <div>
+        <div class="sidebar-user-name">{{ admin.full_name or admin.email }}</div>
+        <div class="sidebar-user-role">{{ admin.role or 'Admin' }}</div>
+      </div>
+      <a href="/admin/logout" class="sidebar-logout" title="{{ t.base.logout }}">
+        <i class="fas fa-sign-out-alt"></i>
+      </a>
+    </div>
+  </aside>
+
+  <!-- ── Main ──────────────────────────────────────────────── -->
+  <div class="main-area">
+    <!-- Topbar -->
+    <header class="topbar">
+      <button class="btn btn-ghost btn-icon" id="sidebar-toggle" style="display:none" aria-label="Menu">
+        <i class="fas fa-bars"></i>
+      </button>
+      <div class="topbar-title">{% block page_title %}{% endblock %}</div>
+      <div class="topbar-breadcrumb">
+        <a href="/admin/dashboard"><i class="fas fa-home"></i></a>
+        {% block breadcrumb %}{% endblock %}
+      </div>
+      <!-- Language Switcher -->
+      <div class="lang-switcher" style="margin-left: auto; display: flex; gap: 0.5rem; align-items: center;">
+        <a href="/admin/set-lang?lang=en" style="text-decoration: none; color: {% if lang == 'en' %}var(--primary){% else %}var(--text-muted){% endif %}; font-weight: {% if lang == 'en' %}600{% else %}400{% endif %};">EN</a>
+        <span style="color: var(--border);">|</span>
+        <a href="/admin/set-lang?lang=fr" style="text-decoration: none; color: {% if lang == 'fr' %}var(--primary){% else %}var(--text-muted){% endif %}; font-weight: {% if lang == 'fr' %}600{% else %}400{% endif %};">FR</a>
+      </div>
+    </header>
+
+    <!-- Page content -->
+    <main class="page-content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<!-- Global JS -->
+<script src="/admin/static/js/utils.js"></script>
+<script src="/admin/static/js/api.js"></script>
+<script>
+  // Active nav item
+  (function() {
+    const path = window.location.pathname;
+    document.querySelectorAll('.nav-item[data-path]').forEach(link => {
+      if (path.startsWith(link.dataset.path)) {
+        link.classList.add('active');
+      }
+    });
+  })();
+
+  // Mobile sidebar
+  const toggle = document.getElementById('sidebar-toggle');
+  const sidebar = document.getElementById('sidebar');
+  if (window.innerWidth <= 900) {
+    toggle.style.display = '';
+    toggle.addEventListener('click', () => {
+      sidebar.classList.toggle('open');
+    });
+  }
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

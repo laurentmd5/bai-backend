@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Éditer administrateur{% endblock %}
+{% block page_title %}Éditer un administrateur{% endblock %}
+{% block content %}
+<div class="max-w-lg mx-auto bg-white rounded-xl shadow-sm p-8">
+    <form id="editForm">
+        <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-bold mb-2">Email</label>
+            <input type="email" id="email" name="email" readonly class="form-input w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100">
+        </div>
+        <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-bold mb-2">Nom complet</label>
+            <input type="text" id="full_name" name="full_name" class="form-input w-full px-3 py-2 border border-gray-300 rounded-lg">
+        </div>
+        <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-bold mb-2">Rôle</label>
+            <select id="role" name="role" class="form-input w-full px-3 py-2 border border-gray-300 rounded-lg">
+                <option value="viewer">Viewer</option>
+                <option value="auditor">Auditor</option>
+                <option value="admin">Admin</option>
+                <option value="superadmin">Superadmin</option>
+            </select>
+        </div>
+        <div class="mb-4">
+            <label class="flex items-center">
+                <input type="checkbox" id="is_active" name="is_active" class="mr-2">
+                <span class="text-gray-700 text-sm">Actif</span>
+            </label>
+        </div>
+        <button type="submit" class="btn btn-primary w-full">Mettre à jour</button>
+        <button type="button" onclick="window.location.href='/admin/users'" class="btn btn-secondary w-full mt-2">Annuler</button>
+    </form>
+    <div id="error" class="mt-4 text-red-600 text-sm hidden"></div>
+</div>
+
+<script>
+    const userId = '{{ user_id }}';
+    
+    async function loadUser() {
+        const token = localStorage.getItem('access_token');
+        const res = await fetch(`/api/v1/admin/users/${userId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            const user = await res.json();
+            document.getElementById('email').value = user.email;
+            document.getElementById('full_name').value = user.full_name;
+            document.getElementById('role').value = user.role;
+            document.getElementById('is_active').checked = user.is_active;
+        } else if (res.status === 401) {
+            window.location.href = '/admin/login';
+        }
+    }
+    
+    document.getElementById('editForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const data = {
+            full_name: formData.get('full_name'),
+            role: formData.get('role'),
+            is_active: formData.get('is_active') === 'on'
+        };
+        const token = localStorage.getItem('access_token');
+        const res = await fetch(`/api/v1/admin/users/${userId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(data)
+        });
+        if (res.ok) window.location.href = '/admin/users';
+        else {
+            const err = await res.json();
+            document.getElementById('error').textContent = err.detail || 'Erreur';
+            document.getElementById('error').classList.remove('hidden');
+        }
+    });
+    
+    loadUser();
+</script>
+{% endblock %}

@@ -1,5 +1,5 @@
 """
-Input validation service for BARROW.AI.
+Input validation service for Company Bot.
 Validates all incoming user messages for security, length, and content.
 """
 
@@ -8,6 +8,7 @@ import unicodedata
 import difflib
 from typing import Tuple, Optional, List, Dict, Any
 from datetime import datetime
+from pydantic import BaseModel, ConfigDict
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -15,6 +16,7 @@ from app.core.exceptions import (
     ValidationException,
     HostileContentException,
     PromptInjectionException,
+    ErrorCode
 )
 from app.core.security import (
     detect_sql_injection,
@@ -46,7 +48,7 @@ class InputValidator:
     """
     
     # Allowed languages
-    ALLOWED_LANGUAGES = {"en", "fr", "mandinka", "wolof"}
+    ALLOWED_LANGUAGES = {"en", "fr"}  # From company.yaml
     
     # Maximum message length
     MAX_MESSAGE_LENGTH = 2000
@@ -96,17 +98,8 @@ class InputValidator:
     
     # Local acronyms expansion for low-literacy users
     LOCAL_ACRONYMS = {
-        "npp": "National People's Party",
-        "pace": "Presidential Agency for Community Empowerment",
-        "gamtel": "Gambia Telecommunications Company",
-        "gamcel": "Gambia Cellular Company",
-        "mygov": "My Government platform",
         "it": "information technology",
         "ict": "information and communication technology",
-        "ngs": "National Gambia Scholarship",
-        "gba": "Greater Banjul Area",
-        "nawec": "National Water and Electricity Company",
-        "pura": "Public Utilities Regulatory Authority",
         "ecowas": "Economic Community of West African States",
     }
     
@@ -118,7 +111,6 @@ class InputValidator:
         "lasante": "health", "sante": "health", "mezin": "medicine",
         "gouv": "governance", "govern": "governance", "gov": "governance",
         "jenes": "youth", "jenn": "youth", "yout": "youth",
-        "barow": "barrow", "barrows": "barrow",
         "digita": "digital", "digi": "digital",
         "infrastrukture": "infrastructure", "infra": "infrastructure",
         "ekonomi": "economy", "ekonomie": "economy",
@@ -129,10 +121,11 @@ class InputValidator:
     _COMMON_WORDS = [
         "internet", "agriculture", "education", "health", "governance",
         "youth", "digital", "infrastructure", "economy", "security",
-        "npp", "barrow", "gambia", "development", "project", "program",
+        "development", "project", "program",
         "job", "work", "business", "farmer", "school", "hospital",
-        "road", "bridge", "water", "electricity", "internet",
+        "road", "bridge", "water", "electricity",
     ]
+
     
     def __init__(self):
         self._blocked_phrases = self._load_blocked_phrases()
@@ -155,7 +148,7 @@ class InputValidator:
             "new instructions",
         ]
     
-    def normalize_user_input(self, message: str, language: str = "en") -> str:
+    async def normalize_user_input(self, message: str, language: str = "en") -> str:
         """
         Normalize user input for low-literacy users.
         
@@ -165,14 +158,11 @@ class InputValidator:
         - Common spelling corrections
         - Multiple punctuation removal
         - Whitespace normalization
+        - Oolel Corrector for Wolof informal spelling
         """
         if not message or len(message.strip()) < 2:
             # Very short messages - return a help prompt
-            help_prompts = {
-                "en": "I'm here to help you learn about President Barrow and NPP achievements. You can ask me about internet, farming, health, schools, or roads.",
-                "fr": "Je suis là pour vous informer sur les réalisations du Président Barrow et du NPP. Vous pouvez me poser des questions sur internet, l'agriculture, la santé, l'éducation ou les routes."
-            }
-            return help_prompts.get(language, help_prompts["en"])
+            return "I'm here to help. Could you please ask a complete question?"
         
         # Convert to lowercase and normalize
         normalized = message.lower().strip()
@@ -188,10 +178,9 @@ class InputValidator:
         for acro, expansion in self.LOCAL_ACRONYMS.items():
             normalized = re.sub(r'\b' + re.escape(acro) + r'\b', expansion, normalized)
         
-        # Apply spelling corrections
+        # Apply spelling corrections (word boundaries)
         for wrong, correct in self.SPELL_CORRECTIONS.items():
-            if wrong in normalized:
-                normalized = normalized.replace(wrong, correct)
+            normalized = re.sub(r'\b' + re.escape(wrong) + r'\b', correct, normalized)
         
         # Spell correction using difflib for unknown words
         words = normalized.split()
@@ -205,28 +194,9 @@ class InputValidator:
             corrected_words.append(word)
         normalized = ' '.join(corrected_words)
         
-        # Map single keywords to full questions
-        keyword_map = {
-            "internet": "What has NPP done for internet and connectivity?",
-            "agriculture": "What are NPP plans for agriculture and food security?",
-            "health": "What healthcare reforms does NPP propose?",
-            "education": "What is NPP plan for education and skills?",
-            "youth": "What are NPP programs for youth empowerment?",
-            "governance": "What is NPP plan for good governance?",
-            "digital": "What has NPP done for digital transformation?",
-            "infrastructure": "What infrastructure projects has NPP completed?",
-            "economy": "What has NPP done for the economy and jobs?",
-            "security": "What has NPP done for national security?",
-        }
-        
-        # If message is a single word or very short phrase, map to full question
-        if len(normalized.split()) <= 3:
-            for keyword, question in keyword_map.items():
-                if keyword in normalized or normalized == keyword:
-                    return question
-        
         # Remove multiple punctuation
         normalized = re.sub(r'([!?.]){2,}', r'\1', normalized)
+
         
         # Ensure message ends with question mark if it looks like a question
         if any(word in normalized for word in ["what", "how", "why", "when", "where", "who", "tell", "explain"]):
@@ -692,7 +662,7 @@ class InputValidator:
         
         # Check common passwords
         common_passwords = [
-            "password", "password123", "admin123", "barrow2024", "npp2024",
+            "password", "password123", "admin123", "admin2024",
             "12345678", "qwerty123", "gambia2024", "president2024"
         ]
         
@@ -739,36 +709,88 @@ class InputValidator:
     def detect_language(self, text: str) -> str:
         """
         Detect the language of a text.
-        
-        Simple heuristic-based detection for POC.
-        Phase 2 will use a proper language detection library.
-        
+
+        Strategy (layered):
+        1. Use langdetect (statistical model, ~200 languages) for fr/en.
+        3. Fallback to keyword-based French detection if langdetect unavailable.
+        4. Default to "en".
+
         Args:
             text: Text to analyze
-            
+
         Returns:
-            Detected language code
+            Language code: "en" or "fr"
         """
-        text_lower = text.lower()
-        
-        # French indicators
-        french_indicators = ["bonjour", "salut", "merci", "comment", "pourquoi", "qu'est", "je", "tu", "nous"]
-        french_count = sum(1 for word in french_indicators if word in text_lower)
-        
-        # Mandinka indicators
-        mandinka_indicators = ["salaam", "aleikum", "nna", "tang", "nyaa", "be", "le", "mu", "ka"]
-        mandinka_count = sum(1 for word in mandinka_indicators if word in text_lower)
-        
-        # Wolof indicators
-        wolof_indicators = ["na nga", "def", "jërejëf", "waaw", "déedéet", "ba beneen"]
-        wolof_count = sum(1 for word in wolof_indicators if word in text_lower)
-        
-        # Determine language
-        if french_count > 2:
-            return "fr"
-        elif mandinka_count > 2:
-            return "mandinka"
-        elif wolof_count > 2:
-            return "wolof"
-        else:
+        if not text or len(text.strip()) < 3:
             return "en"
+
+        text_lower = text.lower()
+        words = set(text_lower.split())
+
+        # ── 1. Gambian local languages (keyword priority) ──────────────────
+        mandinka_indicators = {
+            "salaam", "aleikum", "nna", "tang", "nyaa", "siita",
+            "foloo", "koto", "bara", "jula", "mansa", "wuloo",
+        }
+        wolof_indicators = {
+            # Salutations & Politesse
+            "jërejëf", "waaw", "déedéet", "nanga", "naka", "salaamalekum", "maangi", "fi", "rekk", "sant",
+            # Question words
+            "ki", "mo", "kan", "lan", "fan", "lu", "tudd", "ñata", "ñaata", "ndax", "loo", "noo", "nu", "foo", "kuy", "yan", "ban",
+            # Pronouns & Possessives
+            "man", "yaw", "yow", "mom", "moom", "ñun", "yeen", "ñom", "sama", "sa", "sunu", "seen", "kii", "ñii", "lii", "yii", "koku", "boku", "loku",
+            # Verbs
+            "xam", "xamam", "am", "baax", "def", "wax", "jox", "jël", "dox", "dem", "ñëw", "toog", "taxaw", "xool", "gis", "dégg", "ladj", "laaj", "mën", "war", "bëgg", "jang", "liggéey", "fey", "fay", "bind", "door", "daw", "nelaw", "dimbali", "jappale", "indi",
+            # Nouns
+            "dëkk", "nit", "gox", "réew", "kër", "mbir", "jëf", "xale", "mag", "góor", "jigéen", "jamma", "xaalis", "koppar", "ndox", "ceeb", "yapp", "jën", "taalibe", "seriñ", "tubaab", "ndaw", "mbok",
+            # Adverbs, Adjectives & Prepositions
+            "leggi", "léegi", "tay", "suba", "démb", "at", "weer", "bes", "fii", "fale", "ndeke", "ndaxte", "ngir", "pur", "lepp", "dara", "bu", "su", "ci", "ba", "bi", "mi", "yi", "ñi", "aka", "torop", "tuti", "bu_baax",
+            # Numbers
+            "benn", "ñaar", "ñett", "ñeent", "juróom", "fukk",
+            # Particles
+            "la", "na", "da", "di", "dana", "dina", "nga", "ngi", "ko", "ma", "ga", "ñu"
+        }
+        wolof_phrases = [
+            "na nga def", "naka nga def", "naka def", "naga def", "nuyu naa la", "jamm nga am", 
+            "ba beneen", "lu xew", "lu khew", "numu tudd", "naka la tudd", "lo bëgg", 
+            "fan la", "kan la", "lan la", "ndax mën nga", "dama bëgg", "dafa am", 
+            "mën nga ma", "wax ma", "dimbali ma", "naka sa", "naka mu", "ana sa"
+        ]
+
+        mandinka_score = len(mandinka_indicators & words)
+        wolof_score    = len(wolof_indicators & words) + sum(1 for p in wolof_phrases if p in text_lower)
+
+        if mandinka_score >= 2:
+            return "mandinka"
+        if wolof_score >= 1:
+            return "wolof"
+
+        # Short greetings are frequently misclassified by statistical detectors.
+        if words & {"bonjour", "salut", "merci"}:
+            return "fr"
+
+        # ── 2. langdetect for fr / en ──────────────────────────────────────
+        try:
+            from langdetect import detect, DetectorFactory  # type: ignore[import]
+            DetectorFactory.seed = 42  # deterministic
+            detected = detect(text)
+            if detected in self.ALLOWED_LANGUAGES:
+                return detected
+        except Exception:
+            pass
+
+        # ── 3. Keyword fallback for French ────────────────────────────────
+        french_words = {
+            "bonjour", "salut", "merci", "comment", "pourquoi",
+            "je", "tu", "nous", "vous", "est", "sont", "avec",
+            "pour", "dans", "sur", "que", "qui", "quoi", "quel",
+            "quelle", "les", "des", "une", "monsieur", "madame",
+            "oui", "non", "aussi", "très", "bien", "mal",
+        }
+        french_score = len(french_words & words)
+        if french_score >= 2:
+            return "fr"
+
+        return "en"
+
+

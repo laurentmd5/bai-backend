@@ -1,5 +1,5 @@
-"""
-LLM Provider factory for BARROW.AI.
+﻿"""
+LLM Provider factory for Company Bot.
 Provides dependency injection for LLM and embedding providers.
 """
 

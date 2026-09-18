@@ -1,5 +1,5 @@
-"""
-Input sanitizers for BARROW.AI.
+﻿"""
+Input sanitizers for Company Bot.
 Re-exports from core security module to avoid duplication.
 """
 
