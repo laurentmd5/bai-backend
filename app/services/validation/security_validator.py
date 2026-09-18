@@ -1,4 +1,4 @@
-﻿"""
+"""
 Security validation service for Company Bot.
 Validates security aspects including rate limiting, IP checks, and attack detection.
 """
@@ -6,6 +6,8 @@ Validates security aspects including rate limiting, IP checks, and attack detect
 import asyncio
 import hashlib
 import time
+import threading
+from collections import defaultdict, deque
 from typing import Tuple, Optional, Dict, Any, List
 from ipaddress import ip_address, ip_network
 
@@ -14,6 +16,45 @@ from app.core.logging import get_logger
 from app.services.cache.redis_cache import cache_service, CacheNamespace
 
 logger = get_logger(__name__)
+
+
+class InMemorySlidingWindowRateLimiter:
+    """
+    Thread-safe in-memory sliding window rate limiter used as fallback
+    when Redis is unavailable or fails.
+    """
+    def __init__(self, max_keys: int = 10000):
+        self._store: Dict[str, deque] = defaultdict(deque)
+        self._max_keys = max_keys
+        self._lock = threading.Lock()
+
+    def check(self, key: str, max_requests: int, window_seconds: int) -> Tuple[bool, int, int]:
+        now = time.time()
+        window_start = now - window_seconds
+        with self._lock:
+            # Bounded memory protection
+            if len(self._store) > self._max_keys:
+                expired_keys = [k for k, dq in self._store.items() if not dq or dq[-1] < window_start]
+                for k in expired_keys:
+                    del self._store[k]
+                if len(self._store) > self._max_keys:
+                    for _ in range(100):
+                        if self._store:
+                            self._store.pop(next(iter(self._store)))
+
+            timestamps = self._store[key]
+            while timestamps and timestamps[0] <= window_start:
+                timestamps.popleft()
+
+            count = len(timestamps)
+            if count >= max_requests:
+                oldest = timestamps[0]
+                reset_in = max(1, int(oldest + window_seconds - now))
+                return False, 0, reset_in
+
+            timestamps.append(now)
+            remaining = max_requests - count - 1
+            return True, remaining, window_seconds
 
 
 class SecurityValidator:
@@ -32,6 +73,7 @@ class SecurityValidator:
         self._admin_ip_whitelist = self._parse_ip_whitelist()
         self._blocked_ips: set = set()
         self._attack_patterns = self._compile_attack_patterns()
+        self._in_memory_limiter = InMemorySlidingWindowRateLimiter()
     
     def _parse_ip_whitelist(self) -> List[ip_network]:
         """
@@ -139,9 +181,8 @@ class SecurityValidator:
             return True, remaining, window_seconds
             
         except Exception as e:
-            logger.error("rate_limit_check_failed", error=str(e))
-            # Fail open - allow request
-            return True, max_requests, window_seconds
+            logger.warning("rate_limit_redis_failed_using_memory_fallback", error=str(e), key=full_key)
+            return self._in_memory_limiter.check(full_key, max_requests, window_seconds)
     
     async def check_chat_rate_limit(
         self,

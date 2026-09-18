@@ -1,4 +1,4 @@
-﻿"""
+"""
 Admin authentication endpoints for Company Bot.
 """
 
@@ -27,10 +27,52 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Admin Authentication"])
 
+import time
+import threading
+from typing import Dict, List, Optional
+
 # Failed-login lockout configuration
 _MAX_FAILURES   = 5    # max consecutive failures before lockout
 _LOCKOUT_TTL    = 900  # lockout duration in seconds (15 min)
 _FAILURES_TTL   = 900  # sliding window for counting failures
+
+
+class InMemoryLockoutTracker:
+    """Fallback in-memory failure counter & lockout tracker when Redis is down."""
+    def __init__(self):
+        self._failures: Dict[str, List[float]] = {}
+        self._locked: Dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def check_lockout(self, ip: str) -> Optional[int]:
+        now = time.time()
+        with self._lock:
+            if ip in self._locked:
+                expires_at = self._locked[ip]
+                if now < expires_at:
+                    return max(1, int(expires_at - now))
+                else:
+                    del self._locked[ip]
+        return None
+
+    def record_failure(self, ip: str, max_failures: int, failures_ttl: int, lockout_ttl: int) -> int:
+        now = time.time()
+        with self._lock:
+            timestamps = self._failures.get(ip, [])
+            timestamps = [t for t in timestamps if now - t < failures_ttl]
+            timestamps.append(now)
+            self._failures[ip] = timestamps
+            if len(timestamps) >= max_failures:
+                self._locked[ip] = now + lockout_ttl
+            return len(timestamps)
+
+    def clear_failures(self, ip: str):
+        with self._lock:
+            self._failures.pop(ip, None)
+            self._locked.pop(ip, None)
+
+
+_fallback_lockout_tracker = InMemoryLockoutTracker()
 
 
 def _ip_key(ip: str) -> str:
@@ -38,7 +80,14 @@ def _ip_key(ip: str) -> str:
 
 
 async def _check_lockout(ip: str) -> None:
-    """Raise 429 if the IP is currently locked out. Fails open on cache errors."""
+    """Raise 429 if the IP is currently locked out. Uses Redis with in-memory fallback."""
+    local_remaining = _fallback_lockout_tracker.check_lockout(ip)
+    if local_remaining is not None:
+        raise HTTPException(
+            status_code=429,
+            detail="Trop de tentatives de connexion échouées. Réessayez plus tard.",
+            headers={"Retry-After": str(local_remaining)},
+        )
     try:
         locked = await cache_service.get(CacheNamespace.LOGIN_FAILURES, _ip_key(ip), "locked")
         if locked:
@@ -51,11 +100,12 @@ async def _check_lockout(ip: str) -> None:
     except HTTPException:
         raise
     except Exception as e:
-        logger.debug("login_lockout_check_failed", error=str(e))  # fail open
+        logger.warning("login_lockout_redis_failed_using_memory_check", error=str(e))
 
 
 async def _record_failure(ip: str) -> int:
-    """Increment the failure counter; lock out if threshold reached. Fails open on cache errors."""
+    """Increment failure counter and lock out if threshold reached. Uses in-memory fallback on Redis error."""
+    local_count = _fallback_lockout_tracker.record_failure(ip, _MAX_FAILURES, _FAILURES_TTL, _LOCKOUT_TTL)
     try:
         count = await cache_service.incr(
             CacheNamespace.LOGIN_FAILURES, _ip_key(ip), "count",
@@ -70,17 +120,18 @@ async def _record_failure(ip: str) -> int:
             logger.warning("login_ip_locked_out", ip=ip, failures=count)
         return count
     except Exception as e:
-        logger.debug("login_failure_record_failed", error=str(e))
-        return 0  # fail open — don't know how many failures
+        logger.warning("login_failure_record_redis_failed_using_memory", error=str(e), local_failures=local_count)
+        return local_count
 
 
 async def _clear_failures(ip: str) -> None:
-    """Clear failure state after a successful login. Fails open on cache errors."""
+    """Clear failure state after a successful login."""
+    _fallback_lockout_tracker.clear_failures(ip)
     try:
         await cache_service.delete(CacheNamespace.LOGIN_FAILURES, _ip_key(ip), "count")
         await cache_service.delete(CacheNamespace.LOGIN_FAILURES, _ip_key(ip), "locked")
     except Exception:
-        pass  # fail open
+        pass
 
 
 @router.get("/csrf-token")

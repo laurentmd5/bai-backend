@@ -196,7 +196,7 @@ services:
       barrow-net:
         ipv4_address: 172.20.0.20
     ports:
-      - "8000:8000"
+      - "${BACKEND_BIND_ADDR:-127.0.0.1}:8000:8000"
     volumes:
       - uploads_data:/app/uploads
       - logs_data:/app/logs
@@ -279,7 +279,7 @@ services:
       
       # Internal Communication
       BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://localhost:8000}
-      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-internal-secret-token-for-worker-delegation}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       
       # Monitoring
       SENTRY_DSN: ${SENTRY_DSN:-}
@@ -388,7 +388,7 @@ services:
 
       # Internal Communication
       BACKEND_INTERNAL_URL: http://backend:8000
-      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-internal-secret-token-for-worker-delegation}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
     
     depends_on:
 

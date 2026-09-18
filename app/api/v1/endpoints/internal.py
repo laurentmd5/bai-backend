@@ -38,11 +38,12 @@ async def process_internal_whatsapp_task(
     Internal endpoint called by lightweight RabbitMQ workers.
     Processes WhatsApp webhooks using the backend's singleton RAG and ML providers.
     """
-    # Verify internal secret token
+    # Verify internal secret token with constant-time comparison
+    import secrets
     provided_secret = request.headers.get("X-Internal-Secret")
     expected_secret = settings.INTERNAL_API_SECRET.get_secret_value()
     
-    if not provided_secret or provided_secret != expected_secret:
+    if not provided_secret or not secrets.compare_digest(provided_secret, expected_secret):
         logger.warning("unauthorized_internal_request_rejected")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -99,8 +100,9 @@ async def process_internal_whatsapp_task(
         return JSONResponse(content={"status": "success", "result": result}, status_code=200)
 
     except Exception as e:
-        logger.error("internal_whatsapp_task_error", error=str(e), exc_info=True)
+        request_id = request.headers.get("X-Request-ID") or "unknown"
+        logger.error("internal_whatsapp_task_error", error=str(e), request_id=request_id, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal processing failed: {str(e)}"
+            detail="An internal error occurred during processing."
         )

@@ -112,7 +112,7 @@ ADMIN_COUNT=\$(docker compose -f ${COMPOSE_FILE} exec -T postgres psql -U barrow
 
 if [ "\$ADMIN_COUNT" = "0" ]; then
     echo 'Creation du compte admin initial...'
-    docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/create_admin.py --email admin@pace.gm --name 'PACE Admin' --role superadmin --password Admin123!
+    docker compose -f ${COMPOSE_FILE} exec -T backend python scripts/create_admin.py --email admin@pace.gm --name 'PACE Admin' --role superadmin \${ADMIN_BOOTSTRAP_PASSWORD:+--password "\$ADMIN_BOOTSTRAP_PASSWORD"}
 else
     echo "Administrateurs existants (\${ADMIN_COUNT}). Creation ignoree."
 fi

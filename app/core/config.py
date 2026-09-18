@@ -5,7 +5,7 @@ All sensitive values are loaded from environment variables only.
 """
 
 from typing import List, Optional, Union
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from enum import Enum
 
@@ -635,6 +635,11 @@ class Settings(BaseSettings):
         ...,
         description="WhatsApp App Secret (from Meta Developer Console, NOT the verify token)"
     )
+
+    WHATSAPP_REQUIRE_SIGNATURE: bool = Field(
+        default=True,
+        description="Require valid X-Hub-Signature-256 HMAC header on incoming WhatsApp webhooks"
+    )
     
     # =========================================================================
     # RAG CHUNKING SETTINGS
@@ -798,6 +803,50 @@ class Settings(BaseSettings):
         description="Target email for candidate applications notification"
     )
     
+    @model_validator(mode='after')
+    def validate_production_security(self) -> 'Settings':
+        """
+        Validate critical secrets when running in production or staging.
+        Prevents starting with known insecure defaults or weak secrets.
+        """
+        if self.ENVIRONMENT in (Environment.PRODUCTION, Environment.STAGING):
+            insecure_defaults = {
+                "internal-secret-token-for-worker-delegation",
+                "secret",
+                "password",
+                "admin",
+                "admin123",
+                "admin123!",
+                "changeme",
+                "change_this",
+                "default",
+            }
+            
+            # 1. Validate INTERNAL_API_SECRET
+            if self.INTERNAL_API_SECRET:
+                sec = self.INTERNAL_API_SECRET.get_secret_value()
+                if not sec or sec.lower() in insecure_defaults or len(sec) < 24:
+                    raise ValueError(
+                        "INTERNAL_API_SECRET is insecure for production/staging: "
+                        "must not use default values and must be at least 24 characters long."
+                    )
+            else:
+                raise ValueError("INTERNAL_API_SECRET must be set in production/staging.")
+
+            # 2. Validate JWT_SECRET
+            if self.JWT_SECRET:
+                jwt_val = self.JWT_SECRET.get_secret_value()
+                if jwt_val.lower() in insecure_defaults or len(jwt_val) < 24:
+                    raise ValueError("JWT_SECRET is insecure for production/staging: must be at least 24 characters.")
+
+            # 3. Validate CSRF_SECRET
+            if self.CSRF_SECRET:
+                csrf_val = self.CSRF_SECRET.get_secret_value()
+                if csrf_val.lower() in insecure_defaults or len(csrf_val) < 24:
+                    raise ValueError("CSRF_SECRET is insecure for production/staging: must be at least 24 characters.")
+
+        return self
+
     # =========================================================================
     # COMPUTED PROPERTIES
     # =========================================================================

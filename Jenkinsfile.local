@@ -166,7 +166,7 @@ pipeline {
                                     --email admin@pace.gm \
                                     --name 'PACE Admin' \
                                     --role superadmin \
-                                    --password Admin123!
+                                    ${ADMIN_BOOTSTRAP_PASSWORD ? "--password '" + ADMIN_BOOTSTRAP_PASSWORD + "'" : ""}
                         """
                     } else {
                         echo "Administrateurs existants (${adminCount}) — creation ignoree"
@@ -202,7 +202,7 @@ pipeline {
 ========================================
   API     : http://${ip}:8000/health
   Docs    : http://${ip}:8000/docs
-  Admin   : admin@pace.gm / Admin123!
+  Admin   : admin@pace.gm (credential configured via ADMIN_BOOTSTRAP_PASSWORD)
 ========================================"""
             }
         }

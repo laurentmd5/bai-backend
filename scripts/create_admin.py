@@ -19,10 +19,16 @@ logger = get_logger(__name__)
 
 
 async def create_admin(email: str, full_name: str, role: str, password: str = None):
-    if password is None:
-        import secrets
-        password = secrets.token_urlsafe(16)
-        print(f"Generated password: {password}")
+    import os
+    import secrets
+
+    generated = False
+    if not password:
+        password = os.getenv("ADMIN_INITIAL_PASSWORD") or os.getenv("ADMIN_BOOTSTRAP_PASSWORD")
+    
+    if not password:
+        password = secrets.token_urlsafe(20)
+        generated = True
     
     async with get_session_context() as session:
         repo = AdminRepository(session)
@@ -30,6 +36,7 @@ async def create_admin(email: str, full_name: str, role: str, password: str = No
         existing = await repo.get_by_email(email)
         if existing:
             logger.info(f"Admin {email} already exists")
+            print(f"Admin {email} already exists")
             return
         
         admin = await repo.create_admin(
@@ -42,7 +49,10 @@ async def create_admin(email: str, full_name: str, role: str, password: str = No
         await session.commit()
         
         logger.info(f"Admin created: {admin.email}")
-        print(f"Admin created: {email} / {password}")
+        if generated and not os.getenv("CI"):
+            print(f"Admin created: {email} (generated bootstrap password: {password})")
+        else:
+            print(f"Admin created: {email}")
 
 
 def main():

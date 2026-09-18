@@ -19,7 +19,7 @@ from tenacity import (
     before_sleep_log,
 )
 
-from app.core.config import settings
+from app.core.config import settings, Environment
 from app.core.logging import get_logger
 from app.core.exceptions import BotException, ErrorCode
 from app.core.metrics import whatsapp_messages_received_total, voice_message_processed_total
@@ -266,8 +266,13 @@ class WhatsAppService:
         Returns:
             Processing result
         """
-        # Validate signature if provided
-        if signature and not self._validate_signature(signature, raw_body):
+        # C-03 FIX: Validate signature before processing
+        require_sig = getattr(settings, "WHATSAPP_REQUIRE_SIGNATURE", True)
+        if not signature:
+            if require_sig and settings.ENVIRONMENT in (Environment.PRODUCTION, Environment.STAGING):
+                logger.warning("whatsapp_webhook_missing_signature_rejected")
+                return {"status": "error", "reason": "missing_signature"}
+        elif not self._validate_signature(signature, raw_body):
             logger.warning("whatsapp_webhook_invalid_signature")
             return {"status": "error", "reason": "invalid_signature"}
         

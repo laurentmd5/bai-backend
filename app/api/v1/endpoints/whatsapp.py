@@ -3,11 +3,15 @@ WhatsApp webhook endpoints for Company Bot.
 Handles incoming webhooks from Meta WhatsApp Cloud API.
 """
 
+import hashlib
+import hmac
+from typing import Optional
+
 from fastapi import APIRouter, Request, Query, HTTPException, status, BackgroundTasks, Depends
 from fastapi.responses import PlainTextResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
+from app.core.config import settings, Environment
 from app.core.logging import get_logger
 from app.core.database import get_session, get_session_context
 from app.services.whatsapp_service import WhatsAppService
@@ -20,6 +24,29 @@ from app.services.queue.rabbitmq_service import rabbitmq_service
 logger = get_logger(__name__)
 
 router = APIRouter(tags=["WhatsApp"])
+
+
+def verify_whatsapp_signature(raw_body: bytes, signature: Optional[str]) -> bool:
+    """
+    Validate WhatsApp webhook POST signature with Meta App Secret.
+    Uses constant-time comparison to prevent timing attacks.
+    """
+    if not signature or not signature.startswith("sha256="):
+        return False
+
+    app_secret_val = settings.WHATSAPP_APP_SECRET.get_secret_value() if settings.WHATSAPP_APP_SECRET else ""
+    if not app_secret_val:
+        logger.error("whatsapp_app_secret_not_configured")
+        return False
+
+    expected_hash = signature[7:]
+    computed_hash = hmac.new(
+        key=app_secret_val.encode("utf-8"),
+        msg=raw_body,
+        digestmod=hashlib.sha256,
+    ).hexdigest()
+
+    return hmac.compare_digest(computed_hash, expected_hash)
 
 def get_whatsapp_service(request: Request, db: AsyncSession = Depends(get_session)) -> WhatsAppService:
     rag_service = request.app.state.rag_service
@@ -116,6 +143,24 @@ async def receive_webhook(
     except Exception as e:
         logger.warning("whatsapp_webhook_body_read_failed", error=str(e))
         return JSONResponse(content={"status": "ignored"}, status_code=200)
+
+    # C-03 FIX: Enforce HMAC SHA-256 signature verification before parsing or enqueuing
+    should_require = (
+        settings.ENVIRONMENT in (Environment.PRODUCTION, Environment.STAGING)
+        or (getattr(settings, "WHATSAPP_REQUIRE_SIGNATURE", True) and not settings.is_development)
+    )
+    if should_require and not signature:
+        logger.warning("whatsapp_webhook_missing_signature_rejected", client_ip=request.client.host if request.client else None)
+        return JSONResponse(
+            content={"status": "unauthorized", "detail": "Missing X-Hub-Signature-256 header"},
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+    if signature and not verify_whatsapp_signature(raw_body, signature):
+        logger.warning("whatsapp_webhook_invalid_signature_rejected", client_ip=request.client.host if request.client else None)
+        return JSONResponse(
+            content={"status": "unauthorized", "detail": "Invalid X-Hub-Signature-256 header"},
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
 
     # Parse JSON — if this fails it's malformed, not a Meta message
     try:

@@ -86,5 +86,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 # Expose port
 EXPOSE 8000
 
+# Default trusted proxies (local + docker bridge subnet)
+ENV FORWARDED_ALLOW_IPS="127.0.0.1,172.20.0.0/16"
+
 # Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--loop", "uvloop", "--http", "httptools", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --loop uvloop --http httptools --proxy-headers --forwarded-allow-ips \"${FORWARDED_ALLOW_IPS}\""]
