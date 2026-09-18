@@ -1,4 +1,4 @@
-﻿"""
+"""
 Custom exception classes for Company Bot backend.
 Provides structured error handling across the application.
 """
@@ -182,6 +182,8 @@ class LowConfidenceException(BotException):
     """Raised when RAG confidence is below threshold."""
     
     def __init__(self, score: float, threshold: float):
+        self.score = score
+        self.threshold = threshold
         super().__init__(
             message=f"Confidence score {score:.2f} below threshold {threshold:.2f}",
             code=ErrorCode.LOW_CONFIDENCE,

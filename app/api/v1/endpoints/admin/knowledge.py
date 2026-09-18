@@ -236,20 +236,28 @@ async def upload_knowledge_document(
                    f"Supported: PDF, DOCX, TXT, MD"
         )
     
-    # Read file content
-    content = await file.read()
+    # Read file content in streaming chunks to prevent memory exhaustion
+    CHUNK_READ_SIZE = 1024 * 1024  # 1MB buffer
+    total_size = 0
+    chunks = []
     
-    # Validate file size
-    if len(content) > MAX_FILE_SIZE:
-        logger.warning(
-            "upload_rejected_file_too_large",
-            size=len(content),
-            max_size=MAX_FILE_SIZE,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File too large (max {MAX_FILE_SIZE // (1024*1024)}MB)"
-        )
+    while chunk := await file.read(CHUNK_READ_SIZE):
+        total_size += len(chunk)
+        if total_size > MAX_FILE_SIZE:
+            logger.warning(
+                "upload_rejected_file_too_large_streaming",
+                size=total_size,
+                max_size=MAX_FILE_SIZE,
+                filename=safe_filename,
+                admin_id=current_admin["id"],
+            )
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File too large (max {MAX_FILE_SIZE // (1024*1024)}MB)"
+            )
+        chunks.append(chunk)
+    
+    content = b"".join(chunks)
     
     # Calculate content hash to detect duplicates
     content_hash = hashlib.sha256(content).hexdigest()

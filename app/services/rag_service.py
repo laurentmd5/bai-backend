@@ -15,6 +15,7 @@ from app.services.cache.redis_cache import cache_service, CacheNamespace
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.exceptions import LowConfidenceException
+from app.core.security import detect_prompt_injection
 from app.core.metrics import (
     rag_retrieval_duration_seconds,
     record_rag_search_duration,
@@ -254,13 +255,17 @@ class RAGService:
         
         if has_keyword_match:
             # Exact keyword match found in document text
-            # Ensure confidence is at least 0.75 or vector_top_score
-            top_score = max(vector_top_score, 0.75)
+            # Ensure confidence boost requires baseline vector support (>= 70% threshold)
+            # to prevent unrelated keyword matches from falsely rescuing irrelevant text
+            if vector_top_score >= (threshold * 0.7):
+                top_score = max(vector_top_score, min(vector_top_score + 0.1, 0.85))
+            else:
+                top_score = vector_top_score
         else:
             top_score = vector_top_score
             
-        # If top_score is still below the requested threshold (and no keyword match rescued it)
-        if top_score < threshold and not has_keyword_match:
+        # If top_score is below the required threshold
+        if top_score < threshold:
             logger.info(
                 "rag_low_confidence",
                 query_preview=query[:100],
@@ -287,7 +292,8 @@ class RAGService:
         include_sources: bool = True,
     ) -> str:
         """
-        Build a formatted context string from retrieved chunks.
+        Build a formatted, boundary-isolated context string from retrieved chunks.
+        Encapsulates sources inside XML tags and sanitizes against indirect prompt injection.
         
         Args:
             retrieved_chunks: List of chunks from vector search
@@ -308,20 +314,51 @@ class RAGService:
             document_name = payload.get("document_name", "Unknown")
             section = payload.get("section", "")
             
+            # Security: check chunk for indirect prompt injection attempts
+            if detect_prompt_injection(text):
+                logger.warning(
+                    "indirect_prompt_injection_detected_in_chunk",
+                    document=document_name,
+                    section=section,
+                    chunk_index=i,
+                )
+                # Omit hostile chunk to protect LLM from indirect instruction injection
+                continue
+            
+            # Neutralize XML boundary escape markers
+            sanitized_text = (
+                text.replace("</untrusted_document_context>", "")
+                    .replace("<untrusted_document_context>", "")
+                    .replace("</context_knowledge_base>", "")
+                    .replace("<context_knowledge_base>", "")
+            )
+            
+            safe_doc = str(document_name).replace('"', '').replace('<', '').replace('>', '')
+            safe_section = str(section).replace('"', '').replace('<', '').replace('>', '')
+            
             if include_sources:
-                source_info = f"[Source: {document_name}"
-                if section:
-                    source_info += f", {section}"
-                source_info += "]"
-                context_parts.append(f"{source_info}\n{text}")
+                chunk_block = (
+                    f'<untrusted_document_context source="{safe_doc}" section="{safe_section}" chunk_id="{i}">\n'
+                    f'{sanitized_text}\n'
+                    f'</untrusted_document_context>'
+                )
             else:
-                context_parts.append(text)
+                chunk_block = (
+                    f'<untrusted_document_context chunk_id="{i}">\n'
+                    f'{sanitized_text}\n'
+                    f'</untrusted_document_context>'
+                )
+            context_parts.append(chunk_block)
         
-        context = "\n\n---\n\n".join(context_parts)
+        if not context_parts:
+            return ""
+        
+        inner_context = "\n\n".join(context_parts)
+        context = f"<context_knowledge_base>\n{inner_context}\n</context_knowledge_base>"
         
         logger.debug(
             "rag_context_built",
-            chunks_count=len(retrieved_chunks),
+            chunks_count=len(context_parts),
             context_length=len(context),
         )
         

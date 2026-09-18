@@ -255,6 +255,9 @@ class ChatService:
         Returns:
             True if response is relevant, False otherwise
         """
+        if not sources:
+            return False
+
         # 1. Duplicate detection (same document, same chunk = forced match)
         unique_chunks = set()
         for s in sources:
@@ -266,11 +269,17 @@ class ChatService:
             logger.warning("all_sources_identical", chunks=len(sources))
             return False
             
-        if len(unique_chunks) == 1:
-            # We accept the unique chunk even if the score is low, because the RAG is not well-fed yet
-            pass
+        # 2. Check minimum similarity score
+        threshold = getattr(settings, 'QDRANT_SIMILARITY_THRESHOLD', 0.70)
+        scores = [float(s.get("relevance", s.get("score", 0.0))) for s in sources if "relevance" in s or "score" in s]
         
-        # 2. Detect the theme of the query
+        if scores:
+            max_score = max(scores)
+            if max_score < threshold:
+                logger.info("sources_below_similarity_threshold", max_score=max_score, threshold=threshold)
+                return False
+
+        # 3. Detect the theme of the query
         query_lower = query.lower()
         detected_theme = None
         theme_keywords = []
@@ -287,16 +296,14 @@ class ChatService:
         if not detected_theme:
             return True
         
-        # 3. Accept all themes based on Qdrant semantic score
-        return True
-        # 4. Check minimum similarity score
-        min_score = min((s.get("relevance", s.get("score", 0)) for s in sources), default=0)
-        threshold = getattr(settings, 'QDRANT_SIMILARITY_THRESHOLD', 0.70)
+        # 4. If theme detected, check that at least one source matches keywords
+        for s in sources:
+            content = str(s.get("text", s.get("content", ""))).lower()
+            if any(kw in content for kw in theme_keywords):
+                return True
         
-        if min_score < threshold:
-            return False
-        
-        return True
+        logger.info("sources_theme_mismatch", theme=detected_theme)
+        return False
     
     async def process_message(
         self,

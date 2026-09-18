@@ -34,7 +34,16 @@ except ImportError:
 
 from app.services.processing.document_processor import DocumentProcessor
 
-logger = logging.getLogger(__name__)
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
+# Resource caps to prevent denial of service / memory exhaustion
+MAX_PDF_PAGES: int = 100
+MAX_DOCX_PARAGRAPHS: int = 2000
+MAX_DOCX_TABLES: int = 100
+MAX_EXTRACTED_TEXT_LENGTH: int = 1_000_000  # 1 million characters (~1MB text)
+MAX_CHUNKS_PER_DOCUMENT: int = 500
 
 
 class DocumentParsingError(Exception):
@@ -84,15 +93,27 @@ async def parse_document_content(
         content_type in ["text/plain", "text/markdown"]
         or fn_lower.endswith((".txt", ".md"))
     ):
+        decoded = None
         for enc in ("utf-8", "utf-8-sig"):
             try:
-                decoded = content.decode(enc)
-                if decoded.strip():
-                    return decoded
+                dec = content.decode(enc)
+                if dec.strip():
+                    decoded = dec
+                    break
             except UnicodeDecodeError:
                 continue
-        decoded = content.decode("utf-8", errors="ignore")
-        if decoded.strip():
+        if not decoded:
+            dec = content.decode("utf-8", errors="ignore")
+            if dec.strip():
+                decoded = dec
+        if decoded:
+            if len(decoded) > MAX_EXTRACTED_TEXT_LENGTH:
+                logger.warning(
+                    "text_document_capped",
+                    original_length=len(decoded),
+                    capped_length=MAX_EXTRACTED_TEXT_LENGTH,
+                )
+                decoded = decoded[:MAX_EXTRACTED_TEXT_LENGTH]
             return decoded
         raise DocumentParsingError("Unable to decode text document")
     
@@ -164,19 +185,37 @@ async def _parse_pdf(content: bytes) -> str:
         pdf_file = io.BytesIO(content)
         reader = pypdf.PdfReader(pdf_file)
         
+        num_pages = len(reader.pages)
+        if num_pages > MAX_PDF_PAGES:
+            logger.warning(
+                "pdf_pages_exceeded_cap",
+                total_pages=num_pages,
+                capped_pages=MAX_PDF_PAGES,
+            )
+
         text_parts = []
-        for page_num, page in enumerate(reader.pages):
+        total_chars = 0
+        for page_num, page in enumerate(reader.pages[:MAX_PDF_PAGES]):
             try:
                 text = page.extract_text()
                 if text:
                     text_parts.append(text)
+                    total_chars += len(text)
+                    if total_chars >= MAX_EXTRACTED_TEXT_LENGTH:
+                        logger.warning(
+                            "pdf_extracted_text_capped",
+                            total_chars=total_chars,
+                            max_allowed=MAX_EXTRACTED_TEXT_LENGTH,
+                        )
+                        break
             except Exception as e:
                 logger.warning(f"Failed to extract page {page_num}: {str(e)}")
         
         if not text_parts:
             raise DocumentParsingError("No text extracted from PDF (possibly scanned image)")
         
-        return "\n\n".join(text_parts)
+        full_text = "\n\n".join(text_parts)
+        return full_text[:MAX_EXTRACTED_TEXT_LENGTH]
     
     except DocumentParsingError:
         raise
@@ -202,21 +241,32 @@ async def _parse_docx(content: bytes) -> str:
         doc = DocxDocument(docx_file)
         
         text_parts = []
-        for para in doc.paragraphs:
+        total_chars = 0
+        for para in doc.paragraphs[:MAX_DOCX_PARAGRAPHS]:
             if para.text.strip():
                 text_parts.append(para.text.strip())
+                total_chars += len(para.text)
+                if total_chars >= MAX_EXTRACTED_TEXT_LENGTH:
+                    break
                 
-        # Also extract table text
-        for table in doc.tables:
-            for row in table.rows:
-                row_text = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
-                if row_text:
-                    text_parts.append(row_text)
+        # Also extract table text up to MAX_DOCX_TABLES
+        if total_chars < MAX_EXTRACTED_TEXT_LENGTH:
+            for table in doc.tables[:MAX_DOCX_TABLES]:
+                for row in table.rows:
+                    row_text = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
+                    if row_text:
+                        text_parts.append(row_text)
+                        total_chars += len(row_text)
+                        if total_chars >= MAX_EXTRACTED_TEXT_LENGTH:
+                            break
+                if total_chars >= MAX_EXTRACTED_TEXT_LENGTH:
+                    break
         
         if not text_parts:
             raise DocumentParsingError("No text extracted from DOCX")
         
-        return "\n\n".join(text_parts)
+        full_text = "\n\n".join(text_parts)
+        return full_text[:MAX_EXTRACTED_TEXT_LENGTH]
     
     except DocumentParsingError:
         raise
@@ -242,12 +292,15 @@ def split_text_into_chunks(
     Returns:
         List of {'content': str, 'index': int} dicts
     """
+    # Truncate text before chunking to prevent memory explosion
+    safe_text = text[:MAX_EXTRACTED_TEXT_LENGTH]
+    
     # Convert token limits to character limits for DocumentProcessor
     char_size = chunk_size * 4
     char_overlap = overlap * 4
     
     processor = DocumentProcessor(chunk_size=char_size, chunk_overlap=char_overlap)
-    doc = processor._create_document(text, "web_upload")
+    doc = processor._create_document(safe_text, "web_upload")
     processor_chunks = processor.chunk_document(doc)
     
     chunks = []
@@ -257,5 +310,12 @@ def split_text_into_chunks(
                 "content": chunk.page_content.strip(),
                 "index": i,
             })
+            if len(chunks) >= MAX_CHUNKS_PER_DOCUMENT:
+                logger.warning(
+                    "document_chunks_capped",
+                    total_chunks=len(processor_chunks),
+                    max_allowed=MAX_CHUNKS_PER_DOCUMENT,
+                )
+                break
             
-    return chunks if chunks else [{"content": text, "index": 0}]
+    return chunks if chunks else [{"content": safe_text, "index": 0}]

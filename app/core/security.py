@@ -540,11 +540,12 @@ _XSS_PATTERN = re.compile(
 )
 
 _PROMPT_INJECTION_PATTERNS = [
-    re.compile(r"(?i)(ignore|forget|disregard)\s+(previous|above|all)\s+(instructions?|prompts?)"),
-    re.compile(r"(?i)(you are now|act as|pretend you are|roleplay as)"),
-    re.compile(r"(?i)(system\s*prompt|developer\s*mode|jailbreak)"),
-    re.compile(r"(?i)(bypass|override|ignore)\s+(restrictions?|rules?|guidelines?)"),
-    re.compile(r"(?i)(new\s+instructions?|updated\s+prompt)"),
+    re.compile(r"(?i)(ignore|forget|disregard|drop)\s+(?:(?:all|the|your|any)\s+)*(?:previous|above|all|prior)?\s*(instructions?|prompts?|rules?|directives?)"),
+    re.compile(r"(?i)(oublie|ignore|annule|efface)\s+(?:(?:toutes?|tes|les|vos)\s+)*(?:instructions?|consignes?|règles?|directives?)"),
+    re.compile(r"(?i)(you are now|act as|pretend you are|roleplay as|tu es maintenant|agis en tant que|fais comme si)"),
+    re.compile(r"(?i)(system\s*(?:prompt|override|command|directive|instructions?)|developer\s*mode|jailbreak|mode\s+développeur)"),
+    re.compile(r"(?i)(bypass|override|ignore|outrepasser?|contourner?)\s+(?:the\s+|les\s+)?(restrictions?|rules?|guidelines?|consignes?|règles?)"),
+    re.compile(r"(?i)(new\s+instructions?|updated\s+prompt|nouvelles?\s+consignes?|nouvelles?\s+instructions?)"),
 ]
 
 _HOSTILE_KEYWORDS = [

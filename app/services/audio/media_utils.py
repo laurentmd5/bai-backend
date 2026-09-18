@@ -47,6 +47,9 @@ async def _get_multipart_client(access_token: str) -> httpx.AsyncClient:
     )
 
 
+MAX_MEDIA_DOWNLOAD_SIZE: int = 25 * 1024 * 1024  # 25MB maximum media download size
+
+
 async def download_media(
     media_id: str,
     access_token: str,
@@ -55,7 +58,7 @@ async def download_media(
     client: httpx.AsyncClient
 ) -> Optional[bytes]:
     """
-    Download media from WhatsApp servers.
+    Download media from WhatsApp servers with streaming chunk size enforcement.
     
     Args:
         media_id: WhatsApp media ID
@@ -84,16 +87,39 @@ async def download_media(
             logger.error("media_url_missing", data=data)
             return None
         
-        # Download actual media with retries
+        # Download actual media with streaming and retries
         import asyncio
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                media_resp = await client.get(media_url, timeout=20.0)
-                if media_resp.status_code == 200:
-                    logger.info("media_downloaded", media_id=media_id, size=len(media_resp.content))
-                    return media_resp.content
-                logger.warning("media_download_status_failed", status=media_resp.status_code, attempt=attempt+1)
+                async with client.stream("GET", media_url, timeout=20.0) as stream_resp:
+                    if stream_resp.status_code == 200:
+                        cl = stream_resp.headers.get("content-length")
+                        if cl and int(cl) > MAX_MEDIA_DOWNLOAD_SIZE:
+                            logger.warning(
+                                "media_download_rejected_too_large",
+                                content_length=int(cl),
+                                max_allowed=MAX_MEDIA_DOWNLOAD_SIZE,
+                            )
+                            return None
+                        
+                        chunks = []
+                        total_size = 0
+                        async for chunk in stream_resp.aiter_bytes(chunk_size=64 * 1024):
+                            total_size += len(chunk)
+                            if total_size > MAX_MEDIA_DOWNLOAD_SIZE:
+                                logger.warning(
+                                    "media_download_aborted_size_exceeded",
+                                    total_size=total_size,
+                                    max_allowed=MAX_MEDIA_DOWNLOAD_SIZE,
+                                )
+                                return None
+                            chunks.append(chunk)
+                        
+                        media_bytes = b"".join(chunks)
+                        logger.info("media_downloaded", media_id=media_id, size=len(media_bytes))
+                        return media_bytes
+                    logger.warning("media_download_status_failed", status=stream_resp.status_code, attempt=attempt+1)
             except httpx.TimeoutException as e:
                 logger.warning("media_download_timeout", attempt=attempt+1, error=str(e))
             except Exception as e:
