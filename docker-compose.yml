@@ -120,6 +120,7 @@ services:
       - qdrant_data:/qdrant/storage
     environment:
       QDRANT__SERVICE__HTTP_PORT: 6333
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
       QDRANT__LOG_LEVEL: ${QDRANT_LOG_LEVEL:-INFO}
     logging: *default-logging
 
@@ -233,6 +234,7 @@ services:
       # Qdrant
       QDRANT_HOST: qdrant
       QDRANT_PORT: 6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-netsysteme_knowledge_v1}
       QDRANT_SIMILARITY_THRESHOLD: ${QDRANT_SIMILARITY_THRESHOLD:-0.70}
       

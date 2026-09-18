@@ -1,4 +1,4 @@
-﻿"""
+"""
 Qdrant Vector Store implementation for Company Bot.
 Provides semantic search capabilities for RAG pipeline.
 """
@@ -59,8 +59,10 @@ class QdrantVectorStore(IVectorStore):
             Configured QdrantClient
         """
         if self._client is None:
+            api_key = settings.QDRANT_API_KEY.get_secret_value() if getattr(settings, "QDRANT_API_KEY", None) else None
             self._client = QdrantClient(
                 url=self._url,
+                api_key=api_key,
                 timeout=30.0,
                 prefer_grpc=False,  # Use HTTP API
             )

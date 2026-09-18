@@ -316,6 +316,30 @@ class Settings(BaseSettings):
         default="whatsapp_webhooks",
         description="Queue name for WhatsApp webhooks"
     )
+    
+    RABBITMQ_WEBHOOK_DLQ: str = Field(
+        default="whatsapp_webhooks_dlq",
+        description="Dead-letter queue for failed WhatsApp webhooks"
+    )
+    
+    RABBITMQ_WEBHOOK_DLX: str = Field(
+        default="whatsapp_webhooks_dlx",
+        description="Dead-letter exchange for failed WhatsApp webhooks"
+    )
+    
+    RABBITMQ_MAX_RETRIES: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Max retry attempts for webhook messages before routing to DLQ"
+    )
+    
+    RABBITMQ_RETRY_BACKOFF_SECONDS: int = Field(
+        default=5,
+        ge=1,
+        le=60,
+        description="Initial backoff in seconds before retrying failed webhook"
+    )
 
     @property
     def rabbitmq_url(self) -> str:
@@ -380,6 +404,11 @@ class Settings(BaseSettings):
         ge=1,
         le=20,
         description="Number of chunks to retrieve per query"
+    )
+    
+    QDRANT_API_KEY: Optional[SecretStr] = Field(
+        default=None,
+        description="API key for authenticating with Qdrant vector database"
     )
     
     @property
@@ -844,6 +873,14 @@ class Settings(BaseSettings):
                 csrf_val = self.CSRF_SECRET.get_secret_value()
                 if csrf_val.lower() in insecure_defaults or len(csrf_val) < 24:
                     raise ValueError("CSRF_SECRET is insecure for production/staging: must be at least 24 characters.")
+
+            # 4. Validate QDRANT_API_KEY
+            if self.QDRANT_API_KEY:
+                qdrant_val = self.QDRANT_API_KEY.get_secret_value()
+                if qdrant_val.lower() in insecure_defaults or len(qdrant_val) < 16:
+                    raise ValueError("QDRANT_API_KEY is insecure for production/staging: must be at least 16 characters.")
+            else:
+                raise ValueError("QDRANT_API_KEY must be set in production/staging.")
 
         return self
 

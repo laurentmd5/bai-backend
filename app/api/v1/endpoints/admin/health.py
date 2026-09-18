@@ -1,4 +1,4 @@
-﻿"""Admin health check endpoint for Company Bot.
+"""Admin health check endpoint for Company Bot.
 
 Monitors the health of all services: PostgreSQL, Redis, Qdrant.
 """
@@ -98,7 +98,8 @@ async def health_check(
             from qdrant_client import QdrantClient
             
             # Create client and check collection exists
-            client = QdrantClient(url=settings.qdrant_url)
+            api_key = settings.QDRANT_API_KEY.get_secret_value() if getattr(settings, "QDRANT_API_KEY", None) else None
+            client = QdrantClient(url=settings.qdrant_url, api_key=api_key)
             # Try to get collections (simple connectivity test)
             collections = client.get_collections()
             

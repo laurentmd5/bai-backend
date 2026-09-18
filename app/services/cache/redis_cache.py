@@ -1,4 +1,4 @@
-﻿"""
+"""
 Redis cache service for Company Bot.
 Provides comprehensive caching strategies for RAG responses, embeddings, sessions, and rate limiting.
 Implements cache stampede prevention, TTL management, and serialization.
@@ -951,6 +951,14 @@ class RedisCacheService:
             bool: True if already processed
         """
         return await self.exists(CacheNamespace.WHATSAPP_PROCESSED, message_id)
+    
+    async def clear_whatsapp_processed(self, message_id: str) -> bool:
+        """
+        Clear WhatsApp message idempotency marker.
+        Used to release idempotency lock when processing fails so retry can proceed.
+        """
+        deleted = await self.delete(CacheNamespace.WHATSAPP_PROCESSED, message_id)
+        return deleted > 0
     
     # =========================================================================
     # Audio Transcript Caching

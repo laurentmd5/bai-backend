@@ -115,6 +115,7 @@ class TestProductionSecretsEnforcement:
             WHATSAPP_VERIFY_TOKEN=SecretStr("wa_verify_123456"),
             WHATSAPP_PHONE_NUMBER_ID="123456789",
             WHATSAPP_APP_SECRET=SecretStr("wa_secret_123456"),
+            QDRANT_API_KEY=SecretStr("super-secure-qdrant-key-32-chars-long!"),
         )
         assert settings_instance.INTERNAL_API_SECRET.get_secret_value() == "super-secure-production-internal-token-32-chars"
 

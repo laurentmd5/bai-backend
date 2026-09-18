@@ -302,8 +302,11 @@ class WhatsAppService:
                 await self._process_incoming_message(message, contact_name=contact_name)
                 processed_count += 1
             except Exception as e:
-                logger.error("whatsapp_message_processing_failed", error=str(e), message_id=message.id)
-                errors.append({"message_id": message.id, "error": str(e)})
+                msg_id = getattr(message, "id", None) or getattr(message, "message_id", None)
+                if msg_id:
+                    await cache_service.clear_whatsapp_processed(msg_id)
+                logger.error("whatsapp_message_processing_failed", error=str(e), message_id=msg_id)
+                errors.append({"message_id": msg_id, "error": str(e)})
 
         
         return {
@@ -325,13 +328,14 @@ class WhatsAppService:
         phone_number = message.phone_number
         message_id = message.message_id
         
-        # Idempotency check
-        if await cache_service.is_whatsapp_processed(message_id):
+        # Idempotency check: prevent duplicate processing
+        if message_id and await cache_service.is_whatsapp_processed(message_id):
             logger.debug("whatsapp_message_already_processed", message_id=message_id)
             return
         
-        # Mark as processed immediately
-        await cache_service.mark_whatsapp_processed(message_id, ttl=3600)
+        # Mark with temporary processing lock (120s)
+        if message_id:
+            await cache_service.mark_whatsapp_processed(message_id, ttl=120)
         
         # Check rate limit
         allowed, remaining, reset_in = await self._security_validator.check_whatsapp_rate_limit(
@@ -451,6 +455,10 @@ class WhatsAppService:
             phone=phone_number[-4:],
             response_length=len(response_text),
         )
+
+        # Mark permanently as processed (24h) upon success
+        if message_id:
+            await cache_service.mark_whatsapp_processed(message_id, ttl=86400)
     
     async def _handle_stop_command(self, phone_number: str) -> None:
         """

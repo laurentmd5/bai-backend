@@ -117,6 +117,20 @@ class MockCacheService:
             deleted += 1
         return deleted
 
+    async def mark_whatsapp_processed(self, message_id: str, ttl: int = 3600) -> bool:
+        self._cache[f"wa:processed:{message_id}"] = "1"
+        return True
+
+    async def is_whatsapp_processed(self, message_id: str) -> bool:
+        return f"wa:processed:{message_id}" in self._cache
+
+    async def clear_whatsapp_processed(self, message_id: str) -> bool:
+        key = f"wa:processed:{message_id}"
+        if key in self._cache:
+            del self._cache[key]
+            return True
+        return False
+
 # Replace cache service with mock
 import app.services.cache.redis_cache
 _original_cache = app.services.cache.redis_cache.cache_service
