@@ -398,8 +398,24 @@ class WhatsAppService:
         
         user_message = message.text_content
 
-        # Detect language from the user's own text
+        # Detect language from the user's own text with session inertia
         detected_language = self._input_validator.detect_language(user_message)
+        
+        # Check active session language inertia
+        try:
+            active_session = await self._session_repo.get_by_external_id(
+                channel="whatsapp",
+                external_id=phone_number,
+            )
+            if active_session and active_session.language == "fr" and detected_language == "en":
+                # If ongoing conversation is in French, only switch to English on explicit English keywords
+                words = set(re.findall(r'\b\w+\b', user_message.lower()))
+                strong_en_keywords = {"hello", "hi", "hey", "what", "where", "how", "when", "why", "please", "thanks"}
+                if not (words & strong_en_keywords):
+                    detected_language = "fr"
+        except Exception as e:
+            logger.debug("session_language_lookup_skipped", error=str(e))
+
         logger.info(
             "whatsapp_text_language_detected",
             phone=phone_number[-4:],

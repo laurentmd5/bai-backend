@@ -522,7 +522,7 @@ class Settings(BaseSettings):
     )
     
     GROQ_MODEL: str = Field(
-        default="llama-3.1-8b-instant",
+        default="openai/gpt-oss-20b",
         description="Groq model for fast fallback"
     )
     

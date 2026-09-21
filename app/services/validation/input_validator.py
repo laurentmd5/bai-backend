@@ -722,10 +722,10 @@ class InputValidator:
             Language code: "en" or "fr"
         """
         if not text or len(text.strip()) < 3:
-            return "en"
+            return "fr"
 
         text_lower = text.lower()
-        words = set(text_lower.split())
+        words = set(re.findall(r'\b\w+\b', text_lower))
 
         # ── 1. Gambian local languages (keyword priority) ──────────────────
         mandinka_indicators = {
@@ -765,32 +765,73 @@ class InputValidator:
         if wolof_score >= 1:
             return "wolof"
 
-        # Short greetings are frequently misclassified by statistical detectors.
-        if words & {"bonjour", "salut", "merci"}:
+        # ── 2. French Accents & Conversational Idioms ──────────────────────
+        french_phrases = [
+            "comment vas-tu", "comment vas tu", "comment allez-vous", "comment allez vous",
+            "ça va", "ca va", "s'il vous plaît", "s il vous plait", "s'il te plaît", "s il te plait",
+            "d'accord", "est-ce que", "est ce que", "j'ai besoin", "je voudrais", "je veux",
+            "je cherche", "parlez-moi", "en savoir plus", "qu'est-ce que", "qu est ce que",
+            "bonjour", "salut", "bonsoir", "merci"
+        ]
+        if any(phrase in text_lower for phrase in french_phrases):
             return "fr"
 
-        # ── 2. langdetect for fr / en ──────────────────────────────────────
+        has_french_accents = bool(re.search(r'[éèêëàâôîïùûç]', text_lower))
+
+        # ── 3. Lexical Scoring (French vs English) ─────────────────────────
+        french_words = {
+            "bonjour", "salut", "merci", "bonsoir", "comment", "pourquoi", "quand",
+            "combien", "qui", "quoi", "quel", "quelle", "quels", "quelles",
+            "je", "tu", "il", "elle", "on", "nous", "vous", "ils", "elles",
+            "moi", "toi", "lui", "eux",
+            "est", "sont", "suis", "es", "sommes", "êtes", "ai", "as", "a", "avons", "avez", "ont",
+            "vas", "va", "vais", "allons", "allez", "vont",
+            "avec", "pour", "dans", "sur", "sous", "par", "chez", "vers", "sans",
+            "que", "qui", "dont", "où",
+            "le", "la", "les", "un", "une", "des", "du", "de", "d",
+            "ce", "cet", "cette", "ces", "mon", "ton", "son", "notre", "votre", "leur",
+            "monsieur", "madame", "oui", "non", "ouais", "aussi", "très", "bien", "mal",
+            "besoin", "aide", "service", "services", "informatique", "entreprise", "devis",
+            "stage", "emploi", "poste", "candidat", "formation", "contact", "caméra", "surveillance",
+        }
+
+        english_words = {
+            "hello", "hi", "hey", "good", "morning", "afternoon", "evening",
+            "how", "what", "why", "when", "where", "who", "which",
+            "is", "are", "am", "was", "were", "be", "been", "being",
+            "have", "has", "had", "do", "does", "did",
+            "i", "you", "he", "she", "it", "we", "they", "me", "him", "her", "us", "them",
+            "my", "your", "his", "their", "our",
+            "the", "a", "an", "this", "that", "these", "those",
+            "with", "for", "in", "on", "at", "by", "from", "to", "about",
+            "please", "thanks", "thank", "yes", "no", "yeah",
+            "need", "want", "help", "can", "could", "would", "should",
+            "price", "quote", "job", "internship", "work",
+        }
+
+        french_score = len(french_words & words) + (3 if has_french_accents else 0)
+        english_score = len(english_words & words)
+
+        # ── 4. Statistical langdetect (secondary hint if installed) ─────────
         try:
             from langdetect import detect, DetectorFactory  # type: ignore[import]
-            DetectorFactory.seed = 42  # deterministic
+            DetectorFactory.seed = 42
             detected = detect(text)
-            if detected in self.ALLOWED_LANGUAGES:
-                return detected
+            if detected == "fr":
+                french_score += 2
+            elif detected == "en":
+                english_score += 2
         except Exception:
             pass
 
-        # ── 3. Keyword fallback for French ────────────────────────────────
-        french_words = {
-            "bonjour", "salut", "merci", "comment", "pourquoi",
-            "je", "tu", "nous", "vous", "est", "sont", "avec",
-            "pour", "dans", "sur", "que", "qui", "quoi", "quel",
-            "quelle", "les", "des", "une", "monsieur", "madame",
-            "oui", "non", "aussi", "très", "bien", "mal",
-        }
-        french_score = len(french_words & words)
-        if french_score >= 2:
+        if french_score > english_score:
+            return "fr"
+        elif english_score > french_score:
+            return "en"
+        elif french_score > 0:
             return "fr"
 
-        return "en"
+        # Default to French for NETSYSTEME Senegal
+        return "fr"
 
 

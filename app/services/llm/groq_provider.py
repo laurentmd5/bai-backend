@@ -23,11 +23,13 @@ class GroqProvider(ILLMProvider):
     Used as the ultra-fast fallback provider.
     """
 
-    MODEL_NAME = getattr(settings, "GROQ_MODEL", "llama-3.1-8b-instant")
+    DEFAULT_MODEL = "openai/gpt-oss-20b"
+    FALLBACK_MODELS = ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]
+    MODEL_NAME = getattr(settings, "GROQ_MODEL", DEFAULT_MODEL)
 
     def __init__(self):
         self.api_key = settings.GROQ_API_KEY.get_secret_value() if settings.GROQ_API_KEY else None
-        self.model = getattr(settings, "GROQ_MODEL", "llama-3.1-8b-instant")
+        self.model = getattr(settings, "GROQ_MODEL", self.DEFAULT_MODEL)
         if not self.api_key:
             logger.warning("Groq API key is not configured. GroqProvider will fail on generation.")
             self.client = None
@@ -75,15 +77,43 @@ class GroqProvider(ILLMProvider):
             else:
                 user_msg = prompt
             
-            messages.append({"role": "user", "content": user_msg})
+            # Determine candidate models to try: self.model first, then FALLBACK_MODELS
+            models_to_try = [self.model] + [m for m in self.FALLBACK_MODELS if m != self.model]
+            response = None
+            last_api_error = None
 
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=temperature if temperature is not None else 0.1,
-                max_tokens=max_tokens or 1024,
-                top_p=0.9,
-            )
+            for candidate_model in models_to_try:
+                try:
+                    response = await self.client.chat.completions.create(
+                        model=candidate_model,
+                        messages=messages,
+                        temperature=temperature if temperature is not None else 0.1,
+                        max_tokens=max_tokens or 1024,
+                        top_p=0.9,
+                    )
+                    if candidate_model != self.model:
+                        logger.info(
+                            "groq_switched_to_working_model",
+                            previous_model=self.model,
+                            new_model=candidate_model,
+                        )
+                        self.model = candidate_model
+                    break
+                except groq.APIError as e:
+                    if getattr(e, "status_code", None) == 404 or "model_not_found" in str(e).lower():
+                        logger.warning(
+                            "groq_model_unavailable_trying_fallback",
+                            model=candidate_model,
+                            error=str(e),
+                        )
+                        last_api_error = e
+                        continue
+                    raise e
+
+            if response is None:
+                if last_api_error:
+                    raise last_api_error
+                raise LLMException("Groq generation failed with all candidate models")
 
 
             if not response.choices:
