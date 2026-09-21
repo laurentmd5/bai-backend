@@ -394,11 +394,26 @@ class RAGService:
         
         # Apply Cross-Encoder Re-ranking
         top_score = initial_top_score
-        final_chunks = chunks
+        final_k = top_k if top_k else self._top_k
+        final_chunks = chunks[:final_k]
         
-        if hasattr(self, '_reranker') and self._reranker:
+        enable_reranker = getattr(settings, "RAG_ENABLE_RERANKER", True)
+        rerank_bypass_threshold = getattr(settings, "RAG_RERANK_BYPASS_THRESHOLD", 0.82)
+        rerank_pool_size = getattr(settings, "RAG_RERANK_TOP_K", 8)
+        
+        # Fast-Path: If initial similarity is already very high, bypass CPU-heavy re-ranking
+        if initial_top_score >= rerank_bypass_threshold:
+            logger.info(
+                "rag_rerank_bypassed_high_confidence",
+                initial_top_score=round(initial_top_score, 3),
+                threshold=rerank_bypass_threshold,
+                chunks_count=len(final_chunks),
+            )
+        elif enable_reranker and hasattr(self, '_reranker') and self._reranker:
             try:
-                pairs = [[query, chunk.get("payload", {}).get("text", "")] for chunk in chunks]
+                # Restrict candidate pool to the most promising candidates (e.g. 8 instead of 20)
+                candidates = chunks[:min(len(chunks), rerank_pool_size)]
+                pairs = [[query, chunk.get("payload", {}).get("text", "")] for chunk in candidates]
                 
                 # CrossEncoder prediction is CPU intensive, run in thread
                 import asyncio
@@ -407,16 +422,13 @@ class RAGService:
                 import math
                 
                 # Update scores and sort
-                for i, chunk in enumerate(chunks):
+                for i, chunk in enumerate(candidates):
                     logit = float(scores[i])
                     # Apply sigmoid to normalize logit to [0, 1] for database constraint
                     chunk["rerank_score"] = 1.0 / (1.0 + math.exp(-logit))
                     
-                chunks.sort(key=lambda x: x["rerank_score"], reverse=True)
-                
-                # Take top_k after re-ranking
-                final_k = top_k if top_k else self._top_k
-                final_chunks = chunks[:final_k]
+                candidates.sort(key=lambda x: x["rerank_score"], reverse=True)
+                final_chunks = candidates[:final_k]
                 
                 if final_chunks:
                     # Keep track of the top rerank score for confidence
@@ -424,12 +436,7 @@ class RAGService:
                     
             except Exception as e:
                 logger.error("reranking_failed", error=str(e))
-                # Fallback to original chunks
-                final_k = top_k if top_k else self._top_k
                 final_chunks = chunks[:final_k]
-        else:
-            final_k = top_k if top_k else self._top_k
-            final_chunks = chunks[:final_k]
         
         context = await self.build_context(final_chunks, include_sources=True)
         

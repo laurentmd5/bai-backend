@@ -411,6 +411,25 @@ class Settings(BaseSettings):
         description="API key for authenticating with Qdrant vector database"
     )
     
+    RAG_ENABLE_RERANKER: bool = Field(
+        default=True,
+        description="Whether to enable CrossEncoder re-ranking"
+    )
+    
+    RAG_RERANK_TOP_K: int = Field(
+        default=8,
+        ge=2,
+        le=20,
+        description="Maximum number of candidate chunks to send to CrossEncoder"
+    )
+    
+    RAG_RERANK_BYPASS_THRESHOLD: float = Field(
+        default=0.82,
+        ge=0.5,
+        le=1.0,
+        description="Initial confidence threshold above which CrossEncoder re-ranking is bypassed"
+    )
+    
     @property
     def qdrant_url(self) -> str:
         """Construct Qdrant connection URL."""
