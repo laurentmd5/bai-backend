@@ -518,6 +518,23 @@ class Settings(BaseSettings):
         description="Faster-Whisper model size for local STT"
     )
     
+    GROQ_WHISPER_MODEL: str = Field(
+        default="whisper-large-v3-turbo",
+        description="Groq Whisper model for ultra-fast cloud STT"
+    )
+    
+    WHISPER_BEAM_SIZE: int = Field(
+        default=1,
+        ge=1,
+        le=5,
+        description="Beam size for local Whisper decoding (1=greedy, fastest on CPU)"
+    )
+    
+    WHISPER_USE_GROQ: bool = Field(
+        default=True,
+        description="Whether to use Groq Cloud Whisper API for STT when GROQ_API_KEY is available"
+    )
+    
     OOLEL_TTS_SPACE_ID: str = Field(
         default="SoynadeResearch/oolel-voices",
         description="Gradio Space ID for Oolel TTS (Deprecated)"
