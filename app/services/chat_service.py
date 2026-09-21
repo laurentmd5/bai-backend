@@ -305,6 +305,48 @@ class ChatService:
         logger.info("sources_theme_mismatch", theme=detected_theme)
         return False
     
+    @staticmethod
+    def _should_bypass_query_transformation(message: str, has_history: bool) -> bool:
+        """
+        Determines whether QueryTransformer (LLM call) can be safely bypassed.
+        Bypassing saves 1.5s to 2.5s of latency on self-contained queries.
+        
+        Rules:
+        - If query is short (< 3 words) and history exists -> USE transformer (anaphoric context needed)
+        - If query begins with contextual/anaphoric connectors ('et', 'mais', 'pourquoi', 'combien', 'alors') -> USE transformer
+        - If no history exists and query >= 2 words -> BYPASS transformer (direct RAG)
+        - If history exists but query is self-contained (>= 4 words without anaphora) -> BYPASS transformer
+        """
+        cleaned = message.strip()
+        words = cleaned.split()
+        word_count = len(words)
+        
+        if word_count == 0:
+            return False
+            
+        first_word = words[0].lower().rstrip(",.?!:;")
+        anaphoric_starters = {
+            "et", "mais", "ou", "donc", "or", "ni", "car", "pourquoi", "pourkoi",
+            "combien", "lequel", "laquelle", "lesquels", "lesquelles", "alors",
+            "oui", "non", "ok", "d'accord", "daccord", "dac", "merci", "exactement",
+            "and", "but", "why", "how", "what", "which", "where", "who", "yes", "no"
+        }
+        
+        is_anaphoric = first_word in anaphoric_starters
+        
+        if not has_history:
+            # Without any conversation history, no contextual reference is possible.
+            # If the user asks a question with at least 2 words, bypass LLM transformation.
+            return word_count >= 2
+            
+        # With conversation history:
+        # If it's anaphoric or very short (< 4 words), we need the LLM to rewrite it with history.
+        if is_anaphoric or word_count < 4:
+            return False
+            
+        # If query is rich/self-contained (>= 4 words and not starting with anaphora), bypass!
+        return True
+    
     async def process_message(
         self,
         message: str,
@@ -672,12 +714,22 @@ class ChatService:
                 except Exception as e:
                     logger.error("failed_to_fetch_history", error=str(e))
                 
-                transformer_result = await self._query_transformer.transform_query(sanitized_message, history=history_text)
-                
-                # Update language based on the smart LLM detection (better than basic input_validator)
-                if transformer_result.get("detected_language") and transformer_result.get("detected_language") != "unknown":
-                    language = transformer_result["detected_language"]
-                    response_metadata["language"] = language
+                # Check if we can safely bypass the heavy LLM QueryTransformer
+                bypass_transformer = self._should_bypass_query_transformation(
+                    sanitized_message, has_history=bool(history_text)
+                )
+
+                if bypass_transformer:
+                    logger.debug("query_transformer_bypassed_fast_path", session_id=actual_session_id)
+                    search_query = sanitized_message
+                    transformer_result = {}
+                else:
+                    transformer_result = await self._query_transformer.transform_query(sanitized_message, history=history_text)
+                    
+                    # Update language based on the smart LLM detection (better than basic input_validator)
+                    if transformer_result.get("detected_language") and transformer_result.get("detected_language") != "unknown":
+                        language = transformer_result["detected_language"]
+                        response_metadata["language"] = language
                 
                 if transformer_result.get("is_casual_conversation"):
                     logger.info("casual_conversation_detected", session_id=actual_session_id)
@@ -686,15 +738,16 @@ class ChatService:
                     sources = []
                     confidence = 1.0
                 else:
-                    # Construct the enhanced query (Optimized Search Query + Original)
-                    search_query = sanitized_message
-                    optimized = transformer_result.get("optimized_search_query", "")
-                    
-                    if optimized and optimized != sanitized_message:
-                        # We combine the user's original query and the optimized keywords
-                        # This gives Qdrant both lexical matches and translated semantic context.
-                        search_query = f"{sanitized_message}\n{optimized}".strip()
-                        logger.debug("using_optimized_search_query", optimized_length=len(search_query))
+                    if not bypass_transformer:
+                        # Construct the enhanced query (Optimized Search Query + Original)
+                        search_query = sanitized_message
+                        optimized = transformer_result.get("optimized_search_query", "")
+                        
+                        if optimized and optimized != sanitized_message:
+                            # We combine the user's original query and the optimized keywords
+                            # This gives Qdrant both lexical matches and translated semantic context.
+                            search_query = f"{sanitized_message}\n{optimized}".strip()
+                            logger.debug("using_optimized_search_query", optimized_length=len(search_query))
                     
                     # ===============================================================
                     # STEP 6: RAG Retrieval
