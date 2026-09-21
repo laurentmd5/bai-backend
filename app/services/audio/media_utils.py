@@ -4,9 +4,6 @@ Media download/upload utilities for WhatsApp.
 
 from typing import Optional, Dict, Any
 import httpx
-import os
-import tempfile
-import asyncio
 
 from app.core.logging import get_logger
 
@@ -217,48 +214,4 @@ async def send_audio_message(
         to_number=to_number,
         message_type="audio",
         payload=payload
-    )
-
-
-async def convert_to_ogg_opus(audio_bytes: bytes) -> bytes:
-    """
-    Convert audio bytes (e.g. WAV) to OGG Opus using ffmpeg.
-    This format is required by WhatsApp for voice notes.
-    """
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f_in:
-        f_in.write(audio_bytes)
-        in_path = f_in.name
-        
-    out_path = in_path + ".ogg"
-    
-    try:
-        # Run ffmpeg asynchronously
-        process = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-y", "-i", in_path, 
-            "-c:a", "libopus", "-b:a", "32k", "-vbr", "on", 
-            "-compression_level", "10", out_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate()
-        
-        if process.returncode != 0:
-            logger.error(f"ffmpeg conversion failed: {stderr.decode()}")
-            return audio_bytes # Return original if it fails
-            
-        with open(out_path, "rb") as f_out:
-            return f_out.read()
-    except Exception as e:
-        logger.error(f"Failed to convert audio: {e}")
-        return audio_bytes
-    finally:
-        if os.path.exists(in_path):
-            try:
-                os.remove(in_path)
-            except:
-                pass
-        if os.path.exists(out_path):
-            try:
-                os.remove(out_path)
-            except:
-                pass
+    )

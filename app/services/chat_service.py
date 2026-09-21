@@ -88,6 +88,35 @@ class ChatService:
         "en": "Sorry, we are currently experiencing a temporary technical difficulty. Please try again in a moment or contact our team at contact@netsys-info.com or by phone at +221 33 827 28 45.",
     }
 
+    FALLBACK_RESPONSES = {
+        "fr": "Je n'ai pas cette information précise dans ma base de connaissances. Notre équipe technique et commerciale est à votre disposition par email à contact@netsys-info.com, par téléphone au +221 33 827 28 45 ou sur WhatsApp au +221 77 846 16 55. Vous pouvez également visiter notre site sur https://netsys-info.com.",
+        "en": "I don't have specific details on that in my knowledge base. Our team is available at contact@netsys-info.com, by phone at +221 33 827 28 45, or on WhatsApp at +221 77 846 16 55. You can also visit our website at https://netsys-info.com.",
+    }
+
+    STOP_RESPONSE = {
+        "fr": "Vous avez été désabonné des messages. Envoyez 'START' à tout moment pour vous réabonner.",
+        "en": "You have been unsubscribed from messages. Send 'START' at any time to resubscribe.",
+    }
+
+    HOSTILE_CONTENT_RESPONSE = {
+        "fr": "Je suis à votre disposition pour vous renseigner sur les solutions et services de NETSYSTEME. En quoi puis-je vous être utile ?",
+        "en": "I am here to assist you with NETSYSTEME's services and IT solutions. How can I help you?",
+    }
+
+    def _get_fallback_message(self, language: str = "fr") -> str:
+        """
+        Get the company fallback message for low confidence or irrelevant sources.
+        Prioritizes company.yaml via company.get_response('fallback', ...),
+        falling back to the class-level FALLBACK_RESPONSES dictionary.
+        """
+        try:
+            msg = company.get_response("fallback", language=language)
+            if msg and not msg.startswith("["):
+                return msg
+        except Exception:
+            pass
+        return self.FALLBACK_RESPONSES.get(language, self.FALLBACK_RESPONSES.get("fr", ""))
+
     def __init__(
 
         self,
@@ -770,7 +799,7 @@ class ChatService:
                         )
                         response_metadata["fallback_triggered"] = True
                         
-                        fallback_message = self.FALLBACK_RESPONSES.get(language, self.FALLBACK_RESPONSES["fr"])
+                        fallback_message = self._get_fallback_message(language)
                         
                         # Update session
                         await session_repo.touch_session(session.id)
@@ -810,7 +839,7 @@ class ChatService:
                     response_metadata["fallback_triggered"] = True
                     response_metadata["irrelevant_sources"] = True
                     
-                    fallback_message = self.FALLBACK_RESPONSES.get(language, self.FALLBACK_RESPONSES["en"])
+                    fallback_message = self._get_fallback_message(language)
                     
                     await session_repo.touch_session(session.id)
                     
