@@ -76,6 +76,8 @@ class GroqProvider(ILLMProvider):
                 user_msg = f"Context:\n{context_text}\n\nQuestion: {prompt}\nPlease answer in {language}."
             else:
                 user_msg = prompt
+
+            messages.append({"role": "user", "content": user_msg})
             
             # Determine candidate models to try: self.model first, then FALLBACK_MODELS
             models_to_try = [self.model] + [m for m in self.FALLBACK_MODELS if m != self.model]
