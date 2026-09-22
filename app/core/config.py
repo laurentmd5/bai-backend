@@ -1,11 +1,11 @@
 """
-Core configuration module for BARROW.AI backend.
+Core configuration module for Company Bot backend.
 Uses Pydantic Settings for robust environment variable management.
 All sensitive values are loaded from environment variables only.
 """
 
 from typing import List, Optional, Union
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from enum import Enum
 
@@ -19,6 +19,7 @@ class Environment(str, Enum):
 
 class LLMProvider(str, Enum):
     """Supported LLM providers."""
+    GROQ = "groq"
     GEMINI = "gemini"
     OLLAMA = "ollama"
 
@@ -34,7 +35,7 @@ class LogLevel(str, Enum):
 
 class Settings(BaseSettings):
     """
-    Central configuration settings for BARROW.AI.
+    Central configuration settings for Company Bot.
     All values are loaded from environment variables with validation.
     """
     model_config = SettingsConfigDict(
@@ -49,8 +50,23 @@ class Settings(BaseSettings):
     # APPLICATION SETTINGS
     # =========================================================================
     APP_NAME: str = Field(
-        default="BARROW.AI POC",
+        default="Company Bot",
         description="Application name for logging and headers"
+    )
+    
+    COMPANY_NAME: str = Field(
+        default="Entreprise",
+        description="Company name for user-facing responses and notifications"
+    )
+    
+    COMPANY_CONTACT_EMAIL: Optional[str] = Field(
+        default=None,
+        description="Public contact email for candidate or user inquiries"
+    )
+    
+    COMPANY_CONTACT_PHONE: Optional[str] = Field(
+        default=None,
+        description="Public contact phone for inquiries"
     )
     
     APP_VERSION: str = Field(
@@ -100,9 +116,6 @@ class Settings(BaseSettings):
     # =========================================================================
     CORS_ORIGINS: List[str] = Field(
         default_factory=lambda: [
-            "https://widget.barrow-ai.poc",
-            "https://admin.barrow-ai.poc",
-            "https://npp.gm",
             "http://localhost:5173",
             "http://localhost:3000",
         ],
@@ -276,8 +289,88 @@ class Settings(BaseSettings):
         return f"redis://:{password}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
     
     # =========================================================================
+    # RABBITMQ SETTINGS
+    # =========================================================================
+    RABBITMQ_HOST: str = Field(
+        default="rabbitmq",
+        description="RabbitMQ host"
+    )
+    
+    RABBITMQ_PORT: int = Field(
+        default=5672,
+        ge=1,
+        le=65535,
+        description="RabbitMQ port"
+    )
+    
+    RABBITMQ_USER: str = Field(
+        default="barrowai",
+        description="RabbitMQ username"
+    )
+    
+    RABBITMQ_PASSWORD: SecretStr = Field(
+        ...,
+        description="RabbitMQ password"
+    )
+    
+    RABBITMQ_WEBHOOK_QUEUE: str = Field(
+        default="whatsapp_webhooks",
+        description="Queue name for WhatsApp webhooks"
+    )
+    
+    RABBITMQ_WEBHOOK_DLQ: str = Field(
+        default="whatsapp_webhooks_dlq",
+        description="Dead-letter queue for failed WhatsApp webhooks"
+    )
+    
+    RABBITMQ_WEBHOOK_DLX: str = Field(
+        default="whatsapp_webhooks_dlx",
+        description="Dead-letter exchange for failed WhatsApp webhooks"
+    )
+    
+    RABBITMQ_MAX_RETRIES: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Max retry attempts for webhook messages before routing to DLQ"
+    )
+    
+    RABBITMQ_RETRY_BACKOFF_SECONDS: int = Field(
+        default=5,
+        ge=1,
+        le=60,
+        description="Initial backoff in seconds before retrying failed webhook"
+    )
+
+    @property
+    def rabbitmq_url(self) -> str:
+        """Construct RabbitMQ connection URL."""
+        password = self.RABBITMQ_PASSWORD.get_secret_value()
+        return f"amqp://{self.RABBITMQ_USER}:{password}@{self.RABBITMQ_HOST}:{self.RABBITMQ_PORT}/"
+
+    @property
+    def RABBITMQ_WHATSAPP_QUEUE(self) -> str:
+        """Alias for RABBITMQ_WEBHOOK_QUEUE."""
+        return self.RABBITMQ_WEBHOOK_QUEUE
+
+    # =========================================================================
+    # INTERNAL SERVICE COMMUNICATION
+    # =========================================================================
+
+    BACKEND_INTERNAL_URL: str = Field(
+        default="http://localhost:8000",
+        description="Internal URL used by background workers to communicate with FastAPI backend"
+    )
+    
+    INTERNAL_API_SECRET: SecretStr = Field(
+        default=SecretStr("internal-secret-token-for-worker-delegation"),
+        description="Shared secret for authenticating internal service requests"
+    )
+
+    # =========================================================================
     # QDRANT SETTINGS
     # =========================================================================
+
     QDRANT_HOST: str = Field(
         default="qdrant",
         description="Qdrant host"
@@ -291,27 +384,51 @@ class Settings(BaseSettings):
     )
     
     QDRANT_COLLECTION: str = Field(
-        default="npp_documents_poc",
+        default="company_knowledge_v1",
         description="Qdrant collection name"
     )
     
     QDRANT_VECTOR_SIZE: int = Field(
-        default=768,
+        default=1024,
         description="Embedding vector dimension"
     )
     
     QDRANT_SIMILARITY_THRESHOLD: float = Field(
-        default=0.70,
+        default=0.20,
         ge=0.0,
         le=1.0,
         description="Minimum similarity score for RAG retrieval"
     )
     
     QDRANT_TOP_K: int = Field(
-        default=5,
+        default=10,
         ge=1,
         le=20,
         description="Number of chunks to retrieve per query"
+    )
+    
+    QDRANT_API_KEY: Optional[SecretStr] = Field(
+        default=None,
+        description="API key for authenticating with Qdrant vector database"
+    )
+    
+    RAG_ENABLE_RERANKER: bool = Field(
+        default=True,
+        description="Whether to enable CrossEncoder re-ranking"
+    )
+    
+    RAG_RERANK_TOP_K: int = Field(
+        default=8,
+        ge=2,
+        le=20,
+        description="Maximum number of candidate chunks to send to CrossEncoder"
+    )
+    
+    RAG_RERANK_BYPASS_THRESHOLD: float = Field(
+        default=0.82,
+        ge=0.5,
+        le=1.0,
+        description="Initial confidence threshold above which CrossEncoder re-ranking is bypassed"
     )
     
     @property
@@ -323,12 +440,12 @@ class Settings(BaseSettings):
     # LLM SETTINGS
     # =========================================================================
     LLM_PROVIDER: LLMProvider = Field(
-        default=LLMProvider.GEMINI,
+        default=LLMProvider.GROQ,
         description="LLM provider to use"
     )
     
     GEMINI_API_KEY: SecretStr = Field(
-        ...,
+        default=None,  
         description="Google Gemini API key"
     )
     
@@ -356,17 +473,23 @@ class Settings(BaseSettings):
     )
     
     GEMINI_TIMEOUT: int = Field(
-        default=10,
+        default=15,
         ge=5,
         le=60,
         description="API timeout in seconds"
     )
     
     GEMINI_MAX_RETRIES: int = Field(
-        default=2,
+        default=1,
         ge=0,
         le=5,
         description="Maximum retry attempts for API calls"
+    )
+    GROQ_MAX_RETRIES: int = Field(
+        default=2,
+        ge=0,
+        le=5,
+        description="Maximum retry attempts for Groq API calls"
     )
     
     # Ollama settings (for Phase 2)
@@ -391,6 +514,86 @@ class Settings(BaseSettings):
     def ollama_url(self) -> str:
         """Construct Ollama connection URL."""
         return f"http://{self.OLLAMA_HOST}:{self.OLLAMA_PORT}"
+    
+    # =========================================================================
+    # HUGGING FACE & OOLEL SETTINGS
+    # =========================================================================
+    HF_TOKEN: Optional[SecretStr] = Field(
+        default=None,
+        description="Hugging Face Inference API key"
+    )
+    
+    GROQ_API_KEY: Optional[SecretStr] = Field(
+        default=None,
+        description="Groq API Key for fast LLM fallback"
+    )
+    
+    GROQ_MODEL: str = Field(
+        default="openai/gpt-oss-20b",
+        description="Groq model for fast fallback"
+    )
+    
+    LLAMA_CLOUD_API_KEY: Optional[SecretStr] = Field(
+
+        default=None,
+        description="LlamaParse Cloud API Key"
+    )
+    
+    WHISPER_MODEL_SIZE: str = Field(
+        default="large-v3-turbo",
+        description="Faster-Whisper model size for local STT"
+    )
+    
+    GROQ_WHISPER_MODEL: str = Field(
+        default="whisper-large-v3-turbo",
+        description="Groq Whisper model for ultra-fast cloud STT"
+    )
+    
+    WHISPER_BEAM_SIZE: int = Field(
+        default=1,
+        ge=1,
+        le=5,
+        description="Beam size for local Whisper decoding (1=greedy, fastest on CPU)"
+    )
+    
+    WHISPER_USE_GROQ: bool = Field(
+        default=True,
+        description="Whether to use Groq Cloud Whisper API for STT when GROQ_API_KEY is available"
+    )
+    
+    OOLEL_TTS_SPACE_ID: str = Field(
+        default="SoynadeResearch/oolel-voices",
+        description="Gradio Space ID for Oolel TTS (Deprecated)"
+    )
+    
+    OOLEL_API_URL: str = Field(
+        default="http://100.110.197.46:8080",
+        description="Local Oolel TTS VM API URL"
+    )
+    
+    OOLEL_CORRECTOR_ENDPOINT: str = Field(
+        default="https://router.huggingface.co/hf-inference/models/soynade-research/oolel-corrector-1.5b",
+        description="Endpoint for Oolel Wolof Orthography Corrector"
+    )
+    
+    OOLEL_TTS_TIMEOUT: int = Field(
+        default=90,
+        description="Timeout for Oolel TTS API in seconds"
+    )
+    
+    # Edge TTS Settings
+    TTS_RATE: str = Field(
+        default="+25%",
+        description="Speech synthesis rate modifier for Edge TTS (e.g. +25% for 1.25x speed)"
+    )
+    TTS_VOLUME: str = Field(
+        default="+0%",
+        description="Speech synthesis volume modifier for Edge TTS"
+    )
+    TTS_VOICE: str = Field(
+        default="",
+        description="Optional Edge TTS voice override"
+    )
     
     # =========================================================================
     # SECURITY SETTINGS
@@ -504,6 +707,11 @@ class Settings(BaseSettings):
         ...,
         description="WhatsApp App Secret (from Meta Developer Console, NOT the verify token)"
     )
+
+    WHATSAPP_REQUIRE_SIGNATURE: bool = Field(
+        default=True,
+        description="Require valid X-Hub-Signature-256 HMAC header on incoming WhatsApp webhooks"
+    )
     
     # =========================================================================
     # RAG CHUNKING SETTINGS
@@ -614,8 +822,110 @@ class Settings(BaseSettings):
     )
     
     # =========================================================================
+    # AUDIO SETTINGS (voice messages)
+    # =========================================================================
+    MAX_AUDIO_DURATION_SECONDS: int = Field(
+        default=180,
+        ge=10,
+        le=300,
+        description="Maximum allowed audio duration in seconds"
+    )
+    
+    AUDIO_CACHE_TTL_SECONDS: int = Field(
+        default=86400,
+        ge=3600,
+        le=604800,
+        description="Cache TTL for transcribed audio in seconds"
+    )
+    
+    # =========================================================================
+    # SMTP & RECRUITMENT NOTIFICATION SETTINGS
+    # =========================================================================
+    SMTP_HOST: str = Field(
+        default="smtp.gmail.com",
+        description="SMTP server host"
+    )
+    SMTP_PORT: int = Field(
+        default=587,
+        description="SMTP server port (587 for TLS, 465 for SSL)"
+    )
+    SMTP_USER: Optional[str] = Field(
+        default=None,
+        description="SMTP username (e.g. sender email)"
+    )
+    SMTP_PASSWORD: Optional[SecretStr] = Field(
+        default=None,
+        description="SMTP application password"
+    )
+    SMTP_FROM: Optional[str] = Field(
+        default=None,
+        description="Sender email display name and address"
+    )
+    SMTP_USE_TLS: bool = Field(
+        default=True,
+        description="Use STARTTLS (port 587)"
+    )
+    RECRUITER_NOTIFICATION_EMAIL: Optional[str] = Field(
+        default=None,
+        description="Target email for candidate applications notification"
+    )
+    
+    @model_validator(mode='after')
+    def validate_production_security(self) -> 'Settings':
+        """
+        Validate critical secrets when running in production or staging.
+        Prevents starting with known insecure defaults or weak secrets.
+        """
+        if self.ENVIRONMENT in (Environment.PRODUCTION, Environment.STAGING):
+            insecure_defaults = {
+                "internal-secret-token-for-worker-delegation",
+                "secret",
+                "password",
+                "admin",
+                "admin123",
+                "admin123!",
+                "changeme",
+                "change_this",
+                "default",
+            }
+            
+            # 1. Validate INTERNAL_API_SECRET
+            if self.INTERNAL_API_SECRET:
+                sec = self.INTERNAL_API_SECRET.get_secret_value()
+                if not sec or sec.lower() in insecure_defaults or len(sec) < 24:
+                    raise ValueError(
+                        "INTERNAL_API_SECRET is insecure for production/staging: "
+                        "must not use default values and must be at least 24 characters long."
+                    )
+            else:
+                raise ValueError("INTERNAL_API_SECRET must be set in production/staging.")
+
+            # 2. Validate JWT_SECRET
+            if self.JWT_SECRET:
+                jwt_val = self.JWT_SECRET.get_secret_value()
+                if jwt_val.lower() in insecure_defaults or len(jwt_val) < 24:
+                    raise ValueError("JWT_SECRET is insecure for production/staging: must be at least 24 characters.")
+
+            # 3. Validate CSRF_SECRET
+            if self.CSRF_SECRET:
+                csrf_val = self.CSRF_SECRET.get_secret_value()
+                if csrf_val.lower() in insecure_defaults or len(csrf_val) < 24:
+                    raise ValueError("CSRF_SECRET is insecure for production/staging: must be at least 24 characters.")
+
+            # 4. Validate QDRANT_API_KEY
+            if self.QDRANT_API_KEY:
+                qdrant_val = self.QDRANT_API_KEY.get_secret_value()
+                if qdrant_val.lower() in insecure_defaults or len(qdrant_val) < 16:
+                    raise ValueError("QDRANT_API_KEY is insecure for production/staging: must be at least 16 characters.")
+            else:
+                raise ValueError("QDRANT_API_KEY must be set in production/staging.")
+
+        return self
+
+    # =========================================================================
     # COMPUTED PROPERTIES
     # =========================================================================
+
     @property
     def is_production(self) -> bool:
         """Check if running in production environment."""

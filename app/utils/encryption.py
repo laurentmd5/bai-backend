@@ -1,5 +1,5 @@
-"""
-Encryption utilities for BARROW.AI.
+﻿"""
+Encryption utilities for Company Bot.
 Re-exports from core security module to avoid duplication.
 """
 

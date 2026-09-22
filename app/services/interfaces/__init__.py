@@ -1,5 +1,5 @@
-"""
-Service interfaces package for BARROW.AI.
+﻿"""
+Service interfaces package for Company Bot.
 Defines abstract base classes for dependency inversion.
 """
 

@@ -1,5 +1,5 @@
-"""
-Admin 2FA management endpoints for BARROW.AI.
+﻿"""
+Admin 2FA management endpoints for Company Bot.
 """
 
 from fastapi import APIRouter, Request, Depends, HTTPException, status

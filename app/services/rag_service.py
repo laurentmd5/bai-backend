@@ -1,9 +1,10 @@
 """
-RAG (Retrieval-Augmented Generation) Service for BARROW.AI.
+RAG (Retrieval-Augmented Generation) Service for Company Bot.
 Orchestrates the complete RAG pipeline from embedding to context building.
 """
 
 import uuid
+import time
 from typing import List, Dict, Any, Optional, Tuple
 import asyncio
 from datetime import datetime
@@ -14,11 +15,67 @@ from app.services.cache.redis_cache import cache_service, CacheNamespace
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.exceptions import LowConfidenceException
+from app.core.security import detect_prompt_injection
+from app.core.metrics import (
+    rag_retrieval_duration_seconds,
+    record_rag_search_duration,
+    record_rag_chunks_retrieved,
+)
 
 logger = get_logger(__name__)
 
+def reciprocal_rank_fusion(
+    vector_results: List[Dict[str, Any]],
+    keyword_results: List[Dict[str, Any]],
+    k_rrf: int = 60
+) -> List[Dict[str, Any]]:
+    """
+    Combine Dense Vector Search and Keyword Search results using Reciprocal Rank Fusion (RRF).
+    Formula: RRF_Score(d) = sum(1 / (k_rrf + rank_i))
+    
+    Args:
+        vector_results: Chunks retrieved from dense vector search
+        keyword_results: Chunks retrieved from lexical keyword search
+        k_rrf: Smoothing constant (standard default is 60)
+        
+    Returns:
+        Deduplicated list of chunks ordered by fused RRF score descending.
+    """
+    chunk_map: Dict[Tuple[Optional[str], Optional[int]], Dict[str, Any]] = {}
+    rrf_scores: Dict[Tuple[Optional[str], Optional[int]], float] = {}
+
+    # 1. Process dense vector results
+    for rank, res in enumerate(vector_results, start=1):
+        payload = res.get("payload", {})
+        chunk_id = (payload.get("document_name"), payload.get("chunk_index"))
+        if chunk_id not in chunk_map:
+            chunk_map[chunk_id] = res
+            rrf_scores[chunk_id] = 0.0
+        rrf_scores[chunk_id] += 1.0 / (k_rrf + rank)
+
+    # 2. Process lexical keyword results
+    for rank, res in enumerate(keyword_results, start=1):
+        payload = res.get("payload", {})
+        chunk_id = (payload.get("document_name"), payload.get("chunk_index"))
+        if chunk_id not in chunk_map:
+            chunk_map[chunk_id] = res
+            rrf_scores[chunk_id] = 0.0
+        rrf_scores[chunk_id] += 1.0 / (k_rrf + rank)
+
+    # 3. Create final list with assigned rrf_score
+    fused_results = []
+    for chunk_id, res in chunk_map.items():
+        chunk_entry = dict(res)
+        chunk_entry["rrf_score"] = rrf_scores[chunk_id]
+        fused_results.append(chunk_entry)
+
+    # Sort descending by RRF score
+    fused_results.sort(key=lambda x: x["rrf_score"], reverse=True)
+    return fused_results
+
 
 class RAGService:
+
     """
     Retrieval-Augmented Generation service.
     
@@ -29,79 +86,79 @@ class RAGService:
     - Confidence scoring
     - Document retrieval tracking
     
-    NOTE: Uses CLASS VARIABLES for singleton pattern across all instances.
-    This ensures the BGE embedding model is loaded only ONCE regardless
-    of how many RAGService instances are created.
+    NOTE: This service is instantiated once at application startup
+    and stored in app.state.rag_service. All endpoints access the same
+    singleton instance, ensuring the BGE embedding model is loaded only ONCE.
     """
     
-    # ⭐ CLASS VARIABLES - shared across ALL instances (Singleton pattern)
-    _class_initialized: bool = False
-    _shared_vector_store: Optional[QdrantVectorStore] = None
-    _shared_embedding_provider = None
-    _class_lock = asyncio.Lock()
-    
     def __init__(self):
-        self._vector_store = None
+        """Initialize RAGService instance."""
+        self._vector_store: Optional[QdrantVectorStore] = None
         self._embedding_provider = None
         self._similarity_threshold = settings.QDRANT_SIMILARITY_THRESHOLD
         self._top_k = settings.QDRANT_TOP_K
         self._initialized = False
-        self._init_lock = asyncio.Lock()
         
-        # Log instance creation for debugging singleton pattern
         logger.info(f"📦 RAGService instance created: id={id(self)}")
     
     async def initialize(self) -> None:
         """
-        Initialize RAG service.
+        Initialize RAG service components.
         
-        Uses CLASS-LEVEL state to ensure services are loaded only ONCE
-        across ALL RAGService instances. This prevents reloading the
-        BGE embedding model (8 seconds) on every request.
+        Called once at application startup to:
+        - Connect to Qdrant vector database
+        - Load embedding model (BGE, ~8 seconds)
+        - Load CrossEncoder reranker model
+        
+        After initialization, this instance is stored in app.state.rag_service
+        and reused for all requests, preventing redundant model loads.
         """
-        # If already initialized at class level, reuse shared resources
-        if RAGService._class_initialized:
-            self._vector_store = RAGService._shared_vector_store
-            self._embedding_provider = RAGService._shared_embedding_provider
-            self._initialized = True
-            logger.info(f"✅ RAGService reusing shared instance (id={id(self)})")
+        if self._initialized:
+            logger.info(f"✅ RAGService already initialized, skipping")
             return
         
-        async with RAGService._class_lock:
-            # Double-check after acquiring lock
-            if RAGService._class_initialized:
-                self._vector_store = RAGService._shared_vector_store
-                self._embedding_provider = RAGService._shared_embedding_provider
-                self._initialized = True
-                logger.info(f"✅ RAGService reusing shared instance after lock (id={id(self)})")
-                return
-            
-            # FIRST AND ONLY INITIALIZATION - loads BGE model (~8 seconds)
-            logger.warning(f"🔥 RAGService INITIALIZING - LOADING MODEL")
-            
+        logger.warning(f"🔥 RAGService INITIALIZING - LOADING MODELS")
+        
+        try:
             # Initialize vector store (Qdrant connection)
-            vs = QdrantVectorStore()
-            await vs.initialize()
+            self._vector_store = QdrantVectorStore()
+            await self._vector_store.initialize()
             
-            # Initialize embedding provider (BGE model - takes ~8 seconds)
-            ep = get_embedding_provider()
+            # Initialize embedding provider
+            self._embedding_provider = get_embedding_provider()
             
-            # Store in class variables for reuse across all instances
-            RAGService._shared_vector_store = vs
-            RAGService._shared_embedding_provider = ep
-            RAGService._class_initialized = True
+            # Initialize Re-ranker
+            try:
+                from sentence_transformers import CrossEncoder
+                import asyncio
+                # Load in thread to not block event loop
+                self._reranker = await asyncio.to_thread(
+                    CrossEncoder, 
+                    'cross-encoder/ms-marco-MiniLM-L-6-v2',
+                    max_length=512
+                )
+                logger.info(f"✅ Re-ranker initialized: cross-encoder/ms-marco-MiniLM-L-6-v2")
+            except ImportError:
+                logger.warning(f"⚠️ sentence-transformers not found. Re-ranking disabled.")
+                self._reranker = None
+            except Exception as e:
+                logger.error(f"❌ Failed to load Re-ranker: {str(e)}")
+                self._reranker = None
             
-            # Assign to this instance
-            self._vector_store = vs
-            self._embedding_provider = ep
             self._initialized = True
+            logger.info(f"✅ RAGService initialization complete")
             
-            logger.info(f"✅ RAGService class initialization complete")
+        except Exception as e:
+            logger.error(f"❌ RAGService initialization failed: {str(e)}")
+            raise
     
-    async def _ensure_initialized(self) -> None:
-        """Lazy initialization."""
+    def _ensure_initialized(self) -> None:
+        """Verify that service is initialized."""
         if not self._initialized:
-            await self.initialize()
+            raise RuntimeError(
+                "RAGService not initialized. "
+                "Ensure app.state.rag_service is set at startup."
+            )
     
     async def retrieve(
         self,
@@ -127,7 +184,7 @@ class RAGService:
         Raises:
             LowConfidenceException: If no chunks meet threshold
         """
-        await self._ensure_initialized()
+        self._ensure_initialized()
         
         k = top_k if top_k is not None else self._top_k
         threshold = score_threshold if score_threshold is not None else self._similarity_threshold
@@ -135,32 +192,99 @@ class RAGService:
         # Generate embedding (with cache)
         query_vector = await self._embedding_provider.embed(query)
         
-        # Search in Qdrant
-        results = await self._vector_store.search(
-            query_vector=query_vector,
-            limit=k,
-            score_threshold=threshold,
-            filters=filters,
+        # Search in Qdrant with timing (Dense + Sparse/Keyword)
+        start_time = time.time()
+        
+        # Relax raw vector threshold slightly to prevent premature elimination of chunks
+        # when a query is short or has high keyword relevance (e.g. "solaire", "odoo")
+        vector_threshold = max(0.0, threshold - 0.15)
+        
+        # Run Vector Search and Keyword Search concurrently
+        import asyncio
+        vector_search_task = asyncio.create_task(
+            self._vector_store.search(
+                query_vector=query_vector,
+                limit=k,
+                score_threshold=vector_threshold,
+                filters=filters,
+            )
         )
         
-        if not results:
+        # Extract potential keyword for text match
+        keyword_task = asyncio.create_task(
+            self._vector_store.keyword_search(
+                query=query,
+                limit=max(3, k // 2),  # Less results from keyword search
+                filters=filters,
+            )
+        )
+        
+        vector_results, keyword_results = await asyncio.gather(vector_search_task, keyword_task)
+        
+        duration = time.time() - start_time
+        record_rag_search_duration(duration * 1000.0)
+
+        
+        # Combine results using Reciprocal Rank Fusion (RRF)
+        combined_results = reciprocal_rank_fusion(
+            vector_results=vector_results,
+            keyword_results=keyword_results,
+            k_rrf=60
+        )
+        
+        # Record chunk metrics
+        record_rag_chunks_retrieved(len(combined_results))
+
+        
+        if not combined_results:
             logger.info(
                 "rag_no_results",
                 query_preview=query[:100],
                 threshold=threshold,
             )
             raise LowConfidenceException(0.0, threshold)
+
         
-        top_score = results[0]["score"]
+        # Adaptive Confidence Scoring:
+        # If we have vector results, evaluate top vector score.
+        # If keyword search matched relevant terms (BM25 exact match), grant adaptive confidence boost
+        vector_top_score = vector_results[0]["score"] if vector_results else 0.0
+        
+        # Check if the top combined chunk came from keyword search or both
+        has_keyword_match = bool(keyword_results)
+        
+        if has_keyword_match:
+            # Exact keyword match found in document text
+            # Ensure confidence boost requires baseline vector support (>= 70% threshold)
+            # to prevent unrelated keyword matches from falsely rescuing irrelevant text
+            if vector_top_score >= (threshold * 0.7):
+                top_score = max(vector_top_score, min(vector_top_score + 0.1, 0.85))
+            else:
+                top_score = vector_top_score
+        else:
+            top_score = vector_top_score
+            
+        # If top_score is below the required threshold
+        if top_score < threshold:
+            logger.info(
+                "rag_low_confidence",
+                query_preview=query[:100],
+                top_score=top_score,
+                threshold=threshold,
+            )
+            raise LowConfidenceException(top_score, threshold)
         
         logger.debug(
             "rag_retrieval_completed",
             query_preview=query[:100],
-            chunks_found=len(results),
+            vector_chunks=len(vector_results),
+            keyword_chunks=len(keyword_results),
+            total_chunks_found=len(combined_results),
             top_score=top_score,
+            retrieval_time_sec=round(duration, 3),
         )
         
-        return results, top_score
+        return combined_results, top_score
     
     async def build_context(
         self,
@@ -168,7 +292,8 @@ class RAGService:
         include_sources: bool = True,
     ) -> str:
         """
-        Build a formatted context string from retrieved chunks.
+        Build a formatted, boundary-isolated context string from retrieved chunks.
+        Encapsulates sources inside XML tags and sanitizes against indirect prompt injection.
         
         Args:
             retrieved_chunks: List of chunks from vector search
@@ -189,20 +314,51 @@ class RAGService:
             document_name = payload.get("document_name", "Unknown")
             section = payload.get("section", "")
             
+            # Security: check chunk for indirect prompt injection attempts
+            if detect_prompt_injection(text):
+                logger.warning(
+                    "indirect_prompt_injection_detected_in_chunk",
+                    document=document_name,
+                    section=section,
+                    chunk_index=i,
+                )
+                # Omit hostile chunk to protect LLM from indirect instruction injection
+                continue
+            
+            # Neutralize XML boundary escape markers
+            sanitized_text = (
+                text.replace("</untrusted_document_context>", "")
+                    .replace("<untrusted_document_context>", "")
+                    .replace("</context_knowledge_base>", "")
+                    .replace("<context_knowledge_base>", "")
+            )
+            
+            safe_doc = str(document_name).replace('"', '').replace('<', '').replace('>', '')
+            safe_section = str(section).replace('"', '').replace('<', '').replace('>', '')
+            
             if include_sources:
-                source_info = f"[Source: {document_name}"
-                if section:
-                    source_info += f", {section}"
-                source_info += "]"
-                context_parts.append(f"{source_info}\n{text}")
+                chunk_block = (
+                    f'<untrusted_document_context source="{safe_doc}" section="{safe_section}" chunk_id="{i}">\n'
+                    f'{sanitized_text}\n'
+                    f'</untrusted_document_context>'
+                )
             else:
-                context_parts.append(text)
+                chunk_block = (
+                    f'<untrusted_document_context chunk_id="{i}">\n'
+                    f'{sanitized_text}\n'
+                    f'</untrusted_document_context>'
+                )
+            context_parts.append(chunk_block)
         
-        context = "\n\n---\n\n".join(context_parts)
+        if not context_parts:
+            return ""
+        
+        inner_context = "\n\n".join(context_parts)
+        context = f"<context_knowledge_base>\n{inner_context}\n</context_knowledge_base>"
         
         logger.debug(
             "rag_context_built",
-            chunks_count=len(retrieved_chunks),
+            chunks_count=len(context_parts),
             context_length=len(context),
         )
         
@@ -216,7 +372,7 @@ class RAGService:
         filters: Optional[Dict[str, Any]] = None,
     ) -> Tuple[str, List[Dict[str, Any]], float]:
         """
-        Complete RAG pipeline: retrieve chunks and build context.
+        Complete RAG pipeline: retrieve chunks, re-rank, and build context.
         
         Args:
             query: User question
@@ -227,23 +383,71 @@ class RAGService:
         Returns:
             Tuple of (context_string, sources, top_confidence)
         """
-        chunks, top_score = await self.retrieve(
+        # Retrieve more chunks initially for re-ranking (e.g., 20)
+        initial_k = max(top_k * 2 if top_k else self._top_k * 2, 20)
+        chunks, initial_top_score = await self.retrieve(
             query=query,
-            top_k=top_k,
+            top_k=initial_k,
             score_threshold=score_threshold,
             filters=filters,
         )
         
-        context = await self.build_context(chunks, include_sources=True)
+        # Apply Cross-Encoder Re-ranking
+        top_score = initial_top_score
+        final_k = top_k if top_k else self._top_k
+        final_chunks = chunks[:final_k]
+        
+        enable_reranker = getattr(settings, "RAG_ENABLE_RERANKER", True)
+        rerank_bypass_threshold = getattr(settings, "RAG_RERANK_BYPASS_THRESHOLD", 0.82)
+        rerank_pool_size = getattr(settings, "RAG_RERANK_TOP_K", 8)
+        
+        # Fast-Path: If initial similarity is already very high, bypass CPU-heavy re-ranking
+        if initial_top_score >= rerank_bypass_threshold:
+            logger.info(
+                "rag_rerank_bypassed_high_confidence",
+                initial_top_score=round(initial_top_score, 3),
+                threshold=rerank_bypass_threshold,
+                chunks_count=len(final_chunks),
+            )
+        elif enable_reranker and hasattr(self, '_reranker') and self._reranker:
+            try:
+                # Restrict candidate pool to the most promising candidates (e.g. 8 instead of 20)
+                candidates = chunks[:min(len(chunks), rerank_pool_size)]
+                pairs = [[query, chunk.get("payload", {}).get("text", "")] for chunk in candidates]
+                
+                # CrossEncoder prediction is CPU intensive, run in thread
+                import asyncio
+                scores = await asyncio.to_thread(self._reranker.predict, pairs)
+                
+                import math
+                
+                # Update scores and sort
+                for i, chunk in enumerate(candidates):
+                    logit = float(scores[i])
+                    # Apply sigmoid to normalize logit to [0, 1] for database constraint
+                    chunk["rerank_score"] = 1.0 / (1.0 + math.exp(-logit))
+                    
+                candidates.sort(key=lambda x: x["rerank_score"], reverse=True)
+                final_chunks = candidates[:final_k]
+                
+                if final_chunks:
+                    # Keep track of the top rerank score for confidence
+                    top_score = final_chunks[0]["rerank_score"]
+                    
+            except Exception as e:
+                logger.error("reranking_failed", error=str(e))
+                final_chunks = chunks[:final_k]
+        
+        context = await self.build_context(final_chunks, include_sources=True)
         
         # Format sources for response
         sources = []
-        for chunk in chunks:
+        for chunk in final_chunks:
             payload = chunk.get("payload", {})
             sources.append({
                 "document": payload.get("document_name", "Unknown"),
                 "section": payload.get("section", ""),
-                "relevance": chunk.get("score", 0.0),
+                "relevance": chunk.get("rerank_score", chunk.get("score", 0.0)),
                 "chunk_index": payload.get("chunk_index"),
             })
         
@@ -270,7 +474,7 @@ class RAGService:
         Returns:
             Number of chunks indexed
         """
-        await self._ensure_initialized()
+        self._ensure_initialized()
         
         if not chunks:
             return 0
@@ -337,7 +541,7 @@ class RAGService:
         Returns:
             Number of chunks deleted
         """
-        await self._ensure_initialized()
+        self._ensure_initialized()
         
         deleted = await self._vector_store.delete_by_filter({
             "document_name": document_name
@@ -358,7 +562,7 @@ class RAGService:
         Returns:
             Collection information and stats
         """
-        await self._ensure_initialized()
+        self._ensure_initialized()
         
         info = await self._vector_store.get_collection_info()
         
@@ -390,7 +594,7 @@ class RAGService:
             Health status
         """
         try:
-            await self._ensure_initialized()
+            self._ensure_initialized()
             
             vector_store_available = await self._vector_store.is_available()
             embedding_available = await self._embedding_provider.is_available()

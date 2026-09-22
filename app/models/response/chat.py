@@ -1,5 +1,5 @@
-"""
-Chat response models for BARROW.AI.
+﻿"""
+Chat response models for Company Bot.
 Serializes chatbot responses with sources, confidence, and metadata.
 """
 
@@ -124,7 +124,7 @@ class ChatMessageResponse(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "message": "Under the NPP administration (2022-2026), mobile penetration reached 113%, one of the highest in West Africa. The government launched the US$25M Second Submarine Cable Project (WARDIP) and upgraded GAMTEL backbone from 40G to 800G.\n\nAsk. Know. Decide. - One Gambia. One People. One Barrow.",
+                "message": "NETSYSTEME provides networking, cybersecurity and IT infrastructure services.",
                 "session_id": "550e8400-e29b-41d4-a716-446655440000",
                 "conversation_id": "660e8400-e29b-41d4-a716-446655440001",
                 "sources": [
@@ -140,7 +140,7 @@ class ChatMessageResponse(BaseModel):
                 "fallback_triggered": False,
                 "latency_ms": 1243,
                 "timestamp": "2026-04-17T10:30:45Z",
-                "model_used": "tunedModels/askbarrow-npp-v3",
+                "model_used": "gemini-2.5-flash-lite",
                 "suggested_questions": [
                     "What are the plans for 5G rollout?",
                     "Tell me about digital addressing"
@@ -240,7 +240,7 @@ class ChatFallbackResponse(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "message": "I do not have this information in my campaign database. Please visit www.npp.gm or contact your nearest PACE office.\n\nAsk. Know. Decide. - One Gambia. One People. One Barrow.",
+                "message": "I do not have specific information about that. Please contact support@netsysteme.sn.",
                 "session_id": "550e8400-e29b-41d4-a716-446655440000",
                 "reason": "low_confidence",
                 "confidence": 0.45,
@@ -248,3 +248,4 @@ class ChatFallbackResponse(BaseModel):
             }
         }
     }
+

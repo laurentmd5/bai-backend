@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = '001_initial'
+revision: str = '001_initial_schema'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -108,7 +108,7 @@ def upgrade() -> None:
     op.create_index('idx_conversations_session_created', 'conversations', ['session_id', 'created_at'])
     op.create_index('idx_conversations_feedback', 'conversations', ['feedback'], postgresql_where=sa.text('feedback IS NOT NULL'))
     op.create_index('idx_conversations_cache_hit', 'conversations', ['cache_hit'], postgresql_where=sa.text('cache_hit = true'))
-    op.create_index('idx_conversations_recent', 'conversations', ['created_at'], postgresql_where=sa.text("created_at > NOW() - INTERVAL '30 days'"))
+    op.create_index('idx_conversations_recent', 'conversations', ['created_at'])
     
     # =========================================================================
     # Table: knowledge_docs

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Nouvel administrateur{% endblock %}
+{% block page_title %}Créer un administrateur{% endblock %}
+{% block content %}
+<div class="max-w-lg mx-auto bg-white rounded-xl shadow-sm p-8">
+    <form id="createForm">
+        <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-bold mb-2">Email</label>
+            <input type="email" name="email" required class="form-input w-full px-3 py-2 border border-gray-300 rounded-lg">
+        </div>
+        <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-bold mb-2">Nom complet</label>
+            <input type="text" name="full_name" required class="form-input w-full px-3 py-2 border border-gray-300 rounded-lg">
+        </div>
+        <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-bold mb-2">Mot de passe</label>
+            <input type="password" name="password" required class="form-input w-full px-3 py-2 border border-gray-300 rounded-lg">
+        </div>
+        <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-bold mb-2">Rôle</label>
+            <select name="role" class="form-input w-full px-3 py-2 border border-gray-300 rounded-lg">
+                <option value="viewer">Viewer</option>
+                <option value="auditor">Auditor</option>
+                <option value="admin">Admin</option>
+                <option value="superadmin">Superadmin</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary w-full">Créer</button>
+    </form>
+    <div id="error" class="mt-4 text-red-600 text-sm hidden"></div>
+</div>
+
+<script>
+    document.getElementById('createForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData.entries());
+        const token = localStorage.getItem('access_token');
+        const res = await fetch('/api/v1/admin/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(data)
+        });
+        if (res.ok) window.location.href = '/admin/users';
+        else {
+            const err = await res.json();
+            document.getElementById('error').textContent = err.detail || 'Erreur';
+            document.getElementById('error').classList.remove('hidden');
+        }
+    });
+</script>
+{% endblock %}

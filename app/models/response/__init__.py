@@ -1,5 +1,5 @@
-"""
-Response models package for BARROW.AI.
+﻿"""
+Response models package for Company Bot.
 Contains Pydantic schemas for serializing API responses.
 """
 

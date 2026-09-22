@@ -1,5 +1,5 @@
-"""
-Domain models package for BARROW.AI.
+﻿"""
+Domain models package for Company Bot.
 Contains SQLAlchemy ORM models representing core business entities.
 """
 

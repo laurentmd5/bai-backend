@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block title %}{{ t['knowledge']['page_title'] }}{% endblock %}
+{% block page_title %}{{ t['knowledge']['btn_upload'] }}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">/</span><a href="/admin/knowledge">{{ t['base']['knowledge_base'] }}</a>
+  <span class="sep">/</span><span>{{ t['knowledge']['btn_upload'] }}</span>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:680px">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">{{ t['knowledge']['btn_upload'] }}</div>
+        <div class="card-subtitle">{{ t['knowledge']['upload_subtitle']|safe }}</div>
+      </div>
+    </div>
+    <div class="card-body">
+
+      <!-- Drop zone -->
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <div class="drop-zone-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+        <div class="drop-zone-text">{{ t['knowledge']['upload_drop_zone']|safe }}</div>
+        <div class="drop-zone-hint">{{ t['knowledge']['upload_drop_hint']|safe }}</div>
+      </div>
+      <input type="file" id="file-input" name="file" accept=".pdf,.docx,.txt,.md" style="display:none">
+
+      <!-- Selected file info -->
+      <div id="file-info" class="hidden" style="margin-top:.75rem;display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;background:var(--primary-muted);border-radius:var(--radius);border:1px solid rgba(15,43,92,.15)">
+        <i class="fas fa-file" style="color:var(--primary);font-size:1.1rem"></i>
+
+        <div style="flex:1;min-width:0">
+          <div id="file-name" style="font-size:.875rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+          <div id="file-size" style="font-size:.75rem;color:var(--text-muted)"></div>
+        </div>
+        <button type="button" class="action-btn" onclick="clearFile()" title="Retirer">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <hr class="divider" style="margin:1.5rem 0">
+
+      <form id="upload-form">
+        <div class="form-group">
+          <label class="form-label" for="title">{{ t['knowledge']['upload_title_label'] }} <span style="color:var(--text-muted);font-weight:400">{{ t['knowledge']['upload_title_hint'] }}</span></label>
+          <input class="form-control" type="text" id="title" name="title" placeholder="{{ t['knowledge']['upload_title_placeholder'] }}">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="description">{{ t['knowledge']['upload_desc_label'] }}</label>
+          <textarea class="form-control" id="description" name="description" rows="3" placeholder="{{ t['knowledge']['upload_desc_placeholder'] }}"></textarea>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+          <div class="form-group">
+            <label class="form-label" for="language">{{ t['knowledge']['th_language'] }}</label>
+            <select class="form-control" id="language" name="language">
+              <option value="fr">{{ t['knowledge']['lang_fr'] }}</option>
+              <option value="en">{{ t['knowledge']['lang_en'] }}</option>
+              <option value="es">Español</option>
+              <option value="de">Deutsch</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Progress bar (hidden until upload starts) -->
+        <div id="progress-wrap" class="hidden" style="margin:1.25rem 0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+            <span id="progress-stage" style="font-size:.8125rem;font-weight:600;color:var(--text-secondary)">Envoi en cours…</span>
+            <span id="progress-pct" style="font-size:.8125rem;color:var(--text-muted)">0%</span>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress-bar" id="progress-bar" style="width:0%"></div>
+          </div>
+          <div id="progress-sub" style="font-size:.75rem;color:var(--text-muted);margin-top:.35rem">Téléversement du fichier…</div>
+        </div>
+
+        <!-- Error -->
+        <div id="error-box" class="alert alert-error hidden" style="margin:1rem 0">
+          <i class="fas fa-exclamation-circle"></i>
+          <span id="error-msg"></span>
+        </div>
+
+        <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:.5rem">
+          <a href="/admin/knowledge" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> {{ t['knowledge']['btn_return'] }}
+          </a>
+          <button type="submit" class="btn btn-primary" id="submit-btn">
+            <i class="fas fa-upload"></i> {{ t['knowledge']['btn_import'] }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block extra_js %}
+<script>
+let selectedFile = null;
+
+// Drop zone interactions
+const dropZone  = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) selectFile(f);
+});
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) selectFile(e.target.files[0]);
+});
+
+function selectFile(f) {
+  const allowed = ['.pdf','.docx','.txt','.md'];
+  const ext = '.' + f.name.split('.').pop().toLowerCase();
+  if (!allowed.includes(ext)) {
+    showError(`Format non supporté : ${ext}. Formats acceptés : PDF, DOCX, TXT, MD`);
+    return;
+  }
+  if (f.size > 50 * 1024 * 1024) {
+    showError('Fichier trop volumineux (max 50 Mo)');
+    return;
+  }
+  selectedFile = f;
+  document.getElementById('file-info').classList.remove('hidden');
+  document.getElementById('file-info').style.display = 'flex';
+  document.getElementById('file-name').textContent = f.name;
+  document.getElementById('file-size').textContent = formatSize(f.size);
+  if (!document.getElementById('title').value) {
+    document.getElementById('title').value = f.name.replace(/\.[^.]+$/, '');
+  }
+  hideError();
+}
+
+function clearFile() {
+  selectedFile = null;
+  fileInput.value = '';
+  document.getElementById('file-info').classList.add('hidden');
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' o';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' Ko';
+  return (bytes/1024/1024).toFixed(1) + ' Mo';
+}
+
+function showError(msg) {
+  document.getElementById('error-msg').textContent = msg;
+  document.getElementById('error-box').classList.remove('hidden');
+}
+function hideError() {
+  document.getElementById('error-box').classList.add('hidden');
+}
+
+// Upload with real progress
+document.getElementById('upload-form').addEventListener('submit', e => {
+  e.preventDefault();
+  if (!selectedFile) { showError('Veuillez sélectionner un fichier'); return; }
+
+  const token = localStorage.getItem('access_token');
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+  formData.append('title', document.getElementById('title').value || selectedFile.name);
+  formData.append('description', document.getElementById('description').value);
+  formData.append('language', document.getElementById('language').value);
+
+  const submitBtn = document.getElementById('submit-btn');
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Import en cours…';
+  document.getElementById('progress-wrap').classList.remove('hidden');
+  hideError();
+
+  const xhr = new XMLHttpRequest();
+  xhr.withCredentials = true;
+
+  xhr.upload.addEventListener('progress', evt => {
+    if (!evt.lengthComputable) return;
+    const pct = Math.round(evt.loaded / evt.total * 100);
+    document.getElementById('progress-bar').style.width = pct + '%';
+    document.getElementById('progress-pct').textContent = pct + '%';
+    if (pct === 100) {
+      document.getElementById('progress-stage').textContent = 'Traitement du document…';
+      document.getElementById('progress-sub').textContent = 'Extraction du texte, découpage et indexation vectorielle en cours…';
+      document.getElementById('progress-bar').style.transition = 'none';
+    }
+  });
+
+  xhr.addEventListener('load', () => {
+    if (xhr.status >= 200 && xhr.status < 300) {
+      document.getElementById('progress-stage').textContent = 'Document téléversé avec succès !';
+      document.getElementById('progress-bar').style.width = '100%';
+      document.getElementById('progress-bar').style.background = 'var(--success)';
+      showToast('Document importé avec succès. Indexation en cours.', 'success');
+      setTimeout(() => { window.location.href = '/admin/knowledge'; }, 1000);
+    } else if (xhr.status === 401) {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      window.location.href = '/admin/login';
+    } else {
+      let msg = 'Erreur lors de l\'import';
+      try {
+        const d = JSON.parse(xhr.responseText);
+        if (typeof d.detail === 'string') {
+          msg = d.detail;
+        } else if (Array.isArray(d.detail)) {
+          msg = d.detail.map(err => err.msg || JSON.stringify(err)).join(', ');
+        } else if (d.message) {
+          msg = d.message;
+        }
+      } catch(_) {}
+      document.getElementById('progress-wrap').classList.add('hidden');
+      showError(msg);
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="fas fa-upload"></i> {{ t["knowledge"]["btn_import"] }}';
+    }
+  });
+
+  xhr.addEventListener('error', () => {
+    document.getElementById('progress-wrap').classList.add('hidden');
+    showError('Erreur réseau — vérifiez votre connexion ou le serveur');
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = '<i class="fas fa-upload"></i> {{ t["knowledge"]["btn_import"] }}';
+  });
+
+  xhr.open('POST', '/api/v1/admin/knowledge');
+  if (token && token !== 'null' && token !== 'undefined') {
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+  }
+
+  // Attach CSRF
+  const csrf = getCsrfToken ? getCsrfToken() : null;
+  if (csrf) xhr.setRequestHeader('X-CSRF-Token', csrf);
+
+  xhr.send(formData);
+});
+
+// Inline getCsrfToken
+function getCsrfToken() {
+  const local = localStorage.getItem('csrf_token');
+  if (local) return local;
+  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+</script>
+{% endblock %}

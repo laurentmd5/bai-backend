@@ -1,0 +1,43 @@
+# Test dependencies for BARROW.AI backend
+# Install with: pip install -r requirements-test.txt
+
+# Core testing
+pytest>=7.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.0.0
+pytest-xdist>=3.0.0  # For parallel execution
+pytest-timeout>=2.1.0  # For test timeouts
+
+# HTTP testing
+httpx>=0.24.0
+requests>=2.28.0
+
+# FastAPI testing
+fastapi>=0.115.0
+
+# Database testing
+sqlalchemy>=2.0.0
+aiosqlite>=0.19.0  # For in-memory SQLite in tests
+
+# Mocking and fixtures
+pytest-mock>=3.10.0
+faker>=18.0.0  # For generating fake data
+
+# Code quality
+pytest-sugar>=0.9.6  # Better pytest output
+pytest-html>=3.2.0  # HTML report generation
+
+# Performance testing
+locust>=2.0.0  # For load testing (optional)
+memory-profiler>=0.60.0  # For memory leak detection (optional)
+
+# Security testing
+bandit>=1.7.5  # Security issue scanner (optional)
+safety>=2.3.0  # Dependency security check (optional)
+
+# Utilities
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+pyotp>=2.9.0  # TOTP for 2FA testing
+argon2-cffi>=23.1.0  # Password hashing for tests
+cryptography>=41.0.0  # For encryption in tests

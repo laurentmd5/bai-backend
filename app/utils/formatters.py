@@ -1,5 +1,5 @@
-"""
-Response formatters for BARROW.AI.
+﻿"""
+Response formatters for Company Bot.
 Handles formatting of chatbot responses for different channels.
 """
 
@@ -8,7 +8,7 @@ from app.utils.constants import SLOGAN, MAX_WHATSAPP_MESSAGE_LENGTH
 
 def ensure_slogan(text: str) -> str:
     """
-    Ensure the NPP slogan is present at the end of the response.
+    Add company tagline if configured.
     
     Args:
         text: Response text
@@ -105,3 +105,4 @@ def sanitize_for_log(text: str, max_length: int = 100) -> str:
     if len(text) <= max_length:
         return text
     return text[:max_length] + "..."
+

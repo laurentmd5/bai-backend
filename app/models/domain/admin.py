@@ -1,5 +1,5 @@
-"""
-Admin user domain models for BARROW.AI.
+﻿"""
+Admin user domain models for Company Bot.
 Manages administrative users, roles, authentication, and audit logging.
 """
 
@@ -19,7 +19,7 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from app.core.database import Base
 
@@ -155,7 +155,7 @@ class AdminUser(Base):
     )
     
     last_ip: Mapped[Optional[str]] = mapped_column(
-        INET,
+        String(45),  # Supports both IPv4 and IPv6
         nullable=True,
         comment="IP address of last login"
     )
@@ -349,7 +349,7 @@ class AuditLog(Base):
     
     # Request context
     ip_address: Mapped[Optional[str]] = mapped_column(
-        INET,
+        String(45),  # Supports both IPv4 and IPv6
         nullable=True,
         comment="IP address of the request"
     )
@@ -413,7 +413,7 @@ class AuditLog(Base):
         Index("idx_audit_logs_created_at", "created_at"),
         Index("idx_audit_logs_action_created", "action", "created_at"),
         Index("idx_audit_logs_severity", "severity", postgresql_where="severity IN ('WARN', 'CRITICAL')"),
-        Index("idx_audit_logs_recent", "created_at", postgresql_where="created_at > NOW() - INTERVAL '7 days'"),
+        Index("idx_audit_logs_recent", "created_at"),
     )
     
     def __repr__(self) -> str:
