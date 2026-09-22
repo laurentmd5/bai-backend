@@ -19,6 +19,7 @@ class Environment(str, Enum):
 
 class LLMProvider(str, Enum):
     """Supported LLM providers."""
+    GROQ = "groq"
     GEMINI = "gemini"
     OLLAMA = "ollama"
 
@@ -439,12 +440,12 @@ class Settings(BaseSettings):
     # LLM SETTINGS
     # =========================================================================
     LLM_PROVIDER: LLMProvider = Field(
-        default=LLMProvider.GEMINI,
+        default=LLMProvider.GROQ,
         description="LLM provider to use"
     )
     
     GEMINI_API_KEY: SecretStr = Field(
-        ...,
+        default=None,  
         description="Google Gemini API key"
     )
     
@@ -483,6 +484,12 @@ class Settings(BaseSettings):
         ge=0,
         le=5,
         description="Maximum retry attempts for API calls"
+    )
+    GROQ_MAX_RETRIES: int = Field(
+        default=2,
+        ge=0,
+        le=5,
+        description="Maximum retry attempts for Groq API calls"
     )
     
     # Ollama settings (for Phase 2)
@@ -817,11 +824,6 @@ class Settings(BaseSettings):
     # =========================================================================
     # AUDIO SETTINGS (voice messages)
     # =========================================================================
-    WHISPER_MODEL_SIZE: str = Field(
-        default="base",
-        description="Whisper model size: tiny, base, small, medium"
-    )
-    
     MAX_AUDIO_DURATION_SECONDS: int = Field(
         default=180,
         ge=10,

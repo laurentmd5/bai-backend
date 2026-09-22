@@ -1,6 +1,10 @@
 """
 Chat Service — Main orchestrator for the chatbot engine.
 Coordinates all components: validation, RAG, LLM, caching, and persistence.
+
+LLM Provider Order:
+- Primary: Groq (fast, reliable)
+- Fallback: Gemini (optional)
 """
 
 import asyncio
@@ -61,7 +65,7 @@ class ChatService:
     3. Intent detection
     4. Cache lookup
     5. RAG retrieval
-    6. LLM generation
+    6. LLM generation (Groq primary, Gemini fallback)
     7. Output validation
     8. Persistence and analytics
     """
@@ -118,7 +122,6 @@ class ChatService:
         return self.FALLBACK_RESPONSES.get(language, self.FALLBACK_RESPONSES.get("fr", ""))
 
     def __init__(
-
         self,
         session_repository: SessionRepository,
         conversation_repository: ConversationRepository,
@@ -143,19 +146,39 @@ class ChatService:
         
         # Services injected at initialization
         self._rag_service = rag_service
-        self._llm_provider = llm_provider or get_llm_provider()
-
+        
+        # =====================================================================
+        # LLM PROVIDERS: Groq (primary) and Gemini (fallback)
+        # =====================================================================
+        # Groq is the primary provider (fast, reliable)
         self._groq_provider = GroqProvider()
         
-        # Initialize query transformer for advanced intelligence
-        self._query_transformer = QueryTransformer(self._llm_provider, self._groq_provider)
+        # Gemini is the fallback provider
+        # If llm_provider is passed, use it. Otherwise, get the configured provider.
+        # Note: When LLM_PROVIDER=groq, get_llm_provider() returns GroqProvider.
+        # We still need a GeminiProvider instance for fallback.
+        if llm_provider and isinstance(llm_provider, GeminiProvider):
+            self._llm_provider = llm_provider  # Gemini fallback
+        else:
+            # Create a Gemini provider for fallback
+            self._llm_provider = GeminiProvider()
+        
+        # Initialize query transformer: Groq primary, Gemini fallback
+        self._query_transformer = QueryTransformer(
+            groq_provider=self._groq_provider,
+            gemini_provider=self._llm_provider,
+        )
         
         # Initialize validators
         self._input_validator = InputValidator()
         self._output_validator = OutputValidator()
         self._security_validator = SecurityValidator()
         
-        logger.info(f"📌 ChatService instance created: id={id(self)}")
+        logger.info(
+            "chat_service_initialized",
+            primary_llm="groq",
+            fallback_llm="gemini",
+        )
     
     def _verify_initialized(self) -> None:
         """Verify that all required services are initialized."""
@@ -687,7 +710,7 @@ class ChatService:
                         sources=[],
                         confidence=0.95,
                         cache_hit=False,
-                        llm_model=self._llm_provider.get_model_name() if self._llm_provider else None,
+                        llm_model=self._groq_provider.get_model_name() if self._groq_provider else None,
                         fallback_triggered=False,
                     )
                     return keyword_response
@@ -865,93 +888,120 @@ class ChatService:
                     }
                 
                 # ===============================================================
-                # STEP 7: LLM Generation
+                # STEP 7: LLM Generation (Groq primary, Gemini fallback)
                 # ===============================================================
+                response_lang = language
+                prompt_with_instructions = sanitized_message
+                generated_response = None
+                llm_start = datetime.utcnow()
+                
+                # -----------------------------------------------------------------
+                # PRIMARY: Groq
+                # -----------------------------------------------------------------
                 try:
-                    llm_start = datetime.utcnow()
-                    
-                    # Use previously fetched conversation history
-                    
-                    gemini_lang = language
-                    prompt_with_instructions = sanitized_message
-                    
-                    generated_response = await self._llm_provider.generate_with_retry(
+                    generated_response = await self._groq_provider.generate_with_retry(
                         prompt=prompt_with_instructions,
                         context=context,
-                        language=gemini_lang,
+                        language=response_lang,
                         history=history_text,
-                        max_retries=settings.GEMINI_MAX_RETRIES,
+                        max_retries=settings.GROQ_MAX_RETRIES,
                     )
                     
                     llm_latency_ms = (datetime.utcnow() - llm_start).total_seconds() * 1000
                     response_metadata["llm_latency_ms"] = llm_latency_ms
+                    response_metadata["llm_provider_used"] = "groq"
                     
                     # Record LLM metrics
-                    llm_generation_duration_ms.labels(
-                        provider=self._llm_provider.get_provider_name()
-                    ).observe(llm_latency_ms)
+                    llm_generation_duration_ms.labels(provider="groq").observe(llm_latency_ms)
                     
                     if generated_response:
                         prompt_toks = int(len(prompt_with_instructions.split()) * 1.5 + len(context.split()) * 1.5)
                         comp_toks = int(len(generated_response.split()) * 1.5)
                         record_llm_tokens(
-                            provider=self._llm_provider.get_provider_name(),
-                            model=self._llm_provider.get_model_name(),
+                            provider="groq",
+                            model=self._groq_provider.get_model_name(),
                             prompt_tokens=prompt_toks,
                             completion_tokens=comp_toks
                         )
-
-                    
-                except LLMException as e:
-                    logger.error("llm_generation_failed", error=str(e), session_id=actual_session_id)
-                    
-                    # Try to use Groq as a fallback for answer generation
-                    generated_response = None
-                    if await self._groq_provider.is_available():
-                        try:
-                            logger.info("using_groq_as_fallback_for_llm_generation", session_id=actual_session_id)
-                            generated_response = await self._groq_provider.generate_with_retry(
-                                prompt=prompt_with_instructions,
-                                context=context,
-                                language=gemini_lang,
-                                history=history_text,
-                                max_retries=2
-                            )
-                            # Record LLM latency
-                            llm_latency_ms = (datetime.utcnow() - llm_start).total_seconds() * 1000
-                            response_metadata["llm_latency_ms"] = llm_latency_ms
-                            response_metadata["fallback_llm"] = "groq"
-                            
-                        except Exception as groq_e:
-                            logger.error("groq_fallback_generation_failed", error=str(groq_e))
-                            
-                    if not generated_response:
-                        response_metadata["fallback_triggered"] = True
                         
-                        fallback_message = self.TECHNICAL_ERROR_RESPONSE.get(language, self.TECHNICAL_ERROR_RESPONSE["fr"])
+                except (LLMException, LLMTimeoutException, LLMUnavailableException) as groq_e:
+                    logger.warning(
+                        "groq_generation_failed_falling_back_to_gemini",
+                        error=str(groq_e),
+                        session_id=actual_session_id,
+                    )
+                
+                # -----------------------------------------------------------------
+                # FALLBACK: Gemini
+                # -----------------------------------------------------------------
+                if not generated_response and self._llm_provider:
+                    try:
+                        gemini_start = datetime.utcnow()
+                        logger.info("using_gemini_as_fallback_for_llm_generation", session_id=actual_session_id)
                         
-                        await session_repo.touch_session(session.id)
-                        
-                        await conv_repo.create_conversation(
-                            session_id=session.id,
-                            user_message=sanitized_message,
-                            bot_response=fallback_message,
-                            channel=channel,
-                            confidence=confidence if confidence else 0.0,
-                            cache_hit=False,
-                            fallback_triggered=True,
-                            llm_model=self._llm_provider.get_model_name(),
+                        generated_response = await self._llm_provider.generate_with_retry(
+                            prompt=prompt_with_instructions,
+                            context=context,
+                            language=response_lang,
+                            history=history_text,
+                            max_retries=settings.GEMINI_MAX_RETRIES,
                         )
                         
-                        return {
-                            "message": fallback_message,
-                            "session_id": actual_session_id,
-                            "sources": sources,
-                            "confidence": confidence if confidence else 0.0,
-                            "cache_hit": False,
-                            "fallback_triggered": True,
-                            "timestamp": datetime.utcnow().isoformat(),
-                        }
+                        llm_latency_ms = (datetime.utcnow() - gemini_start).total_seconds() * 1000
+                        response_metadata["llm_latency_ms"] = llm_latency_ms
+                        response_metadata["llm_provider_used"] = "gemini"
+                        response_metadata["fallback_llm"] = "gemini"
+                        
+                        # Record LLM metrics
+                        llm_generation_duration_ms.labels(provider="gemini").observe(llm_latency_ms)
+                        
+                        if generated_response:
+                            prompt_toks = int(len(prompt_with_instructions.split()) * 1.5 + len(context.split()) * 1.5)
+                            comp_toks = int(len(generated_response.split()) * 1.5)
+                            record_llm_tokens(
+                                provider="gemini",
+                                model=self._llm_provider.get_model_name(),
+                                prompt_tokens=prompt_toks,
+                                completion_tokens=comp_toks
+                            )
+                            
+                    except Exception as gemini_e:
+                        logger.error(
+                            "gemini_fallback_generation_failed",
+                            error=str(gemini_e),
+                            session_id=actual_session_id,
+                        )
+                
+                # -----------------------------------------------------------------
+                # Both providers failed
+                # -----------------------------------------------------------------
+                if not generated_response:
+                    response_metadata["fallback_triggered"] = True
+                    
+                    fallback_message = self.TECHNICAL_ERROR_RESPONSE.get(language, self.TECHNICAL_ERROR_RESPONSE["fr"])
+                    
+                    await session_repo.touch_session(session.id)
+                    
+                    await conv_repo.create_conversation(
+                        session_id=session.id,
+                        user_message=sanitized_message,
+                        bot_response=fallback_message,
+                        channel=channel,
+                        confidence=confidence if confidence else 0.0,
+                        cache_hit=False,
+                        fallback_triggered=True,
+                        llm_model="none",
+                    )
+                    
+                    return {
+                        "message": fallback_message,
+                        "session_id": actual_session_id,
+                        "sources": sources,
+                        "confidence": confidence if confidence else 0.0,
+                        "cache_hit": False,
+                        "fallback_triggered": True,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
                 
                 # ===============================================================
                 # STEP 8: Output Validation
@@ -1004,6 +1054,11 @@ class ChatService:
                 # Calculate total latency
                 total_latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
                 
+                # Determine which model was used
+                model_used = self._groq_provider.get_model_name()
+                if response_metadata.get("llm_provider_used") == "gemini":
+                    model_used = self._llm_provider.get_model_name()
+                
                 # Store conversation
                 await conv_repo.create_conversation(
                     session_id=session.id,
@@ -1014,7 +1069,7 @@ class ChatService:
                     confidence=confidence if confidence else 0.0,
                     latency_ms=int(total_latency_ms),
                     cache_hit=False,
-                    llm_model=self._llm_provider.get_model_name(),
+                    llm_model=model_used,
                     fallback_triggered=response_metadata.get("fallback_triggered", False),
                 )
                 
@@ -1033,6 +1088,7 @@ class ChatService:
                     confidence=confidence if confidence else 0.0,
                     latency_ms=total_latency_ms,
                     cache_hit=False,
+                    llm_provider=response_metadata.get("llm_provider_used", "groq"),
                 )
                 
                 return {
@@ -1044,7 +1100,8 @@ class ChatService:
                     "cache_hit": False,
                     "fallback_triggered": response_metadata.get("fallback_triggered", False),
                     "latency_ms": int(total_latency_ms),
-                    "model_used": self._llm_provider.get_model_name(),
+                    "model_used": model_used,
+                    "llm_provider": response_metadata.get("llm_provider_used", "groq"),
                     "timestamp": datetime.utcnow().isoformat(),
                 }
             
@@ -1165,16 +1222,24 @@ class ChatService:
         try:
             self._verify_initialized()
             
-            # Check LLM provider
-            llm_available = await self._llm_provider.is_available()
-            health["components"]["llm"] = {
-                "status": "healthy" if llm_available else "unhealthy",
-                "provider": self._llm_provider.get_provider_name(),
-                "model": self._llm_provider.get_model_name(),
+            # Check Groq provider (primary)
+            groq_available = await self._groq_provider.is_available()
+            health["components"]["llm_primary"] = {
+                "status": "healthy" if groq_available else "unhealthy",
+                "provider": "groq",
+                "model": self._groq_provider.get_model_name(),
             }
             
-            if not llm_available:
+            if not groq_available:
                 health["status"] = "degraded"
+            
+            # Check Gemini provider (fallback)
+            gemini_available = await self._llm_provider.is_available() if self._llm_provider else False
+            health["components"]["llm_fallback"] = {
+                "status": "healthy" if gemini_available else "unhealthy",
+                "provider": "gemini",
+                "model": self._llm_provider.get_model_name() if self._llm_provider else "none",
+            }
             
             # Check RAG service
             rag_health = await self._rag_service.health_check()
@@ -1195,6 +1260,3 @@ class ChatService:
             health["error"] = str(e)
         
         return health
-
-
-

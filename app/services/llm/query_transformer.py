@@ -5,15 +5,25 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+
 class QueryTransformer:
     """
     Handles Query Rewriting, Language Detection, and HyDE (Hypothetical Document Embeddings)
     to bridge the lexical and semantic gap for poorly structured queries.
+    
+    Provider order: Groq (primary) -> Gemini (fallback)
     """
     
-    def __init__(self, llm_provider: ILLMProvider, groq_provider: ILLMProvider = None):
-        self._llm = llm_provider
+    def __init__(self, groq_provider: ILLMProvider, gemini_provider: ILLMProvider = None):
+        """
+        Initialize QueryTransformer with Groq as primary and Gemini as fallback.
+        
+        Args:
+            groq_provider: Primary LLM provider (Groq)
+            gemini_provider: Optional fallback LLM provider (Gemini)
+        """
         self._groq_provider = groq_provider
+        self._llm = gemini_provider  # Gemini as fallback
         
     async def transform_query(self, raw_query: str, history: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -52,14 +62,94 @@ class QueryTransformer:
         INSTRUCTION CRITIQUE : Si la question actuelle est une réponse courte (ex: "Yes", "No", "Tell me more") ou fait référence à un sujet précédent, vous DEVEZ utiliser l'historique pour reformuler la question de manière complète et indépendante.
         """
         
-        try:
-            response = await self._llm.generate(
-                prompt=prompt,
-                system_prompt=system_prompt,
-                temperature=0.1, # Keep it deterministic
-            )
+        # =====================================================================
+        # PRIMARY: Groq
+        # =====================================================================
+        if self._groq_provider and await self._groq_provider.is_available():
+            try:
+                logger.info("query_transformation_via_groq", query=raw_query)
+                response = await self._groq_provider.generate_with_retry(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    max_retries=2
+                )
+                
+                result = self._parse_json_response(response)
+                if result:
+                    logger.info(
+                        "query_transformed",
+                        provider="groq",
+                        original=raw_query,
+                        language=result.get("detected_language"),
+                        optimized=result.get("optimized_search_query")
+                    )
+                    return result
+                    
+            except Exception as groq_e:
+                logger.warning(
+                    "groq_query_transformation_failed_falling_back_to_gemini",
+                    error=str(groq_e),
+                    query=raw_query
+                )
+        else:
+            logger.warning("groq_provider_unavailable_using_gemini", query=raw_query)
+        
+        # =====================================================================
+        # FALLBACK: Gemini
+        # =====================================================================
+        if self._llm:
+            try:
+                logger.info("query_transformation_via_gemini_fallback", query=raw_query)
+                response = await self._llm.generate(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    temperature=0.1,
+                )
+                
+                result = self._parse_json_response(response)
+                if result:
+                    logger.info(
+                        "query_transformed",
+                        provider="gemini",
+                        original=raw_query,
+                        language=result.get("detected_language"),
+                        optimized=result.get("optimized_search_query")
+                    )
+                    return result
+                    
+            except Exception as gemini_e:
+                logger.error(
+                    "gemini_query_transformation_failed",
+                    error=str(gemini_e),
+                    query=raw_query
+                )
+        
+        # =====================================================================
+        # ULTIMATE FALLBACK: Return raw query
+        # =====================================================================
+        logger.error("all_query_transformers_failed", query=raw_query)
+        return {
+            "detected_language": None,  # Preserves existing session language
+            "is_casual_conversation": False,
+            "optimized_search_query": raw_query,
+            "hypothetical_document": None
+        }
+    
+    def _parse_json_response(self, response: str) -> Optional[Dict[str, Any]]:
+        """
+        Parse JSON from LLM response, handling markdown backticks and extra text.
+        
+        Args:
+            response: Raw LLM response string
             
-            # Clean up the response if the LLM added markdown backticks
+        Returns:
+            Parsed JSON dict or None if parsing fails
+        """
+        if not response:
+            return None
+            
+        try:
+            # Clean up markdown backticks
             cleaned_response = response.strip()
             if cleaned_response.startswith("```json"):
                 cleaned_response = cleaned_response[7:]
@@ -70,7 +160,6 @@ class QueryTransformer:
             cleaned_response = cleaned_response.strip()
             
             # Extract only the first JSON object to avoid "Extra data" errors
-            # when Gemini returns multiple JSON objects or trailing text
             brace_count = 0
             first_json_end = -1
             for i, char in enumerate(cleaned_response):
@@ -83,65 +172,13 @@ class QueryTransformer:
                         break
             if first_json_end > 0:
                 cleaned_response = cleaned_response[:first_json_end]
-                
+            
             result = json.loads(cleaned_response)
-            
-            logger.info("query_transformed", 
-                        original=raw_query, 
-                        language=result.get("detected_language"), 
-                        optimized=result.get("optimized_search_query"))
-            
             return result
             
+        except json.JSONDecodeError as e:
+            logger.error("json_parsing_failed", error=str(e), response_preview=response[:200])
+            return None
         except Exception as e:
-            logger.error("query_transformation_failed", error=str(e), query=raw_query)
-            
-            # Try Groq as fallback
-            if self._groq_provider and await self._groq_provider.is_available():
-                try:
-                    logger.info("using_groq_as_fallback_for_query_transformer", query=raw_query)
-                    response = await self._groq_provider.generate_with_retry(
-                        prompt=prompt,
-                        system_prompt=system_prompt,
-                        max_retries=2
-                    )
-                    
-                    cleaned_response = response.strip()
-                    if cleaned_response.startswith("```json"):
-                        cleaned_response = cleaned_response[7:]
-                    if cleaned_response.startswith("```"):
-                        cleaned_response = cleaned_response[3:]
-                    if cleaned_response.endswith("```"):
-                        cleaned_response = cleaned_response[:-3]
-                    cleaned_response = cleaned_response.strip()
-                    
-                    brace_count = 0
-                    first_json_end = -1
-                    for i, char in enumerate(cleaned_response):
-                        if char == '{':
-                            brace_count += 1
-                        elif char == '}':
-                            brace_count -= 1
-                            if brace_count == 0:
-                                first_json_end = i + 1
-                                break
-                    if first_json_end > 0:
-                        cleaned_response = cleaned_response[:first_json_end]
-                        
-                    result = json.loads(cleaned_response)
-                    logger.info("query_transformed_by_groq_fallback", 
-                                original=raw_query, 
-                                language=result.get("detected_language"))
-                    return result
-                    
-                except Exception as groq_e:
-                    logger.error("groq_fallback_for_query_transformer_failed", error=str(groq_e))
-                    
-            return {
-                "detected_language": None,  # Preserves existing session language rather than forcing English
-                "is_casual_conversation": False,
-                "optimized_search_query": raw_query,
-                "hypothetical_document": None
-            }
-
-
+            logger.error("response_parsing_failed", error=str(e))
+            return None
