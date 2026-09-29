@@ -38,9 +38,50 @@ from app.models.request.whatsapp import WhatsAppWebhookRequest, WhatsAppMessage
 logger = get_logger(__name__)
 
 
+def _convert_markdown_tables(text: str) -> str:
+    """Convert Markdown tables into mobile-friendly lists for WhatsApp."""
+    if "|" not in text:
+        return text
+    
+    lines = text.split("\n")
+    output_lines = []
+    in_table = False
+    headers = []
+    
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("|") and stripped.endswith("|") and stripped.count("|") >= 2:
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
+            # Check if this is a delimiter row (|---|---|)
+            if all(re.match(r'^:?-+:?$', c) for c in cells if c):
+                continue
+            if not in_table:
+                headers = cells
+                in_table = True
+                continue
+            else:
+                # Data row
+                if len(cells) == 2 and cells[0] and cells[1]:
+                    output_lines.append(f"• *{cells[0]}* : {cells[1]}")
+                elif len(cells) > 2 and headers and len(cells) == len(headers):
+                    row_parts = [f"*{h}*: {c}" for h, c in zip(headers, cells) if c]
+                    output_lines.append("• " + " — ".join(row_parts))
+                else:
+                    valid_cells = [c for c in cells if c]
+                    if valid_cells:
+                        output_lines.append("• " + " : ".join(valid_cells))
+        else:
+            in_table = False
+            headers = []
+            output_lines.append(line)
+            
+    return "\n".join(output_lines)
+
+
 def format_for_whatsapp(text: str) -> str:
     """
     Convert standard Markdown (LLM / Python templates) into native WhatsApp formatting:
+    - Tables -> Mobile bullet points
     - Standard Markdown bold **text** -> WhatsApp bold *text*
     - Standard Markdown strikethrough ~~text~~ -> WhatsApp strikethrough ~text~
     - Fix any mismatched or triple asterisks (e.g. ***bold*** or **bold*) -> *bold*
@@ -48,8 +89,11 @@ def format_for_whatsapp(text: str) -> str:
     if not text:
         return text
     
+    # 0. Convert Markdown tables to readable list
+    formatted = _convert_markdown_tables(text)
+
     # 1. Convert standard Markdown bold **text** -> WhatsApp bold *text*
-    formatted = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
+    formatted = re.sub(r'\*\*(.+?)\*\*', r'*\1*', formatted)
     
     # 2. Convert standard Markdown strikethrough ~~text~~ -> WhatsApp strikethrough ~text~
     formatted = re.sub(r'~~(.+?)~~', r'~\1~', formatted)

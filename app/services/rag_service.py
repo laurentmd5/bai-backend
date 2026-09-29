@@ -449,6 +449,7 @@ class RAGService:
                 "section": payload.get("section", ""),
                 "relevance": chunk.get("rerank_score", chunk.get("score", 0.0)),
                 "chunk_index": payload.get("chunk_index"),
+                "text": payload.get("text", ""),
             })
         
         return context, sources, top_score

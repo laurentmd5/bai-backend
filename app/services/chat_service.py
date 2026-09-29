@@ -73,6 +73,39 @@ class ChatService:
     SPECIAL_INTENTS = {
         "greeting": ["hello", "hi", "hey", "bonjour", "salut", "bonsoir"],
         "help": ["help", "aide", "menu", "what can you do", "capabilities", "que peux-tu faire"],
+        "services": [
+            "quels sont les services",
+            "quels sont vos services",
+            "quels sont vos domaines",
+            "vos domaines",
+            "domaines d'expertise",
+            "domaine d'expertise",
+            "vos services",
+            "les services de netsysteme",
+            "services de netsysteme",
+            "services proposés",
+            "que proposez-vous",
+            "que proposez vous",
+            "nos services",
+            "liste des services",
+            "liste de vos services",
+            "what are your services",
+            "what services do you offer",
+            "your services",
+            "areas of expertise",
+            "c'est quoi netsysteme",
+            "cest quoi netsysteme",
+            "qui est netsysteme",
+            "presentation de netsysteme",
+            "présentation de netsysteme",
+            "parlez-moi de netsysteme",
+            "parlez moi de netsysteme",
+            "presentation netsysteme",
+            "présentation netsysteme",
+            "about netsysteme",
+            "what is netsysteme",
+            "who is netsysteme",
+        ],
         "thanks": ["thank", "merci", "thanks", "thank you", "je vous remercie"],
         "stop": ["stop", "unsubscribe", "désabonner", "opt out", "opt-out"],
         "start": ["start", "subscribe", "réabonner", "opt in", "opt-in"],
@@ -249,6 +282,9 @@ class ChatService:
         if intent == "help":
             return company.get_response("help", language)
         
+        if intent == "services":
+            return company.get_response("services", language)
+        
         if intent == "thanks":
             return None  # Let LLM handle naturally, but with positive tone
         
@@ -350,7 +386,7 @@ class ChatService:
         
         # 4. If theme detected, check that at least one source matches keywords
         for s in sources:
-            content = str(s.get("text", s.get("content", ""))).lower()
+            content = (str(s.get("text", "")) or str(s.get("content", "")) or str(s.get("section", ""))).lower()
             if any(kw in content for kw in theme_keywords):
                 return True
         
