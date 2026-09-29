@@ -160,7 +160,8 @@ class InputValidator:
         - Whitespace normalization
         - Oolel Corrector for Wolof informal spelling
         """
-        if not message or len(message.strip()) < 2:
+        stripped = message.strip() if message else ""
+        if not stripped or (len(stripped) < 2 and not stripped.isdigit()):
             # Very short messages - return a help prompt
             return "I'm here to help. Could you please ask a complete question?"
         
