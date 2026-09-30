@@ -345,12 +345,22 @@ class SalesAgent:
                 logger.error("sales_lead_email_schedule_failed", session_id=session_id, error=str(mail_err))
 
             # 3. Final polite confirmation message to user
-            company_label = settings.COMPANY_NAME or "NETSYSTEME Informatique"
-            contact_phone = settings.COMPANY_CONTACT_PHONE or "+221 33 827 28 45"
-            contact_email = settings.COMPANY_CONTACT_EMAIL or "contact@netsys-info.com"
+            company_label = settings.COMPANY_NAME or "notre société"
+            contact_phone = settings.COMPANY_CONTACT_PHONE or ""
+            contact_email = settings.COMPANY_CONTACT_EMAIL or ""
 
             phone_confirmation = f" au **{phone_val}**" if phone_val else ""
             email_confirmation = f" ou par email à **{email_val}**" if email_val else ""
+
+            # Ligne d'urgence : affichée uniquement si les coordonnées sont configurées dans .env
+            if contact_phone and contact_email:
+                urgency_line = f"Pour toute urgence, vous pouvez également joindre directement notre standard au **{contact_phone}** ou par email à **{contact_email}**.\n\n"
+            elif contact_phone:
+                urgency_line = f"Pour toute urgence, vous pouvez joindre directement notre standard au **{contact_phone}**.\n\n"
+            elif contact_email:
+                urgency_line = f"Pour toute urgence, vous pouvez nous écrire à **{contact_email}**.\n\n"
+            else:
+                urgency_line = ""
 
             final_reply = (
                 f"✅ **Parfait ! Votre demande de devis a bien été transmise à notre équipe commerciale.**\n\n"
@@ -359,7 +369,7 @@ class SalesAgent:
                 f"- **Détails :** {requirements_full}\n"
                 f"- **Contact :** {full_name_val}{phone_confirmation}{email_confirmation}\n\n"
                 f"Un conseiller commercial de **{company_label}** prendra contact avec vous sous **24h ouvrées** pour finaliser votre offre chiffrée.\n\n"
-                f"Pour toute urgence, vous pouvez également joindre directement notre standard au **{contact_phone}** ou par email à **{contact_email}**.\n\n"
+                f"{urgency_line}"
                 "Avez-vous d'autres questions d'ici là ?"
             )
 

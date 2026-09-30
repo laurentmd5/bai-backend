@@ -68,6 +68,16 @@ class Settings(BaseSettings):
         default=None,
         description="Public contact phone for inquiries"
     )
+
+    COMPANY_WHATSAPP: Optional[str] = Field(
+        default=None,
+        description="Public WhatsApp number for user contact"
+    )
+
+    COMPANY_WEBSITE: Optional[str] = Field(
+        default=None,
+        description="Company public website URL"
+    )
     
     APP_VERSION: str = Field(
         default="4.0.0",

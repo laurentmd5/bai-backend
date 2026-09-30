@@ -121,31 +121,69 @@ class ChatService:
         "services": ["service", "solution", "contrat", "maintenance", "sla", "devis"],
     }
 
-    TECHNICAL_ERROR_RESPONSE = {
-        "fr": "Désolé, nous rencontrons actuellement une difficulté technique momentanée. Veuillez réessayer dans quelques instants ou contacter notre équipe par email à contact@netsys-info.com ou par téléphone au +221 33 827 28 45.",
-        "en": "Sorry, we are currently experiencing a temporary technical difficulty. Please try again in a moment or contact our team at contact@netsys-info.com or by phone at +221 33 827 28 45.",
-    }
-
-    FALLBACK_RESPONSES = {
-        "fr": "Je n'ai pas cette information précise dans ma base de connaissances. Notre équipe technique et commerciale est à votre disposition par email à contact@netsys-info.com, par téléphone au +221 33 827 28 45 ou sur WhatsApp au +221 77 846 16 55. Vous pouvez également visiter notre site sur https://netsys-info.com.",
-        "en": "I don't have specific details on that in my knowledge base. Our team is available at contact@netsys-info.com, by phone at +221 33 827 28 45, or on WhatsApp at +221 77 846 16 55. You can also visit our website at https://netsys-info.com.",
-    }
-
     STOP_RESPONSE = {
         "fr": "Vous avez été désabonné des messages. Envoyez 'START' à tout moment pour vous réabonner.",
         "en": "You have been unsubscribed from messages. Send 'START' at any time to resubscribe.",
     }
 
-    HOSTILE_CONTENT_RESPONSE = {
-        "fr": "Je suis à votre disposition pour vous renseigner sur les solutions et services de NETSYSTEME. En quoi puis-je vous être utile ?",
-        "en": "I am here to assist you with NETSYSTEME's services and IT solutions. How can I help you?",
-    }
+    @property
+    def TECHNICAL_ERROR_RESPONSE(self) -> dict:
+        """Réponse d'erreur technique — utilise les coordonnées configurées dans .env."""
+        email = settings.COMPANY_CONTACT_EMAIL or ""
+        phone = settings.COMPANY_CONTACT_PHONE or ""
+        contact_fr = f" par email à {email}" if email else ""
+        contact_fr += f" ou par téléphone au {phone}." if phone else "."
+        contact_en = f" at {email}" if email else ""
+        contact_en += f" or by phone at {phone}." if phone else "."
+        return {
+            "fr": f"Désolé, nous rencontrons actuellement une difficulté technique momentanée. Veuillez réessayer dans quelques instants ou contacter notre équipe{contact_fr}",
+            "en": f"Sorry, we are currently experiencing a temporary technical difficulty. Please try again in a moment or contact our team{contact_en}",
+        }
+
+    @property
+    def FALLBACK_RESPONSES(self) -> dict:
+        """Réponse de repli RAG — utilise les coordonnées configurées dans .env."""
+        email = settings.COMPANY_CONTACT_EMAIL or ""
+        phone = settings.COMPANY_CONTACT_PHONE or ""
+        whatsapp = settings.COMPANY_WHATSAPP or ""
+        website = settings.COMPANY_WEBSITE or ""
+
+        parts_fr = []
+        parts_en = []
+        if email:
+            parts_fr.append(f"par email à {email}")
+            parts_en.append(f"at {email}")
+        if phone:
+            parts_fr.append(f"par téléphone au {phone}")
+            parts_en.append(f"by phone at {phone}")
+        if whatsapp:
+            parts_fr.append(f"sur WhatsApp au {whatsapp}")
+            parts_en.append(f"on WhatsApp at {whatsapp}")
+
+        contact_fr = ", ".join(parts_fr) + "." if parts_fr else ""
+        contact_en = ", ".join(parts_en) + "." if parts_en else ""
+        site_fr = f" Vous pouvez également visiter notre site sur {website}." if website else ""
+        site_en = f" You can also visit our website at {website}." if website else ""
+
+        return {
+            "fr": f"Je n'ai pas cette information précise dans ma base de connaissances. Notre équipe technique et commerciale est à votre disposition {contact_fr}{site_fr}",
+            "en": f"I don't have specific details on that in my knowledge base. Our team is available {contact_en}{site_en}",
+        }
+
+    @property
+    def HOSTILE_CONTENT_RESPONSE(self) -> dict:
+        """Réponse contenu hostile — utilise le nom de la société configuré dans .env."""
+        company = settings.COMPANY_NAME or "notre société"
+        return {
+            "fr": f"Je suis à votre disposition pour vous renseigner sur les solutions et services de {company}. En quoi puis-je vous être utile ?",
+            "en": f"I am here to assist you with {company}'s services and IT solutions. How can I help you?",
+        }
 
     def _get_fallback_message(self, language: str = "fr") -> str:
         """
         Get the company fallback message for low confidence or irrelevant sources.
         Prioritizes company.yaml via company.get_response('fallback', ...),
-        falling back to the class-level FALLBACK_RESPONSES dictionary.
+        falling back to the class-level FALLBACK_RESPONSES property.
         """
         try:
             msg = company.get_response("fallback", language=language)
@@ -153,6 +191,7 @@ class ChatService:
                 return msg
         except Exception:
             pass
+
         return self.FALLBACK_RESPONSES.get(language, self.FALLBACK_RESPONSES.get("fr", ""))
 
     def __init__(
