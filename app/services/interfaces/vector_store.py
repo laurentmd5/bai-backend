@@ -1,5 +1,5 @@
-"""
-Vector Store interface for BARROW.AI.
+﻿"""
+Vector Store interface for Company Bot.
 Defines abstract base class for vector database providers.
 """
 

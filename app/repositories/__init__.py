@@ -1,5 +1,5 @@
-"""
-Repositories package for BARROW.AI.
+﻿"""
+Repositories package for Company Bot.
 Exports all repository classes for dependency injection.
 """
 

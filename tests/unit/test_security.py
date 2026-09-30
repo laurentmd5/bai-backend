@@ -180,7 +180,8 @@ class TestTOTP:
         uri = generate_totp_uri(secret, "admin@test.com")
         assert uri.startswith("otpauth://totp/")
         assert "admin%40test.com" in uri
-        assert "BARROW.AI" in uri
+        assert "Company" in uri
+
     
     def test_verify_valid_code(self):
         """Vérification d'un code TOTP valide."""

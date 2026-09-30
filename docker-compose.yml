@@ -3,7 +3,6 @@
 # Complete stack with all services
 # =============================================================================
 
-version: '3.8'
 
 # =============================================================================
 # NETWORKS
@@ -22,6 +21,8 @@ volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  rabbitmq_data:
     driver: local
   qdrant_data:
     driver: local
@@ -49,39 +50,6 @@ x-logging: &default-logging
 # SERVICES
 # =============================================================================
 services:
-
-  # ===========================================================================
-  # TRAEFIK - Reverse Proxy & WAF
-  # ===========================================================================
-  traefik:
-    image: traefik:v3.0
-    container_name: barrow-traefik
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    networks:
-      - barrow-net
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./traefik/traefik.yml:/traefik.yml:ro
-      - ./traefik/config.yml:/config.yml:ro
-      - ./traefik/acme.json:/acme.json
-      - ./traefik/logs:/var/log/traefik
-    environment:
-      - CF_API_EMAIL=${CF_API_EMAIL:-admin@barrow-ai.poc}
-      - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}
-      - TRAEFIK_LOG_LEVEL=${TRAEFIK_LOG_LEVEL:-INFO}
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=Host(`traefik.${DOMAIN:-barrow-ai.local}`)"
-      - "traefik.http.routers.dashboard.service=api@internal"
-      - "traefik.http.routers.dashboard.middlewares=auth"
-      - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_AUTH:-admin:$$apr1$$xxxxxxxx$$yyyyyyyyyyyyyyyy}"
-    logging: *default-logging
 
   # ===========================================================================
   # POSTGRESQL - Primary Database
@@ -152,16 +120,36 @@ services:
       - qdrant_data:/qdrant/storage
     environment:
       QDRANT__SERVICE__HTTP_PORT: 6333
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
       QDRANT__LOG_LEVEL: ${QDRANT_LOG_LEVEL:-INFO}
-      QDRANT__STORAGE__OPTIMIZERS__INDEXING_THRESHOLD: 1000
-      QDRANT__STORAGE__PERFORMANCE__MAX_SEARCH_THREADS: 4
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 10s
     logging: *default-logging
+
+  # ===========================================================================
+  # RABBITMQ - Message Broker
+  # ===========================================================================
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: barrow-rabbitmq
+    restart: unless-stopped
+    networks:
+      barrow-net:
+        ipv4_address: 172.20.0.34
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-barrowai}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "127.0.0.1:15672:15672"
+
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping || rabbitmqctl status"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    logging: *default-logging
+
 
   # ===========================================================================
   # OLLAMA - Local LLM (Phase 2)
@@ -199,12 +187,17 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: barrow-ai-backend:latest
+    image: ${BACKEND_IMAGE:-barrow-ai-backend:latest}
     container_name: barrow-backend
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     networks:
       barrow-net:
         ipv4_address: 172.20.0.20
+    ports:
+      - "${BACKEND_BIND_ADDR:-127.0.0.1}:8000:8000"
     volumes:
       - uploads_data:/app/uploads
       - logs_data:/app/logs
@@ -232,19 +225,33 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_DB: 0
       
+      # RabbitMQ
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-barrowai}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      
       # Qdrant
       QDRANT_HOST: qdrant
       QDRANT_PORT: 6333
-      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-npp_documents_poc}
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-netsysteme_knowledge_v1}
       QDRANT_SIMILARITY_THRESHOLD: ${QDRANT_SIMILARITY_THRESHOLD:-0.70}
       
       # LLM
       LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-      GEMINI_MODEL: ${GEMINI_MODEL:-tunedModels/askbarrow-npp-v3}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash-lite}
       GEMINI_TEMPERATURE: ${GEMINI_TEMPERATURE:-0.1}
       GEMINI_MAX_TOKENS: ${GEMINI_MAX_TOKENS:-512}
-      GEMINI_TIMEOUT: ${GEMINI_TIMEOUT:-10}
+      GEMINI_TIMEOUT: ${GEMINI_TIMEOUT:-15}
+      HF_TOKEN: ${HF_TOKEN}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      
+      # TTS (Edge TTS & Oolel)
+      TTS_RATE: ${TTS_RATE:-+25%}
+      OOLEL_API_URL: ${OOLEL_API_URL}
+      OOLEL_TTS_TIMEOUT: ${OOLEL_TTS_TIMEOUT:-90}
       
       # Ollama (Phase 2)
       OLLAMA_HOST: ollama
@@ -262,26 +269,34 @@ services:
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
       WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
       
       # CORS
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://widget.barrow-ai.poc,https://admin.barrow-ai.poc,https://npp.gm}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://netsysteme.sn,http://localhost,http://localhost:8000}
       
       # Rate Limiting
       RATE_LIMIT_CHAT_PER_MINUTE: ${RATE_LIMIT_CHAT_PER_MINUTE:-30}
       RATE_LIMIT_ADMIN_PER_MINUTE: ${RATE_LIMIT_ADMIN_PER_MINUTE:-60}
       RATE_LIMIT_WHATSAPP_PER_MINUTE: ${RATE_LIMIT_WHATSAPP_PER_MINUTE:-10}
       
+      # Internal Communication
+      BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://localhost:8000}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+      
       # Monitoring
       SENTRY_DSN: ${SENTRY_DSN:-}
       PROMETHEUS_ENABLED: ${PROMETHEUS_ENABLED:-true}
     
     depends_on:
+
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      qdrant:
+      rabbitmq:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
@@ -290,68 +305,111 @@ services:
       retries: 3
       start_period: 30s
     
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.api.rule=Host(`api.${DOMAIN:-barrow-ai.local}`)"
-      - "traefik.http.routers.api.entrypoints=websecure"
-      - "traefik.http.routers.api.tls=true"
-      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.api.middlewares=sec-headers@file,rate-limit@file"
-      - "traefik.http.services.api.loadbalancer.server.port=8000"
-      - "traefik.http.services.api.loadbalancer.healthcheck.path=/health/live"
-      - "traefik.http.services.api.loadbalancer.healthcheck.interval=30s"
-    
     logging: *default-logging
 
   # ===========================================================================
-  # WIDGET - Static Chat Widget
+  # WORKER - Async Queue Consumer
   # ===========================================================================
-  widget:
+  worker:
     build:
-      context: ./widget
+      context: .
       dockerfile: Dockerfile
-    image: barrow-ai-widget:latest
-    container_name: barrow-widget
+    image: ${BACKEND_IMAGE:-barrow-ai-backend:latest}
+    container_name: barrow-worker
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     networks:
       barrow-net:
-        ipv4_address: 172.20.0.10
+        ipv4_address: 172.20.0.21
+    command: python worker.py
+    volumes:
+      - uploads_data:/app/uploads
+      - logs_data:/app/logs
+      - ./data:/app/data:ro
     environment:
-      API_URL: https://api.${DOMAIN:-barrow-ai.local}
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.widget.rule=Host(`widget.${DOMAIN:-barrow-ai.local}`)"
-      - "traefik.http.routers.widget.entrypoints=websecure"
-      - "traefik.http.routers.widget.tls=true"
-      - "traefik.http.routers.widget.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.widget.middlewares=sec-headers@file"
-      - "traefik.http.services.widget.loadbalancer.server.port=80"
+      # Application
+      APP_NAME: ${APP_NAME:-BARROW.AI POC Worker}
+      APP_VERSION: ${APP_VERSION:-4.0.0}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DEBUG: ${DEBUG:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      
+      # Database
+      POSTGRES_USER: ${POSTGRES_USER:-barrowai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-barrowai_poc}
+      
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DB: 0
+      
+      # RabbitMQ
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-barrowai}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      
+      # Qdrant
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-netsysteme_knowledge_v1}
+      QDRANT_SIMILARITY_THRESHOLD: ${QDRANT_SIMILARITY_THRESHOLD:-0.70}
+      
+      # LLM
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash-lite}
+      GEMINI_TEMPERATURE: ${GEMINI_TEMPERATURE:-0.1}
+      GEMINI_MAX_TOKENS: ${GEMINI_MAX_TOKENS:-512}
+      GEMINI_TIMEOUT: ${GEMINI_TIMEOUT:-15}
+      HF_TOKEN: ${HF_TOKEN}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      
+      # TTS (Edge TTS & Oolel)
+      TTS_RATE: ${TTS_RATE:-+25%}
+      OOLEL_API_URL: ${OOLEL_API_URL}
+      OOLEL_TTS_TIMEOUT: ${OOLEL_TTS_TIMEOUT:-90}
+      
+      # WhatsApp
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+      
+      # Security (Required by Pydantic)
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      CSRF_SECRET: ${CSRF_SECRET}
+
+      # Internal Communication
+      BACKEND_INTERNAL_URL: http://backend:8000
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+    
+    depends_on:
+
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+
+    # The worker does not expose the HTTP server used by the image healthcheck.
+    # Without this override Docker marks the running consumer as unhealthy.
+    healthcheck:
+      disable: true
+        
     logging: *default-logging
 
-  # ===========================================================================
-  # ADMIN - React Admin Dashboard
-  # ===========================================================================
-  admin:
-    build:
-      context: ./admin
-      dockerfile: Dockerfile
-      args:
-        VITE_API_URL: https://api.${DOMAIN:-barrow-ai.local}
-    image: barrow-ai-admin:latest
-    container_name: barrow-admin
-    restart: unless-stopped
-    networks:
-      barrow-net:
-        ipv4_address: 172.20.0.40
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.admin.rule=Host(`admin.${DOMAIN:-barrow-ai.local}`)"
-      - "traefik.http.routers.admin.entrypoints=websecure"
-      - "traefik.http.routers.admin.tls=true"
-      - "traefik.http.routers.admin.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.admin.middlewares=sec-headers@file,admin-ipwhitelist@file"
-      - "traefik.http.services.admin.loadbalancer.server.port=80"
-    logging: *default-logging
 
   # ===========================================================================
   # PROMETHEUS - Metrics Collection (Optional)
@@ -363,19 +421,13 @@ services:
     networks:
       - barrow-net
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus_alerts.yml:/etc/prometheus/prometheus_alerts.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention.time=30d'
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.prometheus.rule=Host(`metrics.${DOMAIN:-barrow-ai.local}`)"
-      - "traefik.http.routers.prometheus.entrypoints=websecure"
-      - "traefik.http.routers.prometheus.tls=true"
-      - "traefik.http.routers.prometheus.middlewares=auth@file"
-      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
     profiles:
       - monitoring
 
@@ -390,18 +442,13 @@ services:
       - barrow-net
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
       GF_SERVER_ROOT_URL: https://grafana.${DOMAIN:-barrow-ai.local}
       GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-piechart-panel
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN:-barrow-ai.local}`)"
-      - "traefik.http.routers.grafana.entrypoints=websecure"
-      - "traefik.http.routers.grafana.tls=true"
-      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
     profiles:
       - monitoring
+

@@ -1,5 +1,5 @@
-"""
-Embedding Provider interface for BARROW.AI.
+﻿"""
+Embedding Provider interface for Company Bot.
 Defines abstract base class for embedding model providers.
 """
 

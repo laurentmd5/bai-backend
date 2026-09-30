@@ -1,5 +1,5 @@
 """
-Security module for BARROW.AI backend.
+Security module for Company Bot backend.
 Provides JWT handling, password hashing, AES encryption, 2FA, CSRF protection,
 and input validation utilities.
 """
@@ -296,7 +296,7 @@ def generate_totp_uri(secret: str, email: str) -> str:
     """
     return pyotp.totp.TOTP(secret).provisioning_uri(
         name=email,
-        issuer_name="BARROW.AI Admin"
+        issuer_name="Company Bot Admin"
     )
 
 
@@ -540,23 +540,23 @@ _XSS_PATTERN = re.compile(
 )
 
 _PROMPT_INJECTION_PATTERNS = [
-    re.compile(r"(?i)(ignore|forget|disregard)\s+(previous|above|all)\s+(instructions?|prompts?)"),
-    re.compile(r"(?i)(you are now|act as|pretend you are|roleplay as)"),
-    re.compile(r"(?i)(system\s*prompt|developer\s*mode|jailbreak)"),
-    re.compile(r"(?i)(bypass|override|ignore)\s+(restrictions?|rules?|guidelines?)"),
-    re.compile(r"(?i)(new\s+instructions?|updated\s+prompt)"),
+    re.compile(r"(?i)(ignore|forget|disregard|drop)\s+(?:(?:all|the|your|any)\s+)*(?:previous|above|all|prior)?\s*(instructions?|prompts?|rules?|directives?)"),
+    re.compile(r"(?i)(oublie|ignore|annule|efface)\s+(?:(?:toutes?|tes|les|vos)\s+)*(?:instructions?|consignes?|règles?|directives?)"),
+    re.compile(r"(?i)(you are now|act as|pretend you are|roleplay as|tu es maintenant|agis en tant que|fais comme si)"),
+    re.compile(r"(?i)(system\s*(?:prompt|override|command|directive|instructions?)|developer\s*mode|jailbreak|mode\s+développeur)"),
+    re.compile(r"(?i)(bypass|override|ignore|outrepasser?|contourner?)\s+(?:the\s+|les\s+)?(restrictions?|rules?|guidelines?|consignes?|règles?)"),
+    re.compile(r"(?i)(new\s+instructions?|updated\s+prompt|nouvelles?\s+consignes?|nouvelles?\s+instructions?)"),
 ]
 
 _HOSTILE_KEYWORDS = [
-    "corrupt", "incompetent", "failure", "liar", "dictator",
-    "steal", "rigged", "fake", "useless", "worst", "terrible",
+    "corrupt", "incompetent", "failure", "liar",
+    "scam", "fraud", "fake", "useless", "terrible",
     "awful", "disaster", "shame", "embarrassment"
 ]
 
 _HOSTILE_PATTERNS = [
-    re.compile(r"(?i)(barrow|president|npp)\s+is\s+({})".format("|".join(_HOSTILE_KEYWORDS))),
-    re.compile(r"(?i)(why is barrow|why does barrow)\s+(so bad|a failure|corrupt)"),
-    re.compile(r"(?i)(opposition|udp|pdois|gdc)\s+(is better|will win|should win)"),
+    re.compile(r"(?i)\b(you are|bot is|company is)\s+(useless|a failure|scam|terrible|corrupt|fraud)"),
+    re.compile(r"(?i)\b(fuck|shit|bitch|bastard|asshole)\b"),
 ]
 
 
@@ -649,7 +649,7 @@ def detect_prompt_injection(text: str) -> bool:
 
 def detect_hostile_content(text: str) -> Tuple[bool, Optional[str]]:
     """
-    Detect hostile or inappropriate content towards Barrow/NPP.
+    Detect hostile or inappropriate content.
     
     Args:
         text: User input to check
@@ -665,14 +665,8 @@ def detect_hostile_content(text: str) -> Tuple[bool, Optional[str]]:
         if match:
             return True, match.group()
     
-    # Check for isolated hostile keywords near Barrow/NPP references
-    has_barrow_ref = any(ref in text_lower for ref in ["barrow", "president", "npp"])
-    if has_barrow_ref:
-        for keyword in _HOSTILE_KEYWORDS:
-            if keyword in text_lower:
-                return True, keyword
-    
     return False, None
+
 
 
 def validate_chat_message(message: str) -> Tuple[bool, Optional[str], str]:
@@ -840,9 +834,10 @@ def validate_password_strength(password: str) -> Tuple[bool, List[str]]:
     
     # Check common passwords
     common_passwords = [
-        "password", "password123", "admin123", "barrow2024", "npp2024",
-        "12345678", "qwerty123", "gambia2024", "president2024"
+        "password", "password123", "admin123",
+        "12345678", "qwerty123",
     ]
+
     
     if password.lower() in common_passwords:
         issues.append("Password is too common or easily guessable")
@@ -861,3 +856,5 @@ def validate_password_strength(password: str) -> Tuple[bool, List[str]]:
             break
     
     return len(issues) == 0, issues
+
+

@@ -1,5 +1,5 @@
 """
-Output validation service for BARROW.AI.
+Output validation service for Company Bot.
 Validates LLM-generated responses before sending to users.
 """
 
@@ -18,7 +18,6 @@ class OutputValidator:
     Comprehensive output validation service.
     
     Validates LLM responses for:
-    - Required slogan presence
     - Minimum/maximum length
     - Forbidden terms
     - Hallucination indicators
@@ -26,48 +25,8 @@ class OutputValidator:
     - Source attribution
     """
     
-    # Required slogan that must appear in every response
-    REQUIRED_SLOGAN = "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-    
-    # Alternative acceptable slogans (for robustness)
-    ACCEPTABLE_SLOGANS = [
-        "Ask. Know. Decide. - One Gambia. One People. One Barrow.",
-        "Ask. Know. Decide. - One Gambia. One People. One Barrow!",
-        "Ask. Know. Decide. — One Gambia. One People. One Barrow.",
-    ]
-    
-    # Forbidden terms that must never appear in responses
+    # Generic forbidden terms (offensive language only)
     FORBIDDEN_TERMS = [
-        # Anti-Barrow terms
-        "barrow is bad",
-        "barrow is corrupt",
-        "barrow failed",
-        "barrow is incompetent",
-        "president is weak",
-        "president is a liar",
-        "president is corrupt",
-        
-        # Anti-NPP terms
-        "npp is corrupt",
-        "npp failed",
-        "npp is bad",
-        "npp is incompetent",
-        
-        # Pro-opposition terms
-        "opposition is better",
-        "udp will win",
-        "vote for udp",
-        "udp is better",
-        "pdois will win",
-        "gdc is better",
-        
-        # Negative speculation
-        "will lose the election",
-        "might lose",
-        "not win",
-        "going to lose",
-        
-        # Inappropriate language
         "stupid",
         "idiot",
         "fool",
@@ -146,21 +105,28 @@ class OutputValidator:
                 validation_metadata["fixes_applied"].append("replaced_with_fallback")
                 return False, final_response, validation_metadata
         
-        # Step 2: Check for required slogan
-        slogan_present = any(slogan in response for slogan in self.ACCEPTABLE_SLOGANS)
-        
-        if not slogan_present:
-            validation_metadata["validations_performed"].append("missing_slogan")
-            logger.warning("response_missing_slogan")
-            
-            if strict_mode:
-                from app.core.exceptions import ValidationException
-                raise ValidationException("Response missing required slogan")
-            else:
-                final_response = response.rstrip() + "\n\n" + self.REQUIRED_SLOGAN
-                validation_metadata["fixes_applied"].append("slogan_added")
-        else:
-            validation_metadata["validations_performed"].append("slogan_present")
+        # Step 1.5: Clean any leaked prompt template markers
+        leaked_patterns = [
+            r'\n?\s*(\*|\*\*|#)*\s*QUESTION\s*:.*$',
+            r'\n?\s*(\*|\*\*|#)*\s*RÉPONSE\s*:.*$',
+            r'\n?\s*(\*|\*\*|#)*\s*User\s*:.*$',
+            r'\n?\s*(\*|\*\*|#)*\s*Utilisateur\s*:.*$',
+        ]
+        for pat in leaked_patterns:
+            cleaned = re.sub(pat, '', final_response, flags=re.IGNORECASE | re.DOTALL)
+            if cleaned != final_response:
+                validation_metadata["fixes_applied"].append("cleaned_leaked_prompt_markers")
+                final_response = cleaned.strip()
+
+        # Step 1.6: Deduplicate repeated blocks, paragraphs or sentences (LLM stutter)
+        deduplicated = self._deduplicate_repeated_blocks(final_response)
+        if deduplicated != final_response:
+            validation_metadata["fixes_applied"].append("deduplicated_repeated_blocks")
+            final_response = deduplicated
+
+        # Step 2: Slogan check skipped (generic bot)
+        validation_metadata["validations_performed"].append("slogan_check_skipped")
+
         
         # Step 3: Check length
         if len(response) < self.MIN_RESPONSE_LENGTH:
@@ -283,15 +249,15 @@ class OutputValidator:
     
     def _truncate_for_whatsapp(self, text: str) -> str:
         """
-        Truncate text for WhatsApp while preserving the slogan.
+        Truncate text for WhatsApp if it exceeds length limit.
         
         Args:
             text: Text to truncate
             
         Returns:
-            Truncated text with slogan
+            Truncated text
         """
-        max_len = self.MAX_WHATSAPP_LENGTH - len(self.REQUIRED_SLOGAN) - 5
+        max_len = self.MAX_WHATSAPP_LENGTH
         
         if len(text) <= max_len:
             return text
@@ -308,20 +274,73 @@ class OutputValidator:
         if cut_point > max_len * 0.7:
             truncated = truncated[:cut_point + 1]
         
-        return truncated + "\n\n" + self.REQUIRED_SLOGAN
+        return truncated
     
+    def _deduplicate_repeated_blocks(self, text: str) -> str:
+        """
+        Deduplicate repeated blocks, paragraphs, and consecutive identical sentences.
+        Prevents LLM stuttering bugs where identical chunks or paragraphs are generated repeatedly.
+        """
+        if not text:
+            return text
+
+        # 1. Whole text repeated (e.g. text + \n\n + text)
+        stripped = text.strip()
+        mid = len(stripped) // 2
+        for offset in range(-15, 16):
+            test_mid = mid + offset
+            if 0 < test_mid < len(stripped):
+                first_half = stripped[:test_mid].rstrip()
+                second_half = stripped[test_mid:].lstrip()
+                if first_half and first_half == second_half and len(first_half) >= 30:
+                    text = first_half
+                    stripped = text.strip()
+                    break
+
+        # 2. Paragraph-level cycle deduplication (e.g. [P1, P2, P1, P2] or [P1, P1])
+        paragraphs = text.split("\n\n")
+        if len(paragraphs) >= 2:
+            changed = True
+            while changed:
+                changed = False
+                n = len(paragraphs)
+                for k in range(1, (n // 2) + 1):
+                    for i in range(n - 2 * k + 1):
+                        slice1 = [p.strip().lower() for p in paragraphs[i : i + k]]
+                        slice2 = [p.strip().lower() for p in paragraphs[i + k : i + 2 * k]]
+                        if slice1 == slice2 and any(len(p) > 10 for p in slice1):
+                            paragraphs = paragraphs[: i + k] + paragraphs[i + 2 * k :]
+                            changed = True
+                            break
+                    if changed:
+                        break
+            text = "\n\n".join(paragraphs)
+
+        # 3. Line-level and consecutive sentence-level deduplication within paragraphs
+        cleaned_paragraphs = []
+        pattern_sentence = re.compile(r'([A-ZÀ-ÿ0-9][^.!?\n]{15,}[.!?])\s+\1', re.IGNORECASE)
+        for p in text.split("\n\n"):
+            lines = p.split("\n")
+            new_lines = []
+            for line in lines:
+                if not new_lines or line.strip().lower() != new_lines[-1].strip().lower() or len(line.strip()) < 15:
+                    new_lines.append(line)
+            cleaned_p = "\n".join(new_lines)
+            
+            # Deduplicate consecutive identical sentences
+            prev_p = ""
+            while prev_p != cleaned_p:
+                prev_p = cleaned_p
+                cleaned_p = pattern_sentence.sub(r'\1', cleaned_p)
+
+            cleaned_paragraphs.append(cleaned_p)
+
+        return "\n\n".join(cleaned_paragraphs)
+
     def _get_fallback_response(self) -> str:
-        """
-        Get a safe fallback response.
-        
-        Returns:
-            Fallback message
-        """
-        return (
-            "I am experiencing a temporary technical issue. "
-            "Please try again in a few moments or visit www.npp.gm for more information.\n\n"
-            "Ask. Know. Decide. - One Gambia. One People. One Barrow."
-        )
+        """Get a safe fallback response."""
+        from app.core.company_config import company
+        return company.get_response("error", "en")
     
     def validate_broadcast_message(
         self,
@@ -363,10 +382,7 @@ class OutputValidator:
                 )
                 return False, "", validation_metadata
         
-        # Ensure slogan is present
-        if self.REQUIRED_SLOGAN not in final_message:
-            final_message = final_message.rstrip() + "\n\n" + self.REQUIRED_SLOGAN
-            validation_metadata["validations_performed"].append("slogan_added")
+        # No mandatory slogan for generic bot
         
         validation_metadata["validations_performed"].append("broadcast_validation_passed")
         validation_metadata["final_length"] = len(final_message)

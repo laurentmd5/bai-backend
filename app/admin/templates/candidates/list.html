@@ -1,0 +1,372 @@
+{% extends "base.html" %}
+{% block title %}{{ t.candidates.page_title }}{% endblock %}
+
+{% block page_title %}{{ t.candidates.header_title }}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">/</span><span>{{ t.candidates.header_title }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header" style="flex-wrap:wrap;gap:1rem">
+    <div>
+      <div class="card-title">{{ t.candidates.header_title }}</div>
+      <div class="card-subtitle" id="cand-count">Chargement des dossiers…</div>
+    </div>
+    <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
+      <a href="/api/v1/admin/candidates/export/csv" class="btn btn-outline btn-sm" id="btn-export-csv" target="_blank">
+        <i class="fas fa-file-csv"></i> {{ t.candidates.export_csv }}
+      </a>
+      <div class="search-bar" style="margin:0">
+        <div class="search-input-wrap">
+          <i class="fas fa-search"></i>
+          <input type="text" id="search-input" placeholder="{{ t.candidates.search_placeholder }}" autocomplete="off">
+        </div>
+        <select id="status-filter" class="form-control" style="width:auto;min-width:140px">
+          <option value="">{{ t.candidates.filter_all_statuses }}</option>
+          <option value="new">{{ t.candidates.status_new }}</option>
+          <option value="prescreened">{{ t.candidates.status_prescreened }}</option>
+          <option value="shortlisted">{{ t.candidates.status_shortlisted }}</option>
+          <option value="interview_scheduled">{{ t.candidates.status_interview_scheduled }}</option>
+          <option value="rejected">{{ t.candidates.status_rejected }}</option>
+          <option value="hired">{{ t.candidates.status_hired }}</option>
+        </select>
+        <select id="channel-filter" class="form-control" style="width:auto;min-width:120px">
+          <option value="">{{ t.candidates.filter_all_channels }}</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="web">Web</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>{{ t.candidates.th_candidate }}</th>
+          <th>{{ t.candidates.th_channel }}</th>
+          <th>{{ t.candidates.th_score }}</th>
+          <th>{{ t.candidates.th_domains }}</th>
+          <th>{{ t.candidates.th_status }}</th>
+          <th>{{ t.candidates.th_date }}</th>
+          <th class="col-actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="cand-tbody"></tbody>
+    </table>
+  </div>
+  <div id="cand-pagination"></div>
+</div>
+
+<!-- Modal Détail du Candidat & Modification Statut -->
+<div id="candidate-modal" class="modal" style="display:none">
+  <div class="modal-backdrop" onclick="closeCandidateModal()"></div>
+  <div class="modal-dialog" style="max-width:760px;width:90%">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-candidate-name">Dossier Candidat</div>
+        <button class="btn btn-ghost btn-icon" onclick="closeCandidateModal()"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body" id="modal-candidate-body" style="max-height:75vh;overflow-y:auto;padding:1.25rem">
+        <!-- Content loaded dynamically -->
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:space-between;align-items:center">
+        <button class="btn btn-outline" onclick="closeCandidateModal()">Fermer</button>
+        <button class="btn btn-primary" id="btn-save-status" onclick="saveCandidateStatus()">
+          <i class="fas fa-check"></i> Mettre à jour le statut
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.score-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 20px;
+}
+.score-high { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+.score-med  { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
+.score-low  { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+
+.domain-pill {
+  display: inline-block;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+  margin: 0.1rem 0.2rem 0.1rem 0;
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.modal {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-backdrop {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+}
+.modal-dialog {
+  position: relative;
+  z-index: 1001;
+  background: var(--card-bg, #1a1f2c);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+.modal-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.modal-footer {
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--border);
+}
+</style>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentPage   = 0;
+const PAGE_LIMIT  = 15;
+let searchQuery   = '';
+let statusFilter  = '';
+let channelFilter = '';
+let activeCandidateId = null;
+
+const STATUS_MAP = {
+  new: { label: '{{ t.candidates.status_new }}', cls: 'badge-info' },
+  prescreened: { label: '{{ t.candidates.status_prescreened }}', cls: 'badge-warning' },
+  shortlisted: { label: '{{ t.candidates.status_shortlisted }}', cls: 'badge-primary' },
+  interview_scheduled: { label: '{{ t.candidates.status_interview_scheduled }}', cls: 'badge-primary' },
+  rejected: { label: '{{ t.candidates.status_rejected }}', cls: 'badge-danger' },
+  hired: { label: '{{ t.candidates.status_hired }}', cls: 'badge-success' }
+};
+
+function renderScore(score) {
+  const val = Math.round(score || 0);
+  const cls = val >= 70 ? 'score-high' : val >= 50 ? 'score-med' : 'score-low';
+  return `<span class="score-badge ${cls}"><i class="fas fa-bullseye"></i> ${val}%</span>`;
+}
+
+function renderStatus(st) {
+  const info = STATUS_MAP[st] || { label: st || '—', cls: 'badge-neutral' };
+  return `<span class="badge ${info.cls}">${info.label}</span>`;
+}
+
+async function loadCandidates(page = 0) {
+  const tbody = document.getElementById('cand-tbody');
+  tbody.innerHTML = skeletonRows(7, 6);
+  currentPage = page;
+
+  const params = new URLSearchParams({ limit: PAGE_LIMIT, offset: page * PAGE_LIMIT });
+  if (searchQuery)   params.set('search', searchQuery);
+  if (statusFilter)  params.set('status', statusFilter);
+  if (channelFilter) params.set('channel', channelFilter);
+
+  const data = await apiJSON(`/candidates?${params}`);
+  if (!data) return;
+
+  document.getElementById('cand-count').textContent =
+    `${data.total} candidature${data.total !== 1 ? 's' : ''} enregistrée${data.total !== 1 ? 's' : ''}`;
+
+  if (!data.items || !data.items.length) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state">
+      <i class="fas fa-user-tie"></i>
+      <p>Aucune candidature trouvée</p>
+    </div></td></tr>`;
+    document.getElementById('cand-pagination').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = data.items.map(c => {
+    const name = escapeHtml(c.full_name || 'Candidat');
+    const phone = escapeHtml(c.phone_number || '—');
+    const email = escapeHtml(c.email || '');
+    const channelIcon = { whatsapp:'fa-whatsapp fab text-green', web:'fa-globe fas' }[c.channel||'whatsapp'] || 'fa-user fas';
+    const dateStr = formatDate(c.created_at);
+
+    const domainsHtml = (c.target_domains || []).slice(0, 3).map(d =>
+      `<span class="domain-pill">${escapeHtml(d.replace('_', ' '))}</span>`
+    ).join('') + ((c.target_domains || []).length > 3 ? `<span class="domain-pill">+${c.target_domains.length - 3}</span>` : '');
+
+    return `<tr>
+      <td>
+        <div style="font-weight:600;color:var(--text-primary)">${name}</div>
+        <div style="font-size:0.75rem;color:var(--text-muted)"><i class="fas fa-phone-alt"></i> ${phone} ${email ? '• ' + email : ''}</div>
+      </td>
+      <td><i class="${channelIcon}"></i> <span style="font-size:0.8rem;text-transform:capitalize">${c.channel}</span></td>
+      <td>${renderScore(c.match_score)}</td>
+      <td>${domainsHtml || '<span style="color:var(--text-muted);font-size:0.8rem">—</span>'}</td>
+      <td>${renderStatus(c.status)}</td>
+      <td style="font-size:0.8rem;color:var(--text-muted)">${dateStr}</td>
+      <td class="col-actions">
+        <button class="btn btn-ghost btn-sm" onclick="openCandidateDetail('${c.id}')" title="Examiner le dossier">
+          <i class="fas fa-folder-open"></i>
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  renderPagination('cand-pagination', data.total, PAGE_LIMIT, page, loadCandidates);
+}
+
+async function openCandidateDetail(candidateId) {
+  activeCandidateId = candidateId;
+  const modal = document.getElementById('candidate-modal');
+  const body = document.getElementById('modal-candidate-body');
+  const title = document.getElementById('modal-candidate-name');
+
+  body.innerHTML = '<div style="text-align:center;padding:2rem"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
+  modal.style.display = 'flex';
+
+  const c = await apiJSON(`/candidates/${candidateId}`);
+  if (!c) {
+    closeCandidateModal();
+    return;
+  }
+
+  title.innerHTML = `<i class="fas fa-user-check"></i> ${escapeHtml(c.full_name || 'Candidat')}`;
+
+  const answers = c.answers || {};
+  let answersHtml = '';
+  if (Object.keys(answers).length > 0) {
+    answersHtml = Object.entries(answers).map(([q, a], idx) => `
+      <div style="margin-bottom:0.75rem;padding:0.75rem;background:rgba(255,255,255,0.03);border-radius:var(--radius-sm);border-left:3px solid var(--primary)">
+        <div style="font-size:0.8rem;font-weight:600;color:var(--text-secondary)">Question ${idx+1} : ${escapeHtml(q)}</div>
+        <div style="font-size:0.875rem;margin-top:0.25rem;color:var(--text-primary)">${escapeHtml(a)}</div>
+      </div>
+    `).join('');
+  } else {
+    answersHtml = '<div style="color:var(--text-muted);font-size:0.85rem">Aucune réponse enregistrée.</div>';
+  }
+
+  const cvInfo = c.parsed_cv || {};
+  let cvInfoHtml = '';
+  if (cvInfo.summary || cvInfo.education_level || (cvInfo.technical_skills && cvInfo.technical_skills.length)) {
+    cvInfoHtml = `
+      <div style="margin-bottom:1rem;padding:0.75rem;background:rgba(255,255,255,0.03);border-radius:var(--radius-sm)">
+        ${cvInfo.education_level ? `<div><strong>Diplôme / Niveau :</strong> ${escapeHtml(cvInfo.education_level)} ${cvInfo.diploma ? '(' + escapeHtml(cvInfo.diploma) + ')' : ''}</div>` : ''}
+        ${cvInfo.summary ? `<div style="margin-top:0.4rem;font-style:italic;color:var(--text-secondary)">"${escapeHtml(cvInfo.summary)}"</div>` : ''}
+        ${(cvInfo.technical_skills && cvInfo.technical_skills.length) ? `
+          <div style="margin-top:0.5rem">
+            <strong>Compétences extraites :</strong>
+            <div style="margin-top:0.25rem">${cvInfo.technical_skills.map(s => `<span class="domain-pill">${escapeHtml(s)}</span>`).join('')}</div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  body.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem">
+      <div>
+        <div style="font-size:0.75rem;color:var(--text-muted)">Coordonnées</div>
+        <div><strong>Téléphone :</strong> ${escapeHtml(c.phone_number || '—')}</div>
+        <div><strong>Email :</strong> ${escapeHtml(c.email || '—')}</div>
+        <div><strong>Fichier CV :</strong> ${c.cv_filename ? `<i class="fas fa-file-pdf"></i> ${escapeHtml(c.cv_filename)}` : 'Non fourni'}</div>
+      </div>
+      <div>
+        <div style="font-size:0.75rem;color:var(--text-muted)">Score d'adéquation IA</div>
+        <div style="margin-top:0.25rem">${renderScore(c.match_score)}</div>
+        <div style="margin-top:0.5rem;font-size:0.75rem;color:var(--text-muted)">Domaines techniques :</div>
+        <div>${(c.target_domains||[]).map(d => `<span class="domain-pill">${escapeHtml(d.replace('_',' '))}</span>`).join('')}</div>
+      </div>
+    </div>
+
+    ${cvInfoHtml ? `<h4 style="margin-bottom:0.5rem;font-size:0.9rem"><i class="fas fa-brain"></i> Analyse IA du CV</h4>${cvInfoHtml}` : ''}
+
+    <h4 style="margin-bottom:0.5rem;font-size:0.9rem"><i class="fas fa-clipboard-list"></i> Réponses du candidat</h4>
+    ${answersHtml}
+
+    <h4 style="margin-top:1.25rem;margin-bottom:0.5rem;font-size:0.9rem"><i class="fas fa-user-tag"></i> Décision & Statut RH</h4>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+      <div>
+        <label style="font-size:0.75rem;color:var(--text-muted)">Statut actuel</label>
+        <select id="update-status-select" class="form-control" style="margin-top:0.25rem">
+          <option value="new" ${c.status === 'new' ? 'selected' : ''}>${STATUS_MAP.new.label}</option>
+          <option value="prescreened" ${c.status === 'prescreened' ? 'selected' : ''}>${STATUS_MAP.prescreened.label}</option>
+          <option value="shortlisted" ${c.status === 'shortlisted' ? 'selected' : ''}>${STATUS_MAP.shortlisted.label}</option>
+          <option value="interview_scheduled" ${c.status === 'interview_scheduled' ? 'selected' : ''}>${STATUS_MAP.interview_scheduled.label}</option>
+          <option value="rejected" ${c.status === 'rejected' ? 'selected' : ''}>${STATUS_MAP.rejected.label}</option>
+          <option value="hired" ${c.status === 'hired' ? 'selected' : ''}>${STATUS_MAP.hired.label}</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:0.75rem;color:var(--text-muted)">Notes internes RH</label>
+        <textarea id="update-notes-input" class="form-control" rows="2" style="margin-top:0.25rem;font-size:0.8rem" placeholder="Notes sur le candidat…">${escapeHtml(c.notes || '')}</textarea>
+      </div>
+    </div>
+  `;
+}
+
+function closeCandidateModal() {
+  document.getElementById('candidate-modal').style.display = 'none';
+  activeCandidateId = null;
+}
+
+async function saveCandidateStatus() {
+  if (!activeCandidateId) return;
+
+  const newStatus = document.getElementById('update-status-select').value;
+  const notes = document.getElementById('update-notes-input').value;
+
+  const btn = document.getElementById('btn-save-status');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enregistrement…';
+
+  const res = await apiCall(`/candidates/${activeCandidateId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status: newStatus, notes: notes })
+  });
+
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fas fa-check"></i> Mettre à jour le statut';
+
+  if (res && res.ok) {
+    showToast('Statut du candidat mis à jour avec succès', 'success');
+    closeCandidateModal();
+    loadCandidates(currentPage);
+  } else {
+    showToast('Erreur lors de la mise à jour du statut', 'error');
+  }
+}
+
+// Event listeners
+document.getElementById('search-input').addEventListener('input', debounce((e) => {
+  searchQuery = e.target.value.trim();
+  loadCandidates(0);
+}, 350));
+
+document.getElementById('status-filter').addEventListener('change', (e) => {
+  statusFilter = e.target.value;
+  loadCandidates(0);
+});
+
+document.getElementById('channel-filter').addEventListener('change', (e) => {
+  channelFilter = e.target.value;
+  loadCandidates(0);
+});
+
+// Initial load
+document.addEventListener('DOMContentLoaded', () => loadCandidates(0));
+</script>
+{% endblock %}

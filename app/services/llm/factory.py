@@ -1,5 +1,5 @@
-"""
-LLM Provider factory for BARROW.AI.
+﻿"""
+LLM Provider factory for Company Bot.
 Provides dependency injection for LLM and embedding providers.
 """
 
@@ -11,6 +11,7 @@ from app.services.llm.gemini_provider import GeminiProvider
 from app.services.llm.ollama_provider import OllamaProvider
 from app.services.llm.embedding.local_embedding import LocalEmbeddingProvider
 from app.core.config import settings, LLMProvider
+from app.services.llm.groq_provider import GroqProvider
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -34,7 +35,10 @@ def get_llm_provider() -> ILLMProvider:
     if _llm_provider is not None:
         return _llm_provider
     
-    if settings.LLM_PROVIDER == LLMProvider.GEMINI:
+    if settings.LLM_PROVIDER == LLMProvider.GROQ:
+        logger.info("using_groq_llm_provider")
+        _llm_provider = GroqProvider()
+    elif settings.LLM_PROVIDER == LLMProvider.GEMINI:
         logger.info("using_gemini_llm_provider")
         _llm_provider = GeminiProvider()
     elif settings.LLM_PROVIDER == LLMProvider.OLLAMA:
@@ -42,10 +46,10 @@ def get_llm_provider() -> ILLMProvider:
         _llm_provider = OllamaProvider()
     else:
         logger.warning(
-            "unknown_llm_provider_falling_back_to_gemini",
+            "unknown_llm_provider_falling_back_to_groq",
             provider=settings.LLM_PROVIDER
         )
-        _llm_provider = GeminiProvider()
+        _llm_provider = GroqProvider()
     
     return _llm_provider
 

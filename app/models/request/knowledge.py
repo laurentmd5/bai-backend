@@ -1,5 +1,5 @@
-"""
-Knowledge document request models for BARROW.AI.
+﻿"""
+Knowledge document request models for Company Bot.
 """
 
 from typing import Optional
@@ -50,8 +50,8 @@ class KnowledgeDocumentUploadRequest(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "title": "NPP Digital Transformation Plan 2026",
-                "description": "Official NPP document outlining digital achievements and plans",
+                "title": "NETSYSTEME IT Services Guide 2026",
+                "description": "Official NETSYSTEME document",
                 "section": "ICT Policy",
                 "language": "en",
                 "is_public": True
@@ -97,3 +97,4 @@ class KnowledgeDocumentUpdateRequest(BaseModel):
             }
         }
     }
+

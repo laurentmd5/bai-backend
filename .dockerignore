@@ -1,0 +1,53 @@
+﻿# Git
+.git
+.gitignore
+
+# Virtual Environments
+venv/
+venv_*/
+.venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.claude/
+
+# Documentation & Markdown reports
+docs/
+*.md
+!README.md
+test_results.txt
+
+# Tests (unit and integration tests are not needed in production container)
+tests/
+test_*.py
+run_tests.py
+patch_*.py
+tmp_*.py
+
+# Local runtime data & volumes (mounted via docker-compose)
+data/
+logs/
+uploads/
+
+# CI & Monitoring configs (mounted via volumes)
+monitoring/
+traefik/
+Jenkinsfile*

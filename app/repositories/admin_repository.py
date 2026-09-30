@@ -1,5 +1,5 @@
 """
-Admin repository for BARROW.AI.
+Admin repository for Company Bot.
 Handles admin user and audit log database operations.
 """
 
@@ -474,6 +474,7 @@ class AuditLogRepository(BaseRepository[AuditLog, Dict[str, Any], Dict[str, Any]
         success: Optional[bool] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
+        search: Optional[str] = None,
         skip: int = 0,
         limit: int = 100,
     ) -> Tuple[List[AuditLog], int]:
@@ -495,7 +496,11 @@ class AuditLogRepository(BaseRepository[AuditLog, Dict[str, Any], Dict[str, Any]
             filters.append(AuditLog.admin_id == admin_id)
         
         if severity:
-            filters.append(AuditLog.severity == severity)
+            sev_upper = severity.upper()
+            if sev_upper in ("WARN", "WARNING"):
+                filters.append(or_(AuditLog.severity == "WARN", AuditLog.severity == "WARNING"))
+            else:
+                filters.append(AuditLog.severity == sev_upper)
         
         if success is not None:
             filters.append(AuditLog.success == success)
@@ -505,6 +510,17 @@ class AuditLogRepository(BaseRepository[AuditLog, Dict[str, Any], Dict[str, Any]
         
         if end_date:
             filters.append(AuditLog.created_at <= end_date)
+            
+        if search:
+            search_pattern = f"%{search}%"
+            filters.append(
+                or_(
+                    AuditLog.action.ilike(search_pattern),
+                    AuditLog.ip_address.ilike(search_pattern),
+                    AuditLog.user_agent.ilike(search_pattern),
+                    AuditLog.error_message.ilike(search_pattern),
+                )
+            )
         
         if filters:
             stmt = stmt.where(and_(*filters))

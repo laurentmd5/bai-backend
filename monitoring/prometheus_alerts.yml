@@ -1,0 +1,88 @@
+﻿# Prometheus Alerting Rules for NETSYSTEME Company Bot
+# SRE Golden Signals & Reliability Alerting
+
+groups:
+  - name: netsysteme_bot_golden_signals
+    rules:
+      # =========================================================================
+      # 1. ERRORS (Taux d'erreurs)
+      # =========================================================================
+      - alert: HighHttp5xxErrorRate
+        expr: (sum(rate(bot_http_requests_total{status=~"5.."}[5m])) / sum(rate(bot_http_requests_total[5m]))) * 100 > 1
+        for: 3m
+        labels:
+          severity: critical
+          tier: api
+        annotations:
+          summary: "Taux d'erreurs HTTP 5xx élevé (> 1%) sur NETSYSTEME Bot"
+          description: "Le taux d'erreurs 5xx est actuellement à {{ $value | printf \"%.2f\" }}% sur les 5 dernières minutes."
+          runbook_url: "https://wiki.netsys-info.com/sre/runbooks/high-error-rate"
+
+      - alert: HighChatErrorRate
+        expr: sum(rate(bot_chat_errors_total[5m])) > 0.2
+        for: 2m
+        labels:
+          severity: critical
+          tier: chat-engine
+        annotations:
+          summary: "Échecs répétés du moteur de conversation"
+          description: "Le moteur de chat génère plus de 0.2 erreurs par seconde."
+
+      # =========================================================================
+      # 2. LATENCY (Latence P95 / P99)
+      # =========================================================================
+      - alert: HighChatLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(bot_chat_latency_ms_bucket[5m])) by (le)) > 3500
+        for: 5m
+        labels:
+          severity: warning
+          tier: chat-engine
+        annotations:
+          summary: "Latence de conversation P95 supérieure à 3.5 secondes"
+          description: "La latence P95 de réponse aux utilisateurs est de {{ $value | printf \"%.0f\" }} ms."
+
+      - alert: SlowRagRetrievalP99
+        expr: histogram_quantile(0.99, sum(rate(bot_rag_retrieval_duration_seconds_bucket[5m])) by (le)) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          tier: vector-database
+        annotations:
+          summary: "Latence de recherche vectorielle Qdrant P99 > 500ms"
+          description: "La recherche sémantique dans la base de connaissances prend plus de 500ms."
+
+      # =========================================================================
+      # 3. TRAFFIC & SATURATION
+      # =========================================================================
+      - alert: HighInFlightRequests
+        expr: sum(bot_http_requests_in_flight) > 50
+        for: 2m
+        labels:
+          severity: warning
+          tier: api
+        annotations:
+          summary: "Nombre élevé de requêtes HTTP en vol (> 50)"
+          description: "{{ $value }} requêtes HTTP sont actuellement en cours de traitement simultané."
+
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          tier: platform
+        annotations:
+          summary: "L'instance NETSYSTEME Bot est injoignable"
+          description: "Le scraper Prometheus ne parvient plus à joindre le endpoint /metrics."
+
+      # =========================================================================
+      # 4. SÉCURITÉ & GUARDRAILS
+      # =========================================================================
+      - alert: HighSecurityViolations
+        expr: sum(rate(bot_security_violations_total[10m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          tier: security
+        annotations:
+          summary: "Augmentation anormale des violations de sécurité / Guardrails"
+          description: "Détection fréquente de tentatives d'injections de prompt ou de contenu hostile."

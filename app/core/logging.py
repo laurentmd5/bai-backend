@@ -1,5 +1,5 @@
-"""
-Structured logging configuration for BARROW.AI.
+﻿"""
+Structured logging configuration for Company Bot.
 Uses structlog for JSON-formatted logs with contextual information.
 """
 

@@ -1,5 +1,5 @@
-"""
-Analytics response models for BARROW.AI.
+﻿"""
+Analytics response models for Company Bot.
 Serializes dashboard metrics, trends, and statistics.
 """
 

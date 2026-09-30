@@ -1,5 +1,5 @@
-"""
-Request models package for BARROW.AI.
+﻿"""
+Request models package for Company Bot.
 Contains Pydantic schemas for validating incoming requests.
 """
 

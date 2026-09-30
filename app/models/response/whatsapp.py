@@ -1,5 +1,5 @@
-"""
-WhatsApp response models for BARROW.AI.
+﻿"""
+WhatsApp response models for Company Bot.
 """
 
 from typing import Optional, List

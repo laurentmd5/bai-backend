@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}{{ t['knowledge']['page_title'] }}{% endblock %}
+{% block page_title %}{{ t['base']['knowledge_base'] }}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">/</span><span>{{ t['knowledge']['breadcrumb'] }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">{{ t['knowledge']['card_title'] }}</div>
+      <div class="card-subtitle" id="docs-count">{{ t['knowledge']['loading'] }}</div>
+    </div>
+    <div class="search-bar">
+      <div class="search-input-wrap">
+        <i class="fas fa-search"></i>
+        <input type="text" id="search-input" placeholder="{{ t['knowledge']['search_placeholder'] }}" autocomplete="off">
+      </div>
+      <select id="lang-filter" class="form-control" style="width:auto;min-width:120px">
+        <option value="">{{ t['knowledge']['lang_all'] }}</option>
+        <option value="fr">{{ t['knowledge']['lang_fr'] }}</option>
+        <option value="en">{{ t['knowledge']['lang_en'] }}</option>
+      </select>
+      <select id="status-filter" class="form-control" style="width:auto;min-width:130px">
+        <option value="">{{ t['knowledge']['status_all'] }}</option>
+        <option value="active">{{ t['knowledge']['status_active'] }}</option>
+        <option value="indexing">Indexation en cours</option>
+        <option value="error">Erreur</option>
+      </select>
+      <a href="/admin/knowledge/upload" class="btn btn-primary btn-sm">
+        <i class="fas fa-upload"></i> {{ t['knowledge']['btn_upload'] }}
+      </a>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>{{ t['knowledge']['th_document'] }}</th>
+          <th>{{ t['knowledge']['th_status'] }}</th>
+          <th>{{ t['knowledge']['th_language'] }}</th>
+          <th>Segments (Chunks)</th>
+          <th>{{ t['knowledge']['th_date'] }}</th>
+          <th class="col-actions">{{ t['knowledge']['th_actions'] }}</th>
+        </tr>
+      </thead>
+      <tbody id="docs-tbody"></tbody>
+    </table>
+  </div>
+  <div id="docs-pagination"></div>
+</div>
+
+<!-- Delete confirm modal -->
+<div class="modal-overlay hidden" id="delete-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title"><i class="fas fa-trash" style="color:var(--danger);margin-right:.5rem"></i>{{ t['knowledge']['modal_title'] }}</span>
+      <button class="modal-close" onclick="closeDeleteModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.9rem;color:var(--text-secondary)">
+        {{ t['knowledge']['modal_body'] }} <strong id="delete-doc-name"></strong>{{ t['knowledge']['modal_warning'] }}
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeDeleteModal()">{{ t['knowledge']['btn_cancel'] }}</button>
+      <button class="btn btn-danger" id="confirm-delete-btn"><i class="fas fa-trash"></i> {{ t['knowledge']['btn_delete'] }}</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block extra_js %}
+<script>
+let currentPage = 0;
+const PAGE_LIMIT = 20;
+let searchQuery  = '';
+let langFilter   = '';
+let statusFilter = '';
+let pendingDeleteId = null;
+let pollTimer = null;
+
+const fileIcons = {
+  pdf: 'fa-file-pdf', docx: 'fa-file-word', doc: 'fa-file-word', txt: 'fa-file-alt',
+  md: 'fa-file-alt', default: 'fa-file'
+};
+
+function getFileIcon(title) {
+  const ext = (title||'').split('.').pop().toLowerCase();
+  return fileIcons[ext] || fileIcons.default;
+}
+
+function renderStatusBadge(status, errorMsg) {
+  if (status === 'active') {
+    return '<span class="badge badge-success"><span class="badge-dot"></span>Actif</span>';
+  } else if (status === 'indexing') {
+    return '<span class="badge" style="background:rgba(37,99,235,.1);color:#2563eb;font-weight:600"><i class="fas fa-spinner fa-spin" style="margin-right:4px"></i>Indexation</span>';
+  } else if (status === 'error') {
+    return `<span class="badge badge-danger" style="background:rgba(220,38,38,.1);color:#dc2626" title="${escapeHtml(errorMsg || 'Erreur d\'indexation')}"><i class="fas fa-exclamation-triangle" style="margin-right:4px"></i>Erreur</span>`;
+  } else {
+    return '<span class="badge badge-warning"><span class="badge-dot"></span>En attente</span>';
+  }
+}
+
+async function loadDocuments(page = 0) {
+  if (pollTimer) clearTimeout(pollTimer);
+  const tbody = document.getElementById('docs-tbody');
+  if (tbody.children.length === 0) {
+    tbody.innerHTML = skeletonRows(6, 5);
+  }
+  currentPage = page;
+
+  const params = new URLSearchParams({ limit: PAGE_LIMIT, offset: page * PAGE_LIMIT });
+  if (searchQuery)  params.set('search', searchQuery);
+  if (langFilter)   params.set('language', langFilter);
+  if (statusFilter) params.set('status', statusFilter);
+
+  const data = await apiJSON(`/knowledge?${params}`);
+  if (!data) return;
+
+  document.getElementById('docs-count').textContent =
+    `${data.total} {{ t['knowledge']['js']['documents'] }}`;
+
+  if (!data.documents || !data.documents.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">
+      <i class="fas fa-folder-open"></i>
+      <p>{{ t['knowledge']['js']['no_docs'] }}</p>
+    </div></td></tr>`;
+    document.getElementById('docs-pagination').innerHTML = '';
+    return;
+  }
+
+  let hasPending = false;
+  tbody.innerHTML = data.documents.map(d => {
+    if (d.status === 'indexing' || d.status === 'pending') {
+      hasPending = true;
+    }
+    return `<tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:.75rem">
+          <div style="width:34px;height:34px;background:var(--primary-muted);border-radius:var(--radius);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <i class="fas ${getFileIcon(d.title || d.filename)}" style="color:var(--primary);font-size:.9rem"></i>
+          </div>
+          <div>
+            <div style="font-weight:600;font-size:.875rem"><a href="/admin/knowledge/detail/${d.id}" style="color:inherit;text-decoration:none">${escapeHtml(d.title||'{{ t["knowledge"]["js"]["untitled"] }}')}</a></div>
+            <div class="text-xs text-muted">${escapeHtml(d.filename)}</div>
+          </div>
+        </div>
+      </td>
+      <td>${renderStatusBadge(d.status, d.error_message)}</td>
+      <td><span class="badge badge-neutral">${(d.language||'fr').toUpperCase()}</span></td>
+      <td class="text-sm font-semibold">${d.chunks_count || 0}</td>
+      <td class="text-sm text-muted">${formatDateShort(d.created_at)}</td>
+      <td class="col-actions">
+        <button class="action-btn action-view" title="{{ t['knowledge']['js']['view'] }}" onclick="viewDoc('${d.id}')">
+          <i class="fas fa-eye"></i>
+        </button>
+        <button class="action-btn" title="Réindexer" style="color:var(--primary)" onclick="reindexDoc('${d.id}')">
+          <i class="fas fa-sync-alt"></i>
+        </button>
+        <button class="action-btn action-delete" title="{{ t['knowledge']['js']['delete'] }}" onclick="openDeleteModal('${d.id}','${escapeHtml(d.title||'{{ t["knowledge"]["js"]["this_doc"] }}')}')">
+          <i class="fas fa-trash"></i>
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  renderPagination(
+    document.getElementById('docs-pagination'),
+    data.total, page, PAGE_LIMIT,
+    p => loadDocuments(p)
+  );
+
+  // Auto-refresh if indexing is in progress
+  if (hasPending) {
+    pollTimer = setTimeout(() => loadDocuments(currentPage), 4000);
+  }
+}
+
+function viewDoc(id) { window.location.href = `/admin/knowledge/detail/${id}`; }
+
+async function reindexDoc(id) {
+  showToast('Lancement de la réindexation…', 'info');
+  const res = await apiJSON(`/knowledge/${id}/reindex`, { method: 'POST' });
+  if (res) {
+    showToast('Réindexation en cours', 'success');
+    loadDocuments(currentPage);
+  }
+}
+
+function openDeleteModal(id, name) {
+  pendingDeleteId = id;
+  document.getElementById('delete-doc-name').textContent = name;
+  document.getElementById('delete-modal').classList.remove('hidden');
+}
+function closeDeleteModal() {
+  document.getElementById('delete-modal').classList.add('hidden');
+  pendingDeleteId = null;
+}
+
+document.getElementById('confirm-delete-btn').addEventListener('click', async () => {
+  if (!pendingDeleteId) return;
+  const data = await apiJSON(`/knowledge/${pendingDeleteId}`, { method: 'DELETE' });
+  if (data !== null) {
+    showToast('{{ t["knowledge"]["js"]["deleted"] }}', 'success');
+    closeDeleteModal();
+    loadDocuments(currentPage);
+  }
+});
+
+const debouncedSearch = debounce(val => { searchQuery = val; loadDocuments(0); });
+document.getElementById('search-input').addEventListener('input', e => debouncedSearch(e.target.value.trim()));
+document.getElementById('lang-filter').addEventListener('change', e => { langFilter = e.target.value; loadDocuments(0); });
+document.getElementById('status-filter').addEventListener('change', e => { statusFilter = e.target.value; loadDocuments(0); });
+document.getElementById('delete-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeDeleteModal(); });
+
+loadDocuments();
+</script>
+
+{% endblock %}

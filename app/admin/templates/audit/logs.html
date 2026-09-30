@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}{{ t.audit.page_title }}{% endblock %}
+
+{% block page_title %}{{ t.audit.header_title }}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">/</span><span>{{ t.audit.breadcrumb_security }}</span>
+  <span class="sep">/</span><span>{{ t.audit.breadcrumb_audit }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">{{ t.audit.card_title }}</div>
+      <div class="card-subtitle" id="audit-count">{{ t.audit.loading }}</div>
+    </div>
+    <div class="search-bar">
+      <div class="search-input-wrap">
+        <i class="fas fa-search"></i>
+        <input type="text" id="search-input" placeholder="{{ t.audit.search_placeholder }}" autocomplete="off">
+      </div>
+      <select id="severity-filter" class="form-control" style="width:auto;min-width:130px">
+        <option value="">{{ t.audit.severity_all }}</option>
+        <option value="INFO">{{ t.audit.severity_info }}</option>
+        <option value="WARN">{{ t.audit.severity_warning }}</option>
+        <option value="CRITICAL">{{ t.audit.severity_critical }}</option>
+      </select>
+      <select id="period-filter" class="form-control" style="width:auto;min-width:110px">
+        <option value="7d">{{ t.audit.period_7d }}</option>
+        <option value="30d">{{ t.audit.period_30d }}</option>
+        <option value="90d">{{ t.audit.period_90d }}</option>
+        <option value="">{{ t.audit.period_all }}</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>{{ t.audit.th_admin }}</th>
+          <th>{{ t.audit.th_action }}</th>
+          <th>{{ t.audit.th_resource }}</th>
+          <th>{{ t.audit.th_severity }}</th>
+          <th>{{ t.audit.th_ip }}</th>
+          <th>{{ t.audit.th_date }}</th>
+        </tr>
+      </thead>
+      <tbody id="audit-tbody"></tbody>
+    </table>
+  </div>
+  <div id="audit-pagination"></div>
+</div>
+
+{% endblock %}
+{% block extra_js %}
+<script>
+let currentPage  = 0;
+const PAGE_LIMIT = 20;
+let searchQuery  = '';
+let severityFilter = '';
+let periodFilter = '7d';
+
+const actionIcons = {
+  LOGIN: 'fa-sign-in-alt', LOGOUT: 'fa-sign-out-alt',
+  CREATE: 'fa-plus', UPDATE: 'fa-pencil', DELETE: 'fa-trash',
+  UPLOAD: 'fa-upload', EXPORT: 'fa-download',
+  PASSWORD_CHANGE: 'fa-key', '2FA_SETUP': 'fa-shield-alt',
+};
+
+function severityBadge(s) {
+  const map = {
+    CRITICAL: 'badge-danger',
+    WARNING:  'badge-warning',
+    WARN:     'badge-warning',
+    INFO:     'badge-info',
+  };
+  return `<span class="badge ${map[s]||'badge-neutral'}">${s}</span>`;
+}
+
+async function loadAudit(page = 0) {
+  const tbody = document.getElementById('audit-tbody');
+  tbody.innerHTML = skeletonRows(6, 7);
+  currentPage = page;
+
+  const params = new URLSearchParams({ limit: PAGE_LIMIT, offset: page * PAGE_LIMIT });
+  if (searchQuery)    params.set('search', searchQuery);
+  if (severityFilter) params.set('severity', severityFilter);
+  if (periodFilter)   params.set('period', periodFilter);
+
+  const data = await apiJSON(`/audit?${params}`);
+  if (!data) return;
+
+  document.getElementById('audit-count').textContent =
+    `${data.total} {{ t.audit.js.entries }}`;
+
+  if (!data.logs || !data.logs.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">
+      <i class="fas fa-shield-alt"></i>
+      <p>{{ t.audit.js.no_logs }}</p>
+    </div></td></tr>`;
+    document.getElementById('audit-pagination').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = data.logs.map(l => {
+    const icon = actionIcons[l.action] || 'fa-circle';
+    return `<tr>
+      <td>
+        <div style="font-weight:600;font-size:.85rem">${escapeHtml(l.admin_email||'—')}</div>
+      </td>
+      <td>
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <i class="fas ${icon}" style="color:var(--text-muted);font-size:.8rem;width:1rem;text-align:center"></i>
+          <span style="font-size:.875rem;font-weight:500">${escapeHtml(l.action)}</span>
+        </div>
+      </td>
+      <td>
+        <div style="font-size:.8rem">
+          <span style="font-weight:600;color:var(--text-secondary)">${escapeHtml(l.resource_type||'—')}</span>
+          ${l.resource_id ? `<span class="text-muted"> · <code style="font-size:.75rem">${escapeHtml(String(l.resource_id).substring(0,12))}…</code></span>` : ''}
+        </div>
+      </td>
+      <td>${severityBadge(l.severity)}</td>
+      <td>
+        <code style="font-size:.75rem;background:var(--surface-3);padding:.15rem .35rem;border-radius:.25rem">${escapeHtml(l.ip_address||'—')}</code>
+      </td>
+      <td class="text-sm text-muted">${formatDate(l.created_at)}</td>
+    </tr>`;
+  }).join('');
+
+  renderPagination(
+    document.getElementById('audit-pagination'),
+    data.total, page, PAGE_LIMIT,
+    p => loadAudit(p)
+  );
+}
+
+const debouncedSearch = debounce(val => { searchQuery = val; loadAudit(0); });
+document.getElementById('search-input').addEventListener('input', e => debouncedSearch(e.target.value.trim()));
+document.getElementById('severity-filter').addEventListener('change', e => { severityFilter = e.target.value; loadAudit(0); });
+document.getElementById('period-filter').addEventListener('change', e => { periodFilter = e.target.value; loadAudit(0); });
+
+loadAudit();
+</script>
+{% endblock %}

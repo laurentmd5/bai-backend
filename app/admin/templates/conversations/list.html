@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}{{ t.conversations.page_title }}{% endblock %}
+
+{% block page_title %}{{ t.conversations.header_title }}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">/</span><span>{{ t.conversations.header_title }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">{{ t.conversations.card_title }}</div>
+      <div class="card-subtitle" id="conv-count">{{ t.conversations.loading }}</div>
+    </div>
+    <div class="search-bar">
+      <div class="search-input-wrap">
+        <i class="fas fa-search"></i>
+        <input type="text" id="search-input" placeholder="{{ t.conversations.search_placeholder }}" autocomplete="off">
+      </div>
+      <select id="channel-filter" class="form-control" style="width:auto;min-width:130px">
+        <option value="">{{ t.conversations.channel_all }}</option>
+        <option value="whatsapp">{{ t.conversations.channel_whatsapp }}</option>
+        <option value="web">{{ t.conversations.channel_web }}</option>
+        <option value="api">{{ t.conversations.channel_api }}</option>
+      </select>
+      <select id="period-filter" class="form-control" style="width:auto;min-width:110px">
+        <option value="">{{ t.conversations.period_all }}</option>
+        <option value="today">{{ t.conversations.period_today }}</option>
+        <option value="week">{{ t.conversations.period_week }}</option>
+        <option value="month">{{ t.conversations.period_month }}</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>{{ t.conversations.th_session }}</th>
+          <th>{{ t.conversations.th_user_message }}</th>
+          <th>{{ t.conversations.th_bot_response }}</th>
+          <th>{{ t.conversations.th_channel }}</th>
+          <th>{{ t.conversations.th_confidence }}</th>
+          <th>{{ t.conversations.th_date }}</th>
+          <th class="col-actions">{{ t.conversations.th_actions }}</th>
+        </tr>
+      </thead>
+      <tbody id="conv-tbody"></tbody>
+    </table>
+  </div>
+  <div id="conv-pagination"></div>
+</div>
+
+{% endblock %}
+{% block extra_js %}
+<script>
+let currentPage  = 0;
+const PAGE_LIMIT = 15;
+let searchQuery  = '';
+let channelFilter= '';
+let periodFilter = '';
+
+function confidenceBadge(score) {
+  const pct = Math.round((score||0)*100);
+  const cls = pct >= 70 ? 'badge-success' : pct >= 40 ? 'badge-warning' : 'badge-danger';
+  return `<span class="badge ${cls}">${pct}%</span>`;
+}
+
+async function loadConversations(page = 0) {
+  const tbody = document.getElementById('conv-tbody');
+  tbody.innerHTML = skeletonRows(7, 6);
+  currentPage = page;
+
+  const params = new URLSearchParams({ limit: PAGE_LIMIT, offset: page * PAGE_LIMIT });
+  if (searchQuery)   params.set('search', searchQuery);
+  if (channelFilter) params.set('channel', channelFilter);
+  if (periodFilter)  params.set('period', periodFilter);
+
+  const data = await apiJSON(`/conversations?${params}`);
+  if (!data) return;
+
+  document.getElementById('conv-count').textContent =
+    `${data.total} {{ t.conversations.js.conversations }}`;
+
+  if (!data.conversations || !data.conversations.length) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state">
+      <i class="fas fa-comments"></i>
+      <p>{{ t.conversations.js.no_conversations }}</p>
+    </div></td></tr>`;
+    document.getElementById('conv-pagination').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = data.conversations.map(c => {
+    const sessionShort = c.session_id ? c.session_id.substring(0,8)+'…' : '—';
+    const userMsg = escapeHtml((c.user_message||'').substring(0,60));
+    const botMsg  = escapeHtml((c.bot_response||'').substring(0,60));
+    const channelIcon = { whatsapp:'fa-whatsapp fab', web:'fa-globe fas', api:'fa-code fas' }[c.channel||'web'] || 'fa-comment fas';
+    return `<tr>
+      <td>
+        <code style="font-size:.78rem;background:var(--surface-3);padding:.2rem .4rem;border-radius:.25rem">${sessionShort}</code>
+      </td>
+      <td style="max-width:200px">
+        <div class="truncate text-sm" title="${escapeHtml(c.user_message||'')}">${userMsg}${(c.user_message||'').length>60?'…':''}</div>
+      </td>
+      <td style="max-width:200px">
+        <div class="truncate text-sm text-muted" title="${escapeHtml(c.bot_response||'')}">${botMsg}${(c.bot_response||'').length>60?'…':''}</div>
+      </td>
+      <td>
+        <span class="badge badge-neutral">
+          <i class="${channelIcon}" style="font-size:.65rem"></i>
+          ${escapeHtml(c.channel||'web')}
+        </span>
+      </td>
+      <td>${confidenceBadge(c.confidence)}</td>
+      <td class="text-sm text-muted">${formatDate(c.created_at)}</td>
+      <td class="col-actions">
+        <button class="action-btn action-view" title="{{ t.conversations.btn_view }}" onclick="window.location.href='/admin/conversations/detail/${c.id}'">
+          <i class="fas fa-eye"></i>
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  renderPagination(
+    document.getElementById('conv-pagination'),
+    data.total, page, PAGE_LIMIT,
+    p => loadConversations(p)
+  );
+}
+
+const debouncedSearch = debounce(val => { searchQuery = val; loadConversations(0); });
+document.getElementById('search-input').addEventListener('input', e => debouncedSearch(e.target.value.trim()));
+document.getElementById('channel-filter').addEventListener('change', e => { channelFilter = e.target.value; loadConversations(0); });
+document.getElementById('period-filter').addEventListener('change', e => { periodFilter = e.target.value; loadConversations(0); });
+
+loadConversations();
+</script>
+{% endblock %}

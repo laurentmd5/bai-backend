@@ -11,7 +11,6 @@ FROM python:3.13-slim-bookworm AS builder
 # Set build environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Install build dependencies
@@ -41,10 +40,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH" \
     APP_HOME=/app
 
-# Install runtime dependencies
+# Install runtime dependencies (including ffmpeg for pydub)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     curl \
+    ffmpeg \
+    dnsutils \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -66,6 +67,12 @@ RUN mkdir -p $APP_HOME/app \
 USER barrowai
 WORKDIR $APP_HOME
 
+# Pre-download the fastembed model into the Docker image cache
+# This bakes the ~2GB model into the image, ensuring 0s latency on startup
+# and completely eliminates race conditions during deployment scripts.
+# We do this BEFORE copying the application code to prevent Docker cache invalidation!
+RUN python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='intfloat/multilingual-e5-large')"
+
 # Copy application code
 COPY --chown=barrowai:barrowai . $APP_HOME
 
@@ -79,5 +86,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 # Expose port
 EXPOSE 8000
 
+# Default trusted proxies (local + docker bridge subnet)
+ENV FORWARDED_ALLOW_IPS="127.0.0.1,172.20.0.0/16"
+
 # Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--loop", "uvloop", "--http", "httptools", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --loop uvloop --http httptools --proxy-headers --forwarded-allow-ips \"${FORWARDED_ALLOW_IPS}\""]

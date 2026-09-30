@@ -1,5 +1,5 @@
-"""
-Admin Service for BARROW.AI.
+﻿"""
+Admin Service for Company Bot.
 Handles admin authentication, 2FA, user management, and audit logging.
 """
 
@@ -8,6 +8,8 @@ import secrets
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timedelta
 from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -50,7 +52,7 @@ logger = get_logger(__name__)
 
 class AdminService:
     """
-    Admin service for BARROW.AI dashboard.
+    Admin service for Company Bot dashboard.
     
     Handles:
     - Admin authentication (login, logout, refresh)
@@ -367,18 +369,19 @@ class AdminService:
         # Record successful login
         await self._admin_repo.record_login_success(admin.id, ip_address)
         
+        # Create admin session in Redis (before tokens so session_id is in JWT)
+        session_id = generate_secure_token(16)
+
         # Create JWT tokens
         user_data = {
             "sub": str(admin.id),
             "email": admin.email,
             "role": admin.role,
             "full_name": admin.full_name,
+            "session_id": session_id,
         }
-        
+
         tokens = create_token_pair(user_data)
-        
-        # Create admin session in Redis
-        session_id = generate_secure_token(16)
         csrf_token = generate_csrf_token(session_id)
         
         await cache_service.hset(
@@ -407,10 +410,12 @@ class AdminService:
         )
         
         logger.info("admin_logged_in", email=admin.email, admin_id=str(admin.id))
-        
+
         return {
             "requires_2fa": False,
             "session_token": None,
+            # expires_in must be at the top level (AdminLoginResponse field)
+            "expires_in": tokens["expires_in"],
             "user": {
                 "id": str(admin.id),
                 "email": admin.email,
@@ -418,6 +423,9 @@ class AdminService:
                 "role": admin.role,
                 "is_active": admin.is_active,
                 "two_factor_enabled": admin.two_factor_enabled,
+                "last_login": admin.last_login,
+                "created_at": admin.created_at,
+                "updated_at": admin.updated_at,
                 "permissions": self.ROLE_PERMISSIONS.get(admin.role, []),
             },
             "tokens": {
@@ -1101,6 +1109,36 @@ class AdminService:
     # =========================================================================
     # AUDIT LOGS
     # =========================================================================
+    
+    @staticmethod
+    async def log_audit_static(
+        session: AsyncSession,
+        admin_id: UUID,
+        action: str,
+        details: Optional[Dict[str, Any]] = None,
+        ip_address: Optional[str] = None
+    ) -> None:
+        from app.repositories.admin_repository import AuditLogRepository
+        from app.models.domain.admin import AuditAction
+        
+        # Determine Enum value safely
+        action_enum = None
+        for item in AuditAction:
+            if item.value == action:
+                action_enum = item
+                break
+                
+        if not action_enum:
+            return
+            
+        audit_repo = AuditLogRepository(session)
+        await audit_repo.create_log(
+            admin_id=admin_id,
+            action=action_enum,
+            details=details,
+            ip_address=ip_address
+        )
+
     
     async def get_audit_logs(
         self,

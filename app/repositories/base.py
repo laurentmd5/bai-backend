@@ -1,5 +1,5 @@
-"""
-Base repository abstract class for BARROW.AI.
+﻿"""
+Base repository abstract class for Company Bot.
 Implements repository pattern with common CRUD operations.
 Provides SOLID principles compliance with dependency inversion.
 """

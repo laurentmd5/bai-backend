@@ -17,9 +17,12 @@ async def seed():
         repo = AdminRepository(session)
         existing = await repo.get_by_email("admin@pace.gm")
         if not existing:
+            import os
+            import secrets
+            seed_password = os.getenv("ADMIN_INITIAL_PASSWORD") or secrets.token_urlsafe(20)
             await repo.create_admin(
                 email="admin@pace.gm",
-                password="Admin123!",
+                password=seed_password,
                 full_name="PACE Administrator",
                 role=AdminRole.SUPERADMIN,
             )

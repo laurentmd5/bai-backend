@@ -1,5 +1,5 @@
-"""
-Knowledge document response models for BARROW.AI.
+﻿"""
+Knowledge document response models for Company Bot.
 """
 
 from typing import Optional, List
@@ -57,8 +57,8 @@ class KnowledgeDocumentResponse(BaseModel):
             "example": {
                 "id": "550e8400-e29b-41d4-a716-446655440000",
                 "filename": "Digital.docx",
-                "title": "NPP Digital Transformation Plan",
-                "description": "Official NPP document outlining ICT achievements",
+                "title": "NETSYSTEME Service Catalogue 2026",
+                "description": "Official NETSYSTEME document outlining IT services",
                 "content_hash": "sha256:abc123...",
                 "source_type": "upload",
                 "language": "en",
@@ -153,3 +153,4 @@ class KnowledgeDocumentIndexStatusResponse(BaseModel):
     started_at: Optional[datetime] = Field(None, description="Indexing start time")
     
     completed_at: Optional[datetime] = Field(None, description="Indexing completion")
+

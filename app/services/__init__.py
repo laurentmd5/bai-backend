@@ -1,5 +1,5 @@
-"""
-Services package for BARROW.AI.
+﻿"""
+Services package for Company Bot.
 Exports all service classes and factory functions.
 """
 

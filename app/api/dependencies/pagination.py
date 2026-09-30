@@ -1,5 +1,5 @@
-"""
-Pagination dependency for BARROW.AI endpoints.
+﻿"""
+Pagination dependency for Company Bot endpoints.
 """
 
 from typing import Optional

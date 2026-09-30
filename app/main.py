@@ -1,5 +1,5 @@
 """
-Main FastAPI application for BARROW.AI.
+Main FastAPI application for Company Bot.
 Entry point for the entire backend service.
 """
 
@@ -9,6 +9,7 @@ from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
 
@@ -20,16 +21,22 @@ from app.services.llm.factory import get_llm_provider, get_embedding_provider, c
 from app.services.vector.qdrant_store import QdrantVectorStore
 from app.services.rag_service import RAGService
 from app.services.cache.redis_cache import cache_service
+from app.services.queue.rabbitmq_service import rabbitmq_service
+import app.core.metrics
+from app.core.metrics import metrics_endpoint
 
 from app.middleware import (
     RateLimitMiddleware,
     SecurityHeadersMiddleware,
     RequestLoggerMiddleware,
     ErrorHandlerMiddleware,
+    MetricsMiddleware,
+    CSRFMiddleware,
     setup_cors,
 )
 
 from app.api.v1.router import api_router
+from app.admin.router import router as admin_router
 
 logger = get_logger(__name__)
 
@@ -80,6 +87,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         llm = get_llm_provider()
         embedding = get_embedding_provider()
         
+        # Eagerly load the model into memory ONLY when the FastAPI server boots up,
+        # not during CLI scripts, to avoid race conditions.
+        if hasattr(embedding, "_get_model"):
+            embedding._get_model()
+            
         llm_available = await llm.is_available()
         embedding_available = await embedding.is_available()
         
@@ -97,35 +109,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await rag_service.initialize()
     logger.info("rag_service_initialized")
     
-    # Initialize chat and WhatsApp services (shared)
-    from app.services.chat_service import ChatService
-    from app.services.whatsapp_service import WhatsAppService
-    from app.repositories.session_repository import SessionRepository
-    from app.repositories.conversation_repository import ConversationRepository
-    
-    # ⭐ CREATE A SINGLE SHARED SESSION for all repositories
-    shared_session = await async_session_factory()
-    
-    # Create repositories with the SAME shared session
-    session_repo = SessionRepository(shared_session)
-    conversation_repo = ConversationRepository(shared_session)
-    
-    # SINGLE ChatService instance
-    chat_service = ChatService(session_repo, conversation_repo)
-    chat_service._rag_service = rag_service
-    logger.info("chat_service_initialized")
-    
-    # WhatsApp uses the SAME ChatService
-    whatsapp_service = WhatsAppService(chat_service, session_repo)
-    logger.info("whatsapp_service_initialized")
-    
+    # Initialize RabbitMQ
+    try:
+        await rabbitmq_service.connect()
+        logger.info("rabbitmq_service_initialized")
+    except Exception as e:
+        logger.error("rabbitmq_initialization_failed", error=str(e))
+        # Don't raise here if we want the backend to start without RabbitMQ
+        
     logger.info("application_startup_complete")
     
     # Store singletons in app state for access by endpoints
-    app.state.chat_service = chat_service
-    app.state.whatsapp_service = whatsapp_service
     app.state.rag_service = rag_service
-    app.state.db_session = shared_session
     
     yield
     
@@ -134,13 +129,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # =========================================================================
     logger.info("shutting_down_application")
     
-    # Close shared database session
-    try:
-        await app.state.db_session.close()
-        logger.info("shared_db_session_closed")
-    except Exception as e:
-        logger.error("shared_db_session_close_error", error=str(e))
-    
     # Close LLM providers
     try:
         await close_llm_providers()
@@ -148,6 +136,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.error("llm_shutdown_error", error=str(e))
     
+    # Close RabbitMQ
+    try:
+        await rabbitmq_service.close()
+        logger.info("rabbitmq_service_closed")
+    except Exception as e:
+        logger.error("rabbitmq_shutdown_error", error=str(e))
+        
     # Close Redis
     try:
         await close_redis()
@@ -175,7 +170,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
-        description="Official AI-powered campaign platform for President Adama Barrow and the NPP of The Gambia.",
+        description="AI-powered conversational assistant platform for companies.",
         docs_url=None if settings.ENVIRONMENT == "production" else "/docs",
         redoc_url=None if settings.ENVIRONMENT == "production" else "/redoc",
         openapi_url="/openapi.json" if settings.ENVIRONMENT != "production" else None,
@@ -185,14 +180,22 @@ def create_app() -> FastAPI:
     # Setup CORS
     setup_cors(app)
     
-    # Add middleware (order matters!)
+    # Add middleware (order matters - added in reverse execution order!)
     app.add_middleware(ErrorHandlerMiddleware)
+    app.add_middleware(CSRFMiddleware)  # CSRF protection for state-changing requests
     app.add_middleware(RequestLoggerMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(MetricsMiddleware)  # Collect HTTP metrics for Prometheus
     
     # Include API router
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+    
+    # Mount admin static files (CSS, JS)
+    app.mount("/admin/static", StaticFiles(directory="app/admin/static"), name="admin_static")
+    
+    # Include admin UI router
+    app.include_router(admin_router, prefix="/admin", tags=["Admin UI"])
     
     # Custom OpenAPI schema
     def custom_openapi():
@@ -202,7 +205,7 @@ def create_app() -> FastAPI:
         openapi_schema = get_openapi(
             title=settings.APP_NAME,
             version=settings.APP_VERSION,
-            description="BARROW.AI - Official campaign intelligence platform for President Adama Barrow and the NPP.",
+            description="Company Bot - AI-powered customer assistant platform.",
             routes=app.routes,
         )
         
@@ -290,10 +293,15 @@ def create_app() -> FastAPI:
         
         # Check Qdrant
         try:
-            qdrant = QdrantVectorStore()
-            await qdrant.initialize()
+            rag_srv = getattr(app.state, "rag_service", None)
+            if rag_srv and getattr(rag_srv, "_vector_store", None):
+                qdrant = rag_srv._vector_store
+            else:
+                qdrant = QdrantVectorStore()
+                await qdrant.initialize()
+                
             qdrant_available = await qdrant.is_available()
-            collection_info = await qdrant.get_collection_info()
+            collection_info = await qdrant.get_collection_info() if qdrant_available else {}
             health_status["services"]["qdrant"] = {
                 "status": "healthy" if qdrant_available else "unhealthy",
                 "points_count": collection_info.get("points_count", 0),
@@ -303,6 +311,7 @@ def create_app() -> FastAPI:
         except Exception as e:
             health_status["services"]["qdrant"] = {"status": "unhealthy", "error": str(e)}
             health_status["status"] = "degraded"
+
         
         # Check cache
         try:
@@ -341,11 +350,10 @@ def create_app() -> FastAPI:
     
     # Metrics endpoint (Prometheus)
     if settings.PROMETHEUS_ENABLED:
-        @app.get("/metrics", tags=["Health"])
-        async def metrics() -> JSONResponse:
-            """Prometheus metrics endpoint."""
-            from app.core.metrics import get_metrics
-            return JSONResponse(content=get_metrics())
+        @app.get("/metrics", tags=["Monitoring"])
+        async def metrics():
+            """Prometheus metrics endpoint for scraping."""
+            return metrics_endpoint()
     
     # Protected docs in production
     if settings.ENVIRONMENT == "production":
@@ -381,3 +389,4 @@ if __name__ == "__main__":
         loop="uvloop",
         reload=settings.DEBUG,
     )
+
