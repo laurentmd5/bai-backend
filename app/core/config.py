@@ -869,6 +869,10 @@ class Settings(BaseSettings):
         default=None,
         description="Target email for candidate applications notification"
     )
+    SALES_NOTIFICATION_EMAIL: Optional[str] = Field(
+        default=None,
+        description="Target email for sales leads and quote requests notification"
+    )
     
     @model_validator(mode='after')
     def validate_production_security(self) -> 'Settings':

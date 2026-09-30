@@ -29,6 +29,7 @@ from app.core.config import settings
 from app.core.company_config import company
 from app.core.logging import get_logger
 from app.services.recruitment.recruiter_agent import recruiter_agent
+from app.services.commercial.sales_agent import sales_agent
 from app.core.metrics import (
     llm_generation_duration_ms,
     record_chat_message,
@@ -728,6 +729,43 @@ class ChatService:
                     )
                     recruiter_res["timestamp"] = datetime.utcnow().isoformat()
                     return recruiter_res
+
+                # ===============================================================
+                # STEP 4.3: Commercial Sales Agent (Quote Requests & Leads)
+                # ===============================================================
+                sales_res = await sales_agent.process_prospect_message(
+                    session_id=actual_session_id,
+                    user_message=sanitized_message,
+                    channel=channel,
+                    client_name=caller_name,
+                )
+                if not sales_res:
+                    # Check if user expresses quote, pricing or purchasing intent
+                    is_quote, detected_cat = sales_agent.is_quote_or_sales_intent(sanitized_message)
+                    if is_quote:
+                        sales_res = await sales_agent.start_sales_qualification(
+                            session_id=actual_session_id,
+                            user_message=sanitized_message,
+                            channel=channel,
+                            client_name=caller_name,
+                            category=detected_cat,
+                        )
+
+                if sales_res:
+                    await session_repo.touch_session(session.id)
+                    await conv_repo.create_conversation(
+                        session_id=session.id,
+                        user_message=sanitized_message,
+                        bot_response=sales_res["message"],
+                        channel=channel,
+                        sources=[],
+                        confidence=1.0,
+                        cache_hit=False,
+                        llm_model="SalesAgent",
+                        fallback_triggered=False,
+                    )
+                    sales_res["timestamp"] = datetime.utcnow().isoformat()
+                    return sales_res
 
                 # ===============================================================
                 # STEP 4.5: Handle Keyword-Only Queries

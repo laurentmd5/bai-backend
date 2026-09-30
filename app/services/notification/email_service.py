@@ -290,5 +290,193 @@ Notification automatique générée par {app_name}.
             logger.error("recruitment_notification_unhandled_exception", error=str(exc))
             return False
 
+    def _build_sales_email_message(
+        self,
+        recipient_email: str,
+        full_name: str,
+        requirements_summary: str,
+        phone_number: Optional[str] = None,
+        email: Optional[str] = None,
+        company_name: Optional[str] = None,
+        location: Optional[str] = None,
+        service_category: Optional[str] = None,
+        channel: str = "web",
+        qualification_answers: Optional[Dict[str, Any]] = None,
+    ) -> MIMEMultipart:
+        """Construct multi-part MIME email for commercial lead / quote notification."""
+        app_name = settings.APP_NAME or "AI Sales Assistant"
+        company_label = settings.COMPANY_NAME or "NETSYSTEME"
+        sender_email = settings.SMTP_FROM or settings.SMTP_USER or f"noreply@{settings.SMTP_HOST}"
+
+        category_display = service_category or "Devis Général"
+        subject = f"[{app_name}] 🎯 Nouveau Lead / Devis : {full_name} — {category_display} ({channel.upper()})"
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = sender_email
+        msg["To"] = recipient_email
+        msg["Date"] = datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")
+
+        phone_display = phone_number or "Non renseigné"
+        email_display = email or "Non renseigné"
+        company_display = company_name or "Particulier / Non spécifié"
+        location_display = location or "Non précisée"
+        date_str = datetime.utcnow().strftime("%d/%m/%Y à %H:%M UTC")
+
+        # Plaintext version
+        text_body = f"""NOUVELLE DEMANDE DE DEVIS / PROSPECT
+========================================
+Entreprise / Destinataire : {company_label}
+Contact / Client          : {full_name}
+Société                   : {company_display}
+Téléphone                 : {phone_display}
+Email                     : {email_display}
+Localisation / Ville      : {location_display}
+Catégorie de Service      : {category_display}
+Canal                     : {channel.upper()}
+Date de réception         : {date_str}
+
+--- BESOIN EXPRIMÉ ---
+{requirements_summary}
+
+---
+Notification automatique générée par {app_name}.
+"""
+
+        # HTML version
+        html_body = f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>{html.escape(subject)}</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; color: #1e293b; background-color: #f1f5f9; margin: 0; padding: 24px;">
+    <div style="max-width: 650px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+        
+        <!-- Header -->
+        <div style="background: linear-gradient(135deg, #0f766e 0%, #0d9488 100%); padding: 24px 32px; color: #ffffff;">
+            <div style="display: inline-block; background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; text-transform: uppercase; margin-bottom: 8px;">
+                🎯 Opportunité Commerciale
+            </div>
+            <h2 style="margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.025em;">{html.escape(company_label)} — Nouveau Lead Devis</h2>
+            <p style="margin: 6px 0 0 0; font-size: 14px; opacity: 0.9;">Canal d'origine : <strong>{html.escape(channel.upper())}</strong> • Catégorie : <strong>{html.escape(category_display)}</strong></p>
+        </div>
+
+        <!-- Content -->
+        <div style="padding: 28px 32px;">
+            
+            <!-- Lead Summary Card -->
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-bottom: 24px;">
+                <h3 style="margin-top: 0; margin-bottom: 12px; font-size: 16px; color: #0f172a;">👤 Coordonnées du Prospect</h3>
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                    <tr>
+                        <td style="padding: 6px 0; color: #64748b; width: 150px;"><strong>Nom / Contact :</strong></td>
+                        <td style="padding: 6px 0; color: #0f172a; font-weight: 600;">{html.escape(full_name)}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 0; color: #64748b;"><strong>Entreprise :</strong></td>
+                        <td style="padding: 6px 0; color: #0f172a;">{html.escape(company_display)}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 0; color: #64748b;"><strong>Téléphone :</strong></td>
+                        <td style="padding: 6px 0; color: #0d9488; font-weight: 600;">
+                            {"<a href='tel:" + html.escape(phone_number) + "' style='color: #0d9488; text-decoration: none;'>" + html.escape(phone_number) + "</a>" if phone_number else "Non renseigné"}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 0; color: #64748b;"><strong>Email :</strong></td>
+                        <td style="padding: 6px 0; color: #0284c7;">
+                            {"<a href='mailto:" + html.escape(email) + "' style='color: #0284c7; text-decoration: none;'>" + html.escape(email) + "</a>" if email else "Non renseigné"}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 0; color: #64748b;"><strong>Ville / Site :</strong></td>
+                        <td style="padding: 6px 0; color: #0f172a;">{html.escape(location_display)}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 0; color: #64748b;"><strong>Date de demande :</strong></td>
+                        <td style="padding: 6px 0; color: #0f172a;">{html.escape(date_str)}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- Need / Requirements Card -->
+            <div style="background-color: #f0fdf4; border-left: 4px solid #10b981; border-radius: 4px; padding: 18px 20px; margin-bottom: 24px;">
+                <h3 style="margin-top: 0; margin-bottom: 8px; font-size: 15px; color: #065f46;">📝 Besoin Exprimé & Précisions</h3>
+                <div style="color: #166534; font-size: 14px; white-space: pre-wrap; line-height: 1.6;">
+                    {html.escape(requirements_summary)}
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 24px;">
+                <p style="margin: 0; font-size: 14px; color: #475569;">
+                    ⚡ <strong>Action recommandée :</strong> Prendre contact avec le prospect sous 24h ouvrées.
+                </p>
+            </div>
+
+        </div>
+
+        <!-- Footer -->
+        <div style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 32px; font-size: 12px; color: #64748b; text-align: center;">
+            Message automatique généré par <strong>{html.escape(app_name)}</strong> pour l'équipe commerciale de <strong>{html.escape(company_label)}</strong>.
+        </div>
+
+    </div>
+</body>
+</html>
+"""
+
+        msg.attach(MIMEText(text_body, "plain", "utf-8"))
+        msg.attach(MIMEText(html_body, "html", "utf-8"))
+        return msg
+
+    async def send_sales_lead_notification(
+        self,
+        full_name: str,
+        requirements_summary: str,
+        phone_number: Optional[str] = None,
+        email: Optional[str] = None,
+        company_name: Optional[str] = None,
+        location: Optional[str] = None,
+        service_category: Optional[str] = None,
+        channel: str = "web",
+        qualification_answers: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Send an asynchronous email notification to the commercial / sales team.
+        """
+        recipient_email = settings.SALES_NOTIFICATION_EMAIL or settings.COMPANY_CONTACT_EMAIL or settings.RECRUITER_NOTIFICATION_EMAIL
+        if not recipient_email or not recipient_email.strip():
+            logger.info("sales_lead_email_skipped_no_recipient_configured")
+            return False
+
+        if not self.user or not settings.SMTP_PASSWORD:
+            logger.info(
+                "sales_lead_email_skipped_smtp_not_configured",
+                recipient=recipient_email,
+                has_user=bool(self.user),
+                has_pwd=bool(settings.SMTP_PASSWORD),
+            )
+            return False
+
+        try:
+            msg = self._build_sales_email_message(
+                recipient_email=recipient_email.strip(),
+                full_name=full_name,
+                requirements_summary=requirements_summary,
+                phone_number=phone_number,
+                email=email,
+                company_name=company_name,
+                location=location,
+                service_category=service_category,
+                channel=channel,
+                qualification_answers=qualification_answers,
+            )
+            return await asyncio.to_thread(self._send_sync, msg, recipient_email.strip())
+        except Exception as exc:
+            logger.error("sales_lead_notification_unhandled_exception", error=str(exc))
+            return False
+
 
 email_service = EmailNotificationService()
+

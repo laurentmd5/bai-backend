@@ -21,6 +21,7 @@ from app.api.v1.endpoints.admin import (
     audit as admin_audit,
     health as admin_health,
     candidates as admin_candidates,
+    leads as admin_leads,
 )
 
 # Main API router
@@ -43,3 +44,5 @@ api_router.include_router(admin_knowledge.router, prefix="/admin", tags=["Admin 
 api_router.include_router(admin_users.router, prefix="/admin", tags=["Admin Users"])
 api_router.include_router(admin_audit.router, prefix="/admin", tags=["Admin Audit"])
 api_router.include_router(admin_candidates.router, prefix="/admin", tags=["Admin Candidates"])
+api_router.include_router(admin_leads.router, prefix="/admin", tags=["Admin Commercial Leads"])
+
