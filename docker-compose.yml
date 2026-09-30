@@ -202,6 +202,8 @@ services:
       - uploads_data:/app/uploads
       - logs_data:/app/logs
       - ./data:/app/data:ro
+    env_file:
+      - .env
     environment:
       # Application
       APP_NAME: ${APP_NAME:-BARROW.AI POC}
@@ -209,6 +211,13 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-production}
       DEBUG: ${DEBUG:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      
+      # Identité de l'entreprise
+      COMPANY_NAME: ${COMPANY_NAME:-NETSYSTEME Informatique}
+      COMPANY_CONTACT_EMAIL: ${COMPANY_CONTACT_EMAIL:-contact@netsys-info.com}
+      COMPANY_CONTACT_PHONE: ${COMPANY_CONTACT_PHONE:-+221 33 827 28 45}
+      COMPANY_WHATSAPP: ${COMPANY_WHATSAPP:-+221 77 846 16 55}
+      COMPANY_WEBSITE: ${COMPANY_WEBSITE:-https://netsys-info.com}
       
       # Database
       POSTGRES_USER: ${POSTGRES_USER:-barrowai}
@@ -239,7 +248,7 @@ services:
       QDRANT_SIMILARITY_THRESHOLD: ${QDRANT_SIMILARITY_THRESHOLD:-0.70}
       
       # LLM
-      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      LLM_PROVIDER: ${LLM_PROVIDER:-groq}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash-lite}
       GEMINI_TEMPERATURE: ${GEMINI_TEMPERATURE:-0.1}
@@ -247,6 +256,18 @@ services:
       GEMINI_TIMEOUT: ${GEMINI_TIMEOUT:-15}
       HF_TOKEN: ${HF_TOKEN}
       GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+      GROQ_WHISPER_MODEL: ${GROQ_WHISPER_MODEL:-whisper-large-v3-turbo}
+      
+      # SMTP & Notifications
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      RECRUITER_NOTIFICATION_EMAIL: ${RECRUITER_NOTIFICATION_EMAIL:-}
+      SALES_NOTIFICATION_EMAIL: ${SALES_NOTIFICATION_EMAIL:-}
       
       # TTS (Edge TTS & Oolel)
       TTS_RATE: ${TTS_RATE:-+25%}
@@ -328,6 +349,8 @@ services:
       - uploads_data:/app/uploads
       - logs_data:/app/logs
       - ./data:/app/data:ro
+    env_file:
+      - .env
     environment:
       # Application
       APP_NAME: ${APP_NAME:-BARROW.AI POC Worker}
@@ -335,6 +358,13 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-production}
       DEBUG: ${DEBUG:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      
+      # Identité de l'entreprise
+      COMPANY_NAME: ${COMPANY_NAME:-NETSYSTEME Informatique}
+      COMPANY_CONTACT_EMAIL: ${COMPANY_CONTACT_EMAIL:-contact@netsys-info.com}
+      COMPANY_CONTACT_PHONE: ${COMPANY_CONTACT_PHONE:-+221 33 827 28 45}
+      COMPANY_WHATSAPP: ${COMPANY_WHATSAPP:-+221 77 846 16 55}
+      COMPANY_WEBSITE: ${COMPANY_WEBSITE:-https://netsys-info.com}
       
       # Database
       POSTGRES_USER: ${POSTGRES_USER:-barrowai}
@@ -362,7 +392,7 @@ services:
       QDRANT_SIMILARITY_THRESHOLD: ${QDRANT_SIMILARITY_THRESHOLD:-0.70}
       
       # LLM
-      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      LLM_PROVIDER: ${LLM_PROVIDER:-groq}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash-lite}
       GEMINI_TEMPERATURE: ${GEMINI_TEMPERATURE:-0.1}
@@ -370,6 +400,18 @@ services:
       GEMINI_TIMEOUT: ${GEMINI_TIMEOUT:-15}
       HF_TOKEN: ${HF_TOKEN}
       GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+      GROQ_WHISPER_MODEL: ${GROQ_WHISPER_MODEL:-whisper-large-v3-turbo}
+      
+      # SMTP & Notifications
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      RECRUITER_NOTIFICATION_EMAIL: ${RECRUITER_NOTIFICATION_EMAIL:-}
+      SALES_NOTIFICATION_EMAIL: ${SALES_NOTIFICATION_EMAIL:-}
       
       # TTS (Edge TTS & Oolel)
       TTS_RATE: ${TTS_RATE:-+25%}
