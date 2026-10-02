@@ -79,3 +79,44 @@ async def test_groq_provider_fallback_when_model_returns_404():
     # The provider switched model to the working one
     assert provider.model == "openai/gpt-oss-20b"
     assert provider.client.chat.completions.create.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_groq_provider_rate_limit_429_trips_circuit_breaker_immediately():
+    """Verify that HTTP 429 immediately raises LLMRateLimitException and opens circuit breaker."""
+    from app.core.exceptions import LLMRateLimitException
+    import groq
+
+    provider = GroqProvider()
+    provider.client = MagicMock()
+
+    # Simulate HTTP 429 RateLimitError with a 30s Retry-After
+    rate_limit_err = groq.RateLimitError(
+        message="Rate limit reached for model `openai/gpt-oss-20b` in organization `org_xxx` on tokens per minute (TPM).",
+        response=MagicMock(headers={"retry-after": "30"}),
+        body={"error": {"message": "Rate limit exceeded", "type": "tokens"}}
+    )
+    provider.client.chat.completions.create = AsyncMock(side_effect=rate_limit_err)
+
+    # 1. First call: must raise LLMRateLimitException immediately (no retry loop on alternative models)
+    with pytest.raises(LLMRateLimitException) as exc_info:
+        await provider.generate_with_retry(
+            prompt="Quel est votre devis pour caméras ?",
+            language="fr",
+            max_retries=2
+        )
+
+    assert "429" in str(exc_info.value) or "rate limit" in str(exc_info.value).lower()
+    # Called exactly once: did not attempt retries on 429
+    assert provider.client.chat.completions.create.await_count == 1
+    # Circuit breaker is tripped
+    assert provider.is_rate_limited() is True
+    assert await provider.is_available() is False
+
+    # 2. Second call while circuit breaker is open: should fail instantly (0 network calls)
+    with pytest.raises(LLMRateLimitException) as exc_info2:
+        await provider.generate(prompt="Autre question", language="fr")
+
+    assert "cooldown active" in str(exc_info2.value).lower()
+    # Call count still 1: network was completely bypassed
+    assert provider.client.chat.completions.create.await_count == 1

@@ -178,6 +178,19 @@ class LLMUnavailableException(LLMException):
         )
 
 
+class LLMRateLimitException(LLMException):
+    """Raised when LLM API rate limit or quota is exceeded (HTTP 429)."""
+    
+    def __init__(self, message: str = "LLM API rate limit exceeded", retry_after: Optional[float] = None):
+        super().__init__(
+            message=message,
+            code=ErrorCode.LLM_QUOTA_EXCEEDED,
+            status_code=429,
+            details={"retry_after": retry_after}
+        )
+        self.retry_after = retry_after
+
+
 class LowConfidenceException(BotException):
     """Raised when RAG confidence is below threshold."""
     

@@ -542,6 +542,16 @@ class Settings(BaseSettings):
         default="openai/gpt-oss-20b",
         description="Groq model for fast fallback"
     )
+
+    GROQ_TIMEOUT: float = Field(
+        default=7.0,
+        description="Timeout in seconds for Groq API calls (avoids long hanging requests)"
+    )
+
+    GROQ_COOLDOWN_SECONDS: float = Field(
+        default=60.0,
+        description="Cooldown in seconds when Groq returns 429 Rate Limit before retrying"
+    )
     
     LLAMA_CLOUD_API_KEY: Optional[SecretStr] = Field(
 

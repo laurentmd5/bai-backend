@@ -71,7 +71,7 @@ class QueryTransformer:
                 response = await self._groq_provider.generate_with_retry(
                     prompt=prompt,
                     system_prompt=system_prompt,
-                    max_retries=2
+                    max_retries=1
                 )
                 
                 result = self._parse_json_response(response)

@@ -47,6 +47,7 @@ from app.core.exceptions import (
     LowConfidenceException,
     LLMTimeoutException,
     LLMUnavailableException,
+    LLMRateLimitException,
     LLMException,
     HostileContentException,
     PromptInjectionException,
@@ -1009,39 +1010,52 @@ class ChatService:
                 llm_start = datetime.utcnow()
                 
                 # -----------------------------------------------------------------
-                # PRIMARY: Groq
+                # PRIMARY: Groq (with fast-bypass if in cooldown)
                 # -----------------------------------------------------------------
-                try:
-                    generated_response = await self._groq_provider.generate_with_retry(
-                        prompt=prompt_with_instructions,
-                        context=context,
-                        language=response_lang,
-                        history=history_text,
-                        max_retries=settings.GROQ_MAX_RETRIES,
-                    )
-                    
-                    llm_latency_ms = (datetime.utcnow() - llm_start).total_seconds() * 1000
-                    response_metadata["llm_latency_ms"] = llm_latency_ms
-                    response_metadata["llm_provider_used"] = "groq"
-                    
-                    # Record LLM metrics
-                    llm_generation_duration_ms.labels(provider="groq").observe(llm_latency_ms)
-                    
-                    if generated_response:
-                        prompt_toks = int(len(prompt_with_instructions.split()) * 1.5 + len(context.split()) * 1.5)
-                        comp_toks = int(len(generated_response.split()) * 1.5)
-                        record_llm_tokens(
-                            provider="groq",
-                            model=self._groq_provider.get_model_name(),
-                            prompt_tokens=prompt_toks,
-                            completion_tokens=comp_toks
+                if self._groq_provider and await self._groq_provider.is_available():
+                    try:
+                        generated_response = await self._groq_provider.generate_with_retry(
+                            prompt=prompt_with_instructions,
+                            context=context,
+                            language=response_lang,
+                            history=history_text,
+                            max_retries=settings.GROQ_MAX_RETRIES,
                         )
                         
-                except (LLMException, LLMTimeoutException, LLMUnavailableException) as groq_e:
-                    logger.warning(
-                        "groq_generation_failed_falling_back_to_gemini",
-                        error=str(groq_e),
-                        session_id=actual_session_id,
+                        llm_latency_ms = (datetime.utcnow() - llm_start).total_seconds() * 1000
+                        response_metadata["llm_latency_ms"] = llm_latency_ms
+                        response_metadata["llm_provider_used"] = "groq"
+                        
+                        # Record LLM metrics
+                        llm_generation_duration_ms.labels(provider="groq").observe(llm_latency_ms)
+                        
+                        if generated_response:
+                            prompt_toks = int(len(prompt_with_instructions.split()) * 1.5 + len(context.split()) * 1.5)
+                            comp_toks = int(len(generated_response.split()) * 1.5)
+                            record_llm_tokens(
+                                provider="groq",
+                                model=self._groq_provider.get_model_name(),
+                                prompt_tokens=prompt_toks,
+                                completion_tokens=comp_toks
+                            )
+                            
+                    except LLMRateLimitException as rle:
+                        logger.warning(
+                            "groq_rate_limited_immediate_fallback_to_gemini",
+                            error=str(rle),
+                            session_id=actual_session_id,
+                            retry_after=getattr(rle, "retry_after", None)
+                        )
+                    except (LLMException, LLMTimeoutException, LLMUnavailableException) as groq_e:
+                        logger.warning(
+                            "groq_generation_failed_falling_back_to_gemini",
+                            error=str(groq_e),
+                            session_id=actual_session_id,
+                        )
+                else:
+                    logger.info(
+                        "groq_unavailable_or_rate_limited_bypassing_immediately_to_gemini",
+                        session_id=actual_session_id
                     )
                 
                 # -----------------------------------------------------------------

@@ -1,4 +1,5 @@
 import asyncio
+import time
 from typing import Optional
 
 from groq import AsyncGroq
@@ -11,6 +12,7 @@ from app.core.exceptions import (
     LLMException,
     LLMTimeoutException,
     LLMUnavailableException,
+    LLMRateLimitException,
 )
 from app.services.llm.prompts import get_system_prompt
 
@@ -20,7 +22,7 @@ logger = get_logger(__name__)
 class GroqProvider(ILLMProvider):
     """
     Groq LLM Provider implementation for Company Bot.
-    Used as the ultra-fast fallback provider.
+    Used as the ultra-fast primary provider with instant circuit-breaker on 429.
     """
 
     DEFAULT_MODEL = "openai/gpt-oss-20b"
@@ -30,15 +32,35 @@ class GroqProvider(ILLMProvider):
     def __init__(self):
         self.api_key = settings.GROQ_API_KEY.get_secret_value() if settings.GROQ_API_KEY else None
         self.model = getattr(settings, "GROQ_MODEL", self.DEFAULT_MODEL)
+        self._rate_limited_until: float = 0.0
+        self._cooldown_seconds: float = getattr(settings, "GROQ_COOLDOWN_SECONDS", 60.0)
+        self._timeout: float = getattr(settings, "GROQ_TIMEOUT", 7.0)
+
         if not self.api_key:
             logger.warning("Groq API key is not configured. GroqProvider will fail on generation.")
             self.client = None
         else:
+            # CRITICAL: max_retries=0 prevents the Groq SDK from sleeping 5-15s internally on 429
+            # Timeout is 7.0s so stalled requests fail fast rather than hanging 15s+
             self.client = AsyncGroq(
                 api_key=self.api_key,
-                max_retries=2,
-                timeout=15.0
+                max_retries=0,
+                timeout=self._timeout
             )
+
+    def is_rate_limited(self) -> bool:
+        """Check if Groq is currently in a 429 Rate Limit cooldown window."""
+        return time.time() < self._rate_limited_until
+
+    def mark_rate_limited(self, retry_after: Optional[float] = None) -> None:
+        """Open the circuit breaker for Groq to immediately bypass it on future calls."""
+        cooldown = retry_after if (retry_after and retry_after > 0) else self._cooldown_seconds
+        self._rate_limited_until = time.time() + cooldown
+        logger.warning(
+            "groq_circuit_breaker_opened_due_to_429",
+            cooldown_seconds=cooldown,
+            resume_at_epoch=self._rate_limited_until,
+        )
 
 
     async def generate(
@@ -56,6 +78,15 @@ class GroqProvider(ILLMProvider):
         """
         if not self.client:
             raise LLMUnavailableException("Groq API key not configured")
+
+        # Fast circuit-breaker check: if Groq is in 429 cooldown, do not make network calls!
+        if self.is_rate_limited():
+            remaining = max(1, int(self._rate_limited_until - time.time()))
+            logger.warning("groq_fast_bypassed_active_cooldown", remaining_seconds=remaining)
+            raise LLMRateLimitException(
+                f"Groq API rate limit cooldown active ({remaining}s remaining)",
+                retry_after=remaining
+            )
 
         try:
             messages = []
@@ -101,6 +132,10 @@ class GroqProvider(ILLMProvider):
                         )
                         self.model = candidate_model
                     break
+                except groq.RateLimitError as e:
+                    # Rate limit is account-wide: trying other models is useless and adds latency.
+                    # Raise immediately so the outer handler trips the circuit breaker.
+                    raise e
                 except groq.APIError as e:
                     if getattr(e, "status_code", None) == 404 or "model_not_found" in str(e).lower():
                         logger.warning(
@@ -127,17 +162,27 @@ class GroqProvider(ILLMProvider):
                 
             return content.strip()
 
+        except groq.RateLimitError as e:
+            # 429 Too Many Requests: trip the circuit breaker and raise LLMRateLimitException immediately
+            retry_after = None
+            try:
+                if hasattr(e, "response") and e.response and hasattr(e.response, "headers"):
+                    raw_ra = e.response.headers.get("retry-after")
+                    if raw_ra:
+                        retry_after = float(raw_ra)
+            except Exception:
+                pass
+            self.mark_rate_limited(retry_after)
+            logger.error("groq_rate_limit_error_triggered_circuit_breaker", error=str(e), retry_after=retry_after)
+            raise LLMRateLimitException("Groq API rate limit exceeded (HTTP 429)", retry_after=retry_after) from e
         except groq.APITimeoutError as e:
             logger.error("groq_timeout_error", error=str(e))
-            raise LLMTimeoutException("Groq API request timed out") from e
-        except groq.RateLimitError as e:
-            logger.error("groq_rate_limit_error", error=str(e))
-            raise LLMException("Groq API rate limit exceeded") from e
+            raise LLMTimeoutException(int(self._timeout)) from e
         except groq.APIConnectionError as e:
             logger.error("groq_connection_error", error=str(e))
             raise LLMUnavailableException(f"Groq API connection error: {e}") from e
         except groq.APIError as e:
-            logger.error("groq_api_error", error=str(e), status_code=e.status_code)
+            logger.error("groq_api_error", error=str(e), status_code=getattr(e, "status_code", None))
             raise LLMException(f"Groq API error: {e.message}") from e
         except Exception as e:
             logger.error("groq_unexpected_error", error=str(e))
@@ -153,6 +198,7 @@ class GroqProvider(ILLMProvider):
     ) -> str:
         """
         Generate a response with automatic retry on failure.
+        CRITICAL: Never retries on 429 RateLimit to allow immediate 0s fallback to Gemini.
         """
         last_error = None
         history = kwargs.pop("history", "")
@@ -170,6 +216,9 @@ class GroqProvider(ILLMProvider):
                     language=language,
                     **kwargs
                 )
+            except LLMRateLimitException:
+                # NEVER retry on 429: quota is exhausted, retrying only adds latency. Fail immediately!
+                raise
             except (LLMTimeoutException, LLMUnavailableException) as e:
                 logger.warning("groq_generation_retry", attempt=attempt+1, error=str(e))
                 last_error = e
@@ -180,8 +229,12 @@ class GroqProvider(ILLMProvider):
         raise last_error or LLMException("Failed after retries")
 
     async def is_available(self) -> bool:
-        """Check if Groq API is available."""
-        return self.client is not None
+        """Check if Groq API is available and not in active rate-limit cooldown."""
+        if not self.client:
+            return False
+        if self.is_rate_limited():
+            return False
+        return True
 
     def get_model_name(self) -> str:
         """Get current model name."""
