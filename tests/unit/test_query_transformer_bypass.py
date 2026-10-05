@@ -3,6 +3,7 @@ Unit tests for QueryTransformer fast-path bypass optimization.
 Verifies that self-contained queries skip the 1.5s-2.5s LLM rewriting step.
 """
 
+import uuid
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.chat_service import ChatService
@@ -57,7 +58,8 @@ async def test_process_message_bypasses_query_transformer_on_rich_query():
     """Verify process_message executes RAG directly without calling QueryTransformer."""
     mock_session_repo = MagicMock()
     mock_session = MagicMock()
-    mock_session.id = "11111111-1111-1111-1111-111111111111"
+    mock_session.id = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    mock_session.opted_out = False
     mock_session_repo.get_or_create_session = AsyncMock(return_value=mock_session)
     mock_session_repo.touch_session = AsyncMock()
 
@@ -83,6 +85,13 @@ async def test_process_message_bypasses_query_transformer_on_rich_query():
         llm_provider=mock_llm,
     )
 
+    mock_groq = MagicMock()
+    mock_groq.is_available = AsyncMock(return_value=True)
+    mock_groq.generate_with_retry = AsyncMock(return_value="Nous proposons des solutions de cloud managé.")
+    mock_groq.get_model_name = MagicMock(return_value="llama-3.3-70b-versatile")
+    chat_service._groq_provider = mock_groq
+    chat_service._record_conversation = AsyncMock()
+
     # Spy on QueryTransformer
     chat_service._query_transformer.transform_query = AsyncMock()
 
@@ -95,7 +104,7 @@ async def test_process_message_bypasses_query_transformer_on_rich_query():
              patch("app.repositories.conversation_repository.ConversationRepository", return_value=mock_conv_repo):
 
             response = await chat_service.process_message(
-                message="Quels sont les services d'infrastructure cloud proposés ?",
+                message="Comment fonctionne votre solution de sauvegarde cloud ?",
                 channel="web"
             )
 
@@ -111,7 +120,8 @@ async def test_process_message_calls_query_transformer_when_anaphoric():
     """Verify process_message calls QueryTransformer when query depends on conversation history."""
     mock_session_repo = MagicMock()
     mock_session = MagicMock()
-    mock_session.id = "22222222-2222-2222-2222-222222222222"
+    mock_session.id = uuid.UUID("22222222-2222-2222-2222-222222222222")
+    mock_session.opted_out = False
     mock_session_repo.get_or_create_session = AsyncMock(return_value=mock_session)
     mock_session_repo.touch_session = AsyncMock()
 
@@ -141,6 +151,13 @@ async def test_process_message_calls_query_transformer_when_anaphoric():
         rag_service=mock_rag,
         llm_provider=mock_llm,
     )
+
+    mock_groq = MagicMock()
+    mock_groq.is_available = AsyncMock(return_value=True)
+    mock_groq.generate_with_retry = AsyncMock(return_value="Le prix dépend de la configuration choisie.")
+    mock_groq.get_model_name = MagicMock(return_value="llama-3.3-70b-versatile")
+    chat_service._groq_provider = mock_groq
+    chat_service._record_conversation = AsyncMock()
 
     chat_service._query_transformer.transform_query = AsyncMock(return_value={
         "detected_language": "fr",

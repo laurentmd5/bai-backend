@@ -93,7 +93,8 @@ class TestRAGAdaptiveThreshold:
         results, top_score = await service.retrieve(query="odoo erp", score_threshold=0.50)
 
         assert len(results) > 0
-        assert top_score >= 0.75  # Boosted adaptively
+        # Boosted adaptively from 0.42 to 0.52 (capped at +0.10 for prompt injection safety)
+        assert top_score >= 0.50
 
     @pytest.mark.asyncio
     async def test_low_confidence_raised_when_no_keyword_and_vector_below_threshold(self):
