@@ -6,7 +6,7 @@ import os
 import sys
 import asyncio
 from pathlib import Path
-from typing import AsyncGenerator, Generator, Optional, List, Dict
+from typing import AsyncGenerator, Generator, Optional, List, Dict, Any
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -130,6 +130,16 @@ class MockCacheService:
             del self._cache[key]
             return True
         return False
+
+    async def get_rag_response(self, question: str, session_id: str = "global") -> Optional[Dict[str, Any]]:
+        key = f"rag:response:{session_id}:{question}"
+        val = self._cache.get(key)
+        return val if isinstance(val, dict) else None
+
+    async def set_rag_response(self, question: str, response: Dict[str, Any], session_id: str = "global", ttl: Optional[int] = None) -> bool:
+        key = f"rag:response:{session_id}:{question}"
+        self._cache[key] = response
+        return True
 
 # Replace cache service with mock
 import app.services.cache.redis_cache

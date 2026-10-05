@@ -115,26 +115,37 @@ class RabbitMQService:
         )
         logger.info("rabbitmq_message_published", queue=settings.RABBITMQ_WEBHOOK_QUEUE)
 
-    async def consume_webhook_events(self, callback: Callable[[dict, bytes, str | None], Awaitable[Any]]):
+    async def consume_webhook_events(
+        self,
+        callback: Callable[[dict, bytes, str | None], Awaitable[Any]],
+        concurrency: int = 5,
+    ):
         """
-        Consume messages from the queue and pass them to the callback.
+        Consume messages from the queue and pass them to the callback concurrently.
         Enforces retry with exponential backoff and dead-letter routing to DLQ.
+        
+        Args:
+            callback: Async function to process (payload, raw_body, signature)
+            concurrency: Max concurrent messages processed simultaneously (default: 5)
         """
         if not self._channel or self._channel.is_closed:
             await self.connect()
 
         queue = await self._setup_queues()
-        await self._channel.set_qos(prefetch_count=10)
+        await self._channel.set_qos(prefetch_count=max(concurrency * 2, 10))
+        semaphore = asyncio.Semaphore(concurrency)
+        active_tasks: set[asyncio.Task] = set()
 
         logger.info(
             "rabbitmq_started_consuming",
             queue=settings.RABBITMQ_WEBHOOK_QUEUE,
             dlq=settings.RABBITMQ_WEBHOOK_DLQ,
             max_retries=settings.RABBITMQ_MAX_RETRIES,
+            concurrency=concurrency,
         )
 
-        async with queue.iterator() as queue_iter:
-            async for message in queue_iter:
+        async def _handle_single_message(message: aio_pika.IncomingMessage):
+            async with semaphore:
                 retry_count = int(message.headers.get("x-retry-count", 0)) if message.headers else 0
                 try:
                     data = json.loads(message.body.decode("utf-8"))
@@ -198,6 +209,16 @@ class RabbitMQService:
                             error=str(e),
                         )
                         await message.reject(requeue=False)
+
+        try:
+            async with queue.iterator() as queue_iter:
+                async for message in queue_iter:
+                    task = asyncio.create_task(_handle_single_message(message))
+                    active_tasks.add(task)
+                    task.add_done_callback(active_tasks.discard)
+        finally:
+            if active_tasks:
+                await asyncio.gather(*active_tasks, return_exceptions=True)
 
 
 rabbitmq_service = RabbitMQService()

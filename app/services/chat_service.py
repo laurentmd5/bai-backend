@@ -261,6 +261,65 @@ class ChatService:
                 "ChatService not properly initialized. "
                 "rag_service is missing."
             )
+
+    async def _record_conversation(
+        self,
+        session_id: uuid.UUID,
+        user_message: str,
+        bot_response: str,
+        channel: str,
+        sources: Optional[List[Dict[str, Any]]] = None,
+        confidence: Optional[float] = None,
+        latency_ms: Optional[int] = None,
+        cache_hit: bool = False,
+        llm_model: Optional[str] = None,
+        llm_tokens_used: Optional[int] = None,
+        fallback_triggered: bool = False,
+        validation_failed: bool = False,
+    ) -> None:
+        """
+        Record a conversation turn and update session last-active timestamp
+        using a short, isolated database transaction (decoupled from RAG/LLM).
+        """
+        try:
+            from app.core.database import get_session_context
+            from app.repositories.session_repository import SessionRepository
+            from app.repositories.conversation_repository import ConversationRepository
+
+            async with get_session_context() as db_session:
+                session_repo = SessionRepository(db_session)
+                conv_repo = ConversationRepository(db_session)
+                await session_repo.touch_session(session_id)
+                await conv_repo.create_conversation(
+                    session_id=session_id,
+                    user_message=user_message,
+                    bot_response=bot_response,
+                    channel=channel,
+                    sources=sources,
+                    confidence=confidence,
+                    latency_ms=latency_ms,
+                    cache_hit=cache_hit,
+                    llm_model=llm_model,
+                    llm_tokens_used=llm_tokens_used,
+                    fallback_triggered=fallback_triggered,
+                    validation_failed=validation_failed,
+                )
+        except Exception as e:
+            logger.error("failed_to_record_conversation", error=str(e), session_id=str(session_id))
+
+    async def _update_opt_status(self, session_id: uuid.UUID, opted_out: bool) -> None:
+        """Update session opt-out / opt-in status in a short isolated transaction."""
+        try:
+            from app.core.database import get_session_context
+            from app.repositories.session_repository import SessionRepository
+            async with get_session_context() as db_session:
+                session_repo = SessionRepository(db_session)
+                if opted_out:
+                    await session_repo.opt_out_session(session_id)
+                else:
+                    await session_repo.opt_in_session(session_id)
+        except Exception as e:
+            logger.error("failed_to_update_opt_status", error=str(e), session_id=str(session_id))
     
     def _detect_intent(self, message: str) -> Tuple[Optional[str], Optional[str]]:
         """
@@ -622,34 +681,30 @@ class ChatService:
             from app.repositories.session_repository import SessionRepository
             from app.repositories.conversation_repository import ConversationRepository
 
-            # Create a new database session for this request only.
-            # This prevents the "connection closed" error that occurs when a shared
-            # session is used concurrently by multiple async requests.
+            session_uuid = None
+            if session_id:
+                try:
+                    session_uuid = uuid.UUID(session_id)
+                except ValueError:
+                    pass
+
+            external_id = None
+            if metadata:
+                external_id = metadata.get("phone_number") or metadata.get("cookie_id")
+
+            logger.info(
+                "attempting_session_retrieval", 
+                passed_session_id=str(session_uuid) if session_uuid else None, 
+                passed_external_id=external_id, 
+                channel=channel
+            )
+
+            # Isolated short DB transaction to retrieve/create session and load recent history
+            history_text = ""
             async with get_session_context() as db_session:
-                # Create fresh repositories for this request
                 session_repo = SessionRepository(db_session)
                 conv_repo = ConversationRepository(db_session)
 
-                session_uuid = None
-                if session_id:
-                    try:
-                        session_uuid = uuid.UUID(session_id)
-                    except ValueError:
-                        pass
-                
-                external_id = None
-                if metadata:
-                    external_id = metadata.get("phone_number") or metadata.get("cookie_id")
-                
-                # NOUVEAU LOG POUR GARANTIR LE DEBUG
-                logger.info(
-                    "attempting_session_retrieval", 
-                    passed_session_id=str(session_uuid) if session_uuid else None, 
-                    passed_external_id=external_id, 
-                    channel=channel
-                )
-                
-                # Get or create session using the fresh repositories
                 session = await session_repo.get_or_create_session(
                     session_id=session_uuid,
                     channel=channel,
@@ -658,219 +713,12 @@ class ChatService:
                     user_agent=user_agent,
                     ip_address=ip_address,
                 )
-                
+                actual_session_uuid = session.id
                 actual_session_id = str(session.id)
-                response_metadata["session_id"] = actual_session_id
-                
-                # Normalize user input for low-literacy users
-                if self._input_validator:
-                    sanitized_message = await self._input_validator.normalize_user_input(
-                        sanitized_message, language
-                    )
-                    logger.debug("input_normalized", original=message[:50], normalized=sanitized_message[:50])
-                
-                # Check WhatsApp opt-out
-                if channel == "whatsapp" and session.opted_out:
-                    logger.info("whatsapp_user_opted_out", session_id=actual_session_id)
-                    return {
-                        "message": self.STOP_RESPONSE.get(language, self.STOP_RESPONSE["en"]),
-                        "session_id": actual_session_id,
-                        "sources": [],
-                        "confidence": None,
-                        "cache_hit": False,
-                        "fallback_triggered": True,
-                        "opted_out": True,
-                        "timestamp": datetime.utcnow().isoformat(),
-                    }
-                
-                # ===============================================================
-                # STEP 4: Detect Special Intents
-                # ===============================================================
-                intent, matched_keyword = self._detect_intent(sanitized_message)
-                
-                if intent:
-                    response_metadata["intent_detected"] = intent
-                    
-                    # Handle STOP intent (WhatsApp opt-out)
-                    if intent == "stop" and channel == "whatsapp":
-                        await session_repo.opt_out_session(session.id)
-                        logger.info("user_opted_out", session_id=actual_session_id)
-                    
-                    # Handle START intent (WhatsApp opt-in)
-                    if intent == "start" and channel == "whatsapp":
-                        await session_repo.opt_in_session(session.id)
-                        logger.info("user_opted_in", session_id=actual_session_id)
-                    
-                    intent_response = self._get_intent_response(intent, language, matched_keyword)
-                    
-                    if intent_response:
-                        # Update session activity
-                        await session_repo.touch_session(session.id)
-                        
-                        # Store conversation
-                        await conv_repo.create_conversation(
-                            session_id=session.id,
-                            user_message=sanitized_message,
-                            bot_response=intent_response,
-                            channel=channel,
-                            confidence=1.0,
-                            cache_hit=True,
-                            fallback_triggered=False,
-                        )
-                        
-                        return {
-                            "message": intent_response,
-                            "session_id": actual_session_id,
-                            "sources": [],
-                            "confidence": 1.0,
-                            "cache_hit": True,
-                            "fallback_triggered": False,
-                            "intent": intent,
-                            "timestamp": datetime.utcnow().isoformat(),
-                        }
-                
-                # ===============================================================
-                # STEP 4.2: Recruiter Agent Screening Interview
-                # ===============================================================
-                caller_name = None
-                if metadata and isinstance(metadata, dict):
-                    caller_name = metadata.get("contact_name") or metadata.get("user_name") or metadata.get("name")
+                is_opted_out = bool(session.opted_out)
 
-                recruiter_res = await recruiter_agent.process_candidate_message(
-                    session_id=actual_session_id,
-                    user_message=sanitized_message,
-                    channel=channel,
-                    candidate_name=caller_name
-                )
-                if not recruiter_res:
-                    # Check if candidate expresses job/stage intent via text
-                    is_recruitment, detected_role = recruiter_agent.is_recruitment_intent(sanitized_message)
-                    if is_recruitment:
-                        recruiter_res = await recruiter_agent.start_text_interview(
-                            session_id=actual_session_id,
-                            role=detected_role,
-                            user_message=sanitized_message,
-                            channel=channel,
-                            candidate_name=caller_name
-                        )
-
-                if recruiter_res:
-                    await session_repo.touch_session(session.id)
-                    await conv_repo.create_conversation(
-                        session_id=session.id,
-                        user_message=sanitized_message,
-                        bot_response=recruiter_res["message"],
-                        channel=channel,
-                        sources=[],
-                        confidence=1.0,
-                        cache_hit=False,
-                        llm_model="RecruiterAgent",
-                        fallback_triggered=False,
-                    )
-                    recruiter_res["timestamp"] = datetime.utcnow().isoformat()
-                    return recruiter_res
-
-                # ===============================================================
-                # STEP 4.3: Commercial Sales Agent (Quote Requests & Leads)
-                # ===============================================================
-                sales_res = await sales_agent.process_prospect_message(
-                    session_id=actual_session_id,
-                    user_message=sanitized_message,
-                    channel=channel,
-                    client_name=caller_name,
-                )
-                if not sales_res:
-                    # Check if user expresses quote, pricing or purchasing intent
-                    is_quote, detected_cat = sales_agent.is_quote_or_sales_intent(sanitized_message)
-                    if is_quote:
-                        sales_res = await sales_agent.start_sales_qualification(
-                            session_id=actual_session_id,
-                            user_message=sanitized_message,
-                            channel=channel,
-                            client_name=caller_name,
-                            category=detected_cat,
-                        )
-
-                if sales_res:
-                    await session_repo.touch_session(session.id)
-                    await conv_repo.create_conversation(
-                        session_id=session.id,
-                        user_message=sanitized_message,
-                        bot_response=sales_res["message"],
-                        channel=channel,
-                        sources=[],
-                        confidence=1.0,
-                        cache_hit=False,
-                        llm_model="SalesAgent",
-                        fallback_triggered=False,
-                    )
-                    sales_res["timestamp"] = datetime.utcnow().isoformat()
-                    return sales_res
-
-                # ===============================================================
-                # STEP 4.5: Handle Keyword-Only Queries
-                # ===============================================================
-                keyword_response = await self._handle_keyword_query(
-                    sanitized_message, language, actual_session_id
-                )
-
-                if keyword_response:
-                    # Store conversation
-                    await conv_repo.create_conversation(
-                        session_id=session.id,
-                        user_message=sanitized_message,
-                        bot_response=keyword_response["message"],
-                        channel=channel,
-                        sources=[],
-                        confidence=0.95,
-                        cache_hit=False,
-                        llm_model=self._groq_provider.get_model_name() if self._groq_provider else None,
-                        fallback_triggered=False,
-                    )
-                    return keyword_response
-                
-                # ===============================================================
-                # STEP 5: Check Cache
-                # ===============================================================
-                cache_key = self._get_cache_key(sanitized_message, language, actual_session_id)
-                cached_response = await cache_service.get_rag_response(sanitized_message, actual_session_id)
-                
-                if cached_response:
-                    logger.debug("cache_hit", session_id=actual_session_id, cache_key=cache_key[:16])
-                    response_metadata["cache_hit"] = True
-                    
-                    # Update session
-                    await session_repo.touch_session(session.id)
-                    
-                    # Store conversation
-                    await conv_repo.create_conversation(
-                        session_id=session.id,
-                        user_message=sanitized_message,
-                        bot_response=cached_response["message"],
-                        channel=channel,
-                        sources=cached_response.get("sources", []),
-                        confidence=cached_response.get("confidence"),
-                        cache_hit=True,
-                        fallback_triggered=False,
-                    )
-                    
-                    cached_response["session_id"] = actual_session_id
-                    cached_response["cache_hit"] = True
-                    cached_response["timestamp"] = datetime.utcnow().isoformat()
-                    
-                    total_latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
-                    record_chat_message(channel=channel, language=language, cache_hit=True)
-                    record_chat_latency(channel=channel, latency_ms=total_latency_ms)
-                    
-                    return cached_response
-                
-                # ===============================================================
-                # STEP 5.5: Query Transformation & HyDE (Intelligence Layer)
-                # ===============================================================
-                # Fetch conversation history early for context using the current request's conv_repo
-                history_text = ""
                 try:
-                    recent_convs = await conv_repo.get_recent_by_session(session.id, limit=6)
+                    recent_convs = await conv_repo.get_recent_by_session(actual_session_uuid, limit=6)
                     if recent_convs:
                         history_lines = []
                         for conv in recent_convs:
@@ -879,358 +727,553 @@ class ChatService:
                         history_text = "\n".join(history_lines)
                 except Exception as e:
                     logger.error("failed_to_fetch_history", error=str(e))
-                
-                # Check if we can safely bypass the heavy LLM QueryTransformer
-                bypass_transformer = self._should_bypass_query_transformation(
-                    sanitized_message, has_history=bool(history_text)
+
+            response_metadata["session_id"] = actual_session_id
+
+            # Normalize user input for low-literacy users
+            if self._input_validator:
+                sanitized_message = await self._input_validator.normalize_user_input(
+                    sanitized_message, language
+                )
+                logger.debug("input_normalized", original=message[:50], normalized=sanitized_message[:50])
+
+            # Check WhatsApp opt-out
+            if channel == "whatsapp" and is_opted_out:
+                logger.info("whatsapp_user_opted_out", session_id=actual_session_id)
+                return {
+                    "message": self.STOP_RESPONSE.get(language, self.STOP_RESPONSE["en"]),
+                    "session_id": actual_session_id,
+                    "sources": [],
+                    "confidence": None,
+                    "cache_hit": False,
+                    "fallback_triggered": True,
+                    "opted_out": True,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+
+            # ===============================================================
+            # STEP 4: Detect Special Intents
+            # ===============================================================
+            intent, matched_keyword = self._detect_intent(sanitized_message)
+
+            if intent:
+                response_metadata["intent_detected"] = intent
+
+                # Handle STOP intent (WhatsApp opt-out)
+                if intent == "stop" and channel == "whatsapp":
+                    await self._update_opt_status(actual_session_uuid, opted_out=True)
+                    logger.info("user_opted_out", session_id=actual_session_id)
+
+                # Handle START intent (WhatsApp opt-in)
+                if intent == "start" and channel == "whatsapp":
+                    await self._update_opt_status(actual_session_uuid, opted_out=False)
+                    logger.info("user_opted_in", session_id=actual_session_id)
+
+                intent_response = self._get_intent_response(intent, language, matched_keyword)
+
+                if intent_response:
+                    await self._record_conversation(
+                        session_id=actual_session_uuid,
+                        user_message=sanitized_message,
+                        bot_response=intent_response,
+                        channel=channel,
+                        confidence=1.0,
+                        cache_hit=True,
+                        fallback_triggered=False,
+                    )
+
+                    return {
+                        "message": intent_response,
+                        "session_id": actual_session_id,
+                        "sources": [],
+                        "confidence": 1.0,
+                        "cache_hit": True,
+                        "fallback_triggered": False,
+                        "intent": intent,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+
+            # ===============================================================
+            # STEP 4.2: Recruiter Agent Screening Interview
+            # ===============================================================
+            caller_name = None
+            if metadata and isinstance(metadata, dict):
+                caller_name = metadata.get("contact_name") or metadata.get("user_name") or metadata.get("name")
+
+            recruiter_res = await recruiter_agent.process_candidate_message(
+                session_id=actual_session_id,
+                user_message=sanitized_message,
+                channel=channel,
+                candidate_name=caller_name
+            )
+            if not recruiter_res:
+                is_recruitment, detected_role = recruiter_agent.is_recruitment_intent(sanitized_message)
+                if is_recruitment:
+                    recruiter_res = await recruiter_agent.start_text_interview(
+                        session_id=actual_session_id,
+                        role=detected_role,
+                        user_message=sanitized_message,
+                        channel=channel,
+                        candidate_name=caller_name
+                    )
+
+            if recruiter_res:
+                await self._record_conversation(
+                    session_id=actual_session_uuid,
+                    user_message=sanitized_message,
+                    bot_response=recruiter_res["message"],
+                    channel=channel,
+                    sources=[],
+                    confidence=1.0,
+                    cache_hit=False,
+                    llm_model="RecruiterAgent",
+                    fallback_triggered=False,
+                )
+                recruiter_res["timestamp"] = datetime.utcnow().isoformat()
+                return recruiter_res
+
+            # ===============================================================
+            # STEP 4.3: Commercial Sales Agent (Quote Requests & Leads)
+            # ===============================================================
+            sales_res = await sales_agent.process_prospect_message(
+                session_id=actual_session_id,
+                user_message=sanitized_message,
+                channel=channel,
+                client_name=caller_name,
+            )
+            if not sales_res:
+                is_quote, detected_cat = sales_agent.is_quote_or_sales_intent(sanitized_message)
+                if is_quote:
+                    sales_res = await sales_agent.start_sales_qualification(
+                        session_id=actual_session_id,
+                        user_message=sanitized_message,
+                        channel=channel,
+                        client_name=caller_name,
+                        category=detected_cat,
+                    )
+
+            if sales_res:
+                await self._record_conversation(
+                    session_id=actual_session_uuid,
+                    user_message=sanitized_message,
+                    bot_response=sales_res["message"],
+                    channel=channel,
+                    sources=[],
+                    confidence=1.0,
+                    cache_hit=False,
+                    llm_model="SalesAgent",
+                    fallback_triggered=False,
+                )
+                sales_res["timestamp"] = datetime.utcnow().isoformat()
+                return sales_res
+
+            # ===============================================================
+            # STEP 4.5: Handle Keyword-Only Queries
+            # ===============================================================
+            keyword_response = await self._handle_keyword_query(
+                sanitized_message, language, actual_session_id
+            )
+
+            if keyword_response:
+                await self._record_conversation(
+                    session_id=actual_session_uuid,
+                    user_message=sanitized_message,
+                    bot_response=keyword_response["message"],
+                    channel=channel,
+                    sources=[],
+                    confidence=0.95,
+                    cache_hit=False,
+                    llm_model=self._groq_provider.get_model_name() if self._groq_provider else None,
+                    fallback_triggered=False,
+                )
+                return keyword_response
+
+            # ===============================================================
+            # STEP 5: Check Cache (Session-specific first, then Global FAQ)
+            # ===============================================================
+            cache_key = self._get_cache_key(sanitized_message, language, actual_session_id)
+            cached_response = await cache_service.get_rag_response(sanitized_message, actual_session_id)
+
+            if not cached_response:
+                # Fallback to cross-session global FAQ cache for common questions
+                global_cache_key = f"global:{language}"
+                cached_response = await cache_service.get_rag_response(sanitized_message, global_cache_key)
+
+            if cached_response:
+                logger.debug("cache_hit", session_id=actual_session_id, cache_key=cache_key[:16])
+                response_metadata["cache_hit"] = True
+
+                await self._record_conversation(
+                    session_id=actual_session_uuid,
+                    user_message=sanitized_message,
+                    bot_response=cached_response["message"],
+                    channel=channel,
+                    sources=cached_response.get("sources", []),
+                    confidence=cached_response.get("confidence"),
+                    cache_hit=True,
+                    fallback_triggered=False,
                 )
 
-                if bypass_transformer:
-                    logger.debug("query_transformer_bypassed_fast_path", session_id=actual_session_id)
+                cached_response["session_id"] = actual_session_id
+                cached_response["cache_hit"] = True
+                cached_response["timestamp"] = datetime.utcnow().isoformat()
+
+                total_latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+                record_chat_message(channel=channel, language=language, cache_hit=True)
+                record_chat_latency(channel=channel, latency_ms=total_latency_ms)
+
+                return cached_response
+
+            # ===============================================================
+            # STEP 5.5: Query Transformation & HyDE (Intelligence Layer)
+            # ===============================================================
+            bypass_transformer = self._should_bypass_query_transformation(
+                sanitized_message, has_history=bool(history_text)
+            )
+
+            if bypass_transformer:
+                logger.debug("query_transformer_bypassed_fast_path", session_id=actual_session_id)
+                search_query = sanitized_message
+                transformer_result = {}
+            else:
+                transformer_result = await self._query_transformer.transform_query(sanitized_message, history=history_text)
+
+                if transformer_result.get("detected_language") and transformer_result.get("detected_language") != "unknown":
+                    language = transformer_result["detected_language"]
+                    response_metadata["language"] = language
+
+            if transformer_result.get("is_casual_conversation"):
+                logger.info("casual_conversation_detected", session_id=actual_session_id)
+                context = ""
+                sources = []
+                confidence = 1.0
+            else:
+                if not bypass_transformer:
                     search_query = sanitized_message
-                    transformer_result = {}
-                else:
-                    transformer_result = await self._query_transformer.transform_query(sanitized_message, history=history_text)
-                    
-                    # Update language based on the smart LLM detection (better than basic input_validator)
-                    if transformer_result.get("detected_language") and transformer_result.get("detected_language") != "unknown":
-                        language = transformer_result["detected_language"]
-                        response_metadata["language"] = language
-                
-                if transformer_result.get("is_casual_conversation"):
-                    logger.info("casual_conversation_detected", session_id=actual_session_id)
-                    # Bypass RAG entirely for greetings and chit-chat
-                    context = ""
-                    sources = []
-                    confidence = 1.0
-                else:
-                    if not bypass_transformer:
-                        # Construct the enhanced query (Optimized Search Query + Original)
-                        search_query = sanitized_message
-                        optimized = transformer_result.get("optimized_search_query", "")
-                        
-                        if optimized and optimized != sanitized_message:
-                            # We combine the user's original query and the optimized keywords
-                            # This gives Qdrant both lexical matches and translated semantic context.
-                            search_query = f"{sanitized_message}\n{optimized}".strip()
-                            logger.debug("using_optimized_search_query", optimized_length=len(search_query))
-                    
-                    # ===============================================================
-                    # STEP 6: RAG Retrieval
-                    # ===============================================================
-                    try:
-                        context, sources, confidence = await self._rag_service.retrieve_and_build_context(
-                            query=search_query,
-                            filters=None,
-                        )
-                        
-                        response_metadata["rag_confidence"] = confidence
-                        response_metadata["sources_count"] = len(sources)
-                    
-                    except LowConfidenceException as e:
-                        logger.info(
-                            "low_confidence_fallback",
-                            session_id=actual_session_id,
-                            score=e.details.get("score", 0),
-                            threshold=e.details.get("threshold", 0.7),
-                        )
-                        response_metadata["fallback_triggered"] = True
-                        
-                        fallback_message = self._get_fallback_message(language)
-                        
-                        # Update session
-                        await session_repo.touch_session(session.id)
-                        
-                        # Store conversation
-                        await conv_repo.create_conversation(
-                            session_id=session.id,
-                            user_message=sanitized_message,
-                            bot_response=fallback_message,
-                            channel=channel,
-                            confidence=e.details.get("score", 0.0),
-                            cache_hit=False,
-                            fallback_triggered=True,
-                        )
-                        
-                        return {
-                            "message": fallback_message,
-                            "session_id": actual_session_id,
-                            "sources": [],
-                            "confidence": e.details.get("score", 0.0),
-                            "cache_hit": False,
-                            "fallback_triggered": True,
-                            "timestamp": datetime.utcnow().isoformat(),
-                        }
-                
+                    optimized = transformer_result.get("optimized_search_query", "")
+
+                    if optimized and optimized != sanitized_message:
+                        search_query = f"{sanitized_message}\n{optimized}".strip()
+                        logger.debug("using_optimized_search_query", optimized_length=len(search_query))
+
                 # ===============================================================
-                # STEP 6.5: Relevance Filtering
+                # STEP 6: RAG Retrieval
                 # ===============================================================
-                # Check if sources are actually relevant to the question
-                if sources and not self._is_response_relevant(sources, sanitized_message, language):
+                try:
+                    context, sources, confidence = await self._rag_service.retrieve_and_build_context(
+                        query=search_query,
+                        filters=None,
+                    )
+
+                    response_metadata["rag_confidence"] = confidence
+                    response_metadata["sources_count"] = len(sources)
+
+                except LowConfidenceException as e:
                     logger.info(
-                        "irrelevant_sources_filtered",
+                        "low_confidence_fallback",
                         session_id=actual_session_id,
-                        sources_count=len(sources),
-                        query=sanitized_message[:100],
+                        score=e.details.get("score", 0),
+                        threshold=e.details.get("threshold", 0.7),
                     )
                     response_metadata["fallback_triggered"] = True
-                    response_metadata["irrelevant_sources"] = True
-                    
+
                     fallback_message = self._get_fallback_message(language)
-                    
-                    await session_repo.touch_session(session.id)
-                    
-                    await conv_repo.create_conversation(
-                        session_id=session.id,
+
+                    await self._record_conversation(
+                        session_id=actual_session_uuid,
                         user_message=sanitized_message,
                         bot_response=fallback_message,
                         channel=channel,
-                        confidence=confidence if confidence else 0.0,
+                        confidence=e.details.get("score", 0.0),
                         cache_hit=False,
                         fallback_triggered=True,
                     )
-                    
+
                     return {
                         "message": fallback_message,
                         "session_id": actual_session_id,
                         "sources": [],
-                        "confidence": confidence if confidence else 0.0,
-                        "cache_hit": False,
-                        "fallback_triggered": True,
-                        "irrelevant_sources": True,
-                        "timestamp": datetime.utcnow().isoformat(),
-                    }
-                
-                # ===============================================================
-                # STEP 7: LLM Generation (Groq primary, Gemini fallback)
-                # ===============================================================
-                response_lang = language
-                prompt_with_instructions = sanitized_message
-                generated_response = None
-                llm_start = datetime.utcnow()
-                
-                # -----------------------------------------------------------------
-                # PRIMARY: Groq (with fast-bypass if in cooldown)
-                # -----------------------------------------------------------------
-                if self._groq_provider and await self._groq_provider.is_available():
-                    try:
-                        generated_response = await self._groq_provider.generate_with_retry(
-                            prompt=prompt_with_instructions,
-                            context=context,
-                            language=response_lang,
-                            history=history_text,
-                            max_retries=settings.GROQ_MAX_RETRIES,
-                        )
-                        
-                        llm_latency_ms = (datetime.utcnow() - llm_start).total_seconds() * 1000
-                        response_metadata["llm_latency_ms"] = llm_latency_ms
-                        response_metadata["llm_provider_used"] = "groq"
-                        
-                        # Record LLM metrics
-                        llm_generation_duration_ms.labels(provider="groq").observe(llm_latency_ms)
-                        
-                        if generated_response:
-                            prompt_toks = int(len(prompt_with_instructions.split()) * 1.5 + len(context.split()) * 1.5)
-                            comp_toks = int(len(generated_response.split()) * 1.5)
-                            record_llm_tokens(
-                                provider="groq",
-                                model=self._groq_provider.get_model_name(),
-                                prompt_tokens=prompt_toks,
-                                completion_tokens=comp_toks
-                            )
-                            
-                    except LLMRateLimitException as rle:
-                        logger.warning(
-                            "groq_rate_limited_immediate_fallback_to_gemini",
-                            error=str(rle),
-                            session_id=actual_session_id,
-                            retry_after=getattr(rle, "retry_after", None)
-                        )
-                    except (LLMException, LLMTimeoutException, LLMUnavailableException) as groq_e:
-                        logger.warning(
-                            "groq_generation_failed_falling_back_to_gemini",
-                            error=str(groq_e),
-                            session_id=actual_session_id,
-                        )
-                else:
-                    logger.info(
-                        "groq_unavailable_or_rate_limited_bypassing_immediately_to_gemini",
-                        session_id=actual_session_id
-                    )
-                
-                # -----------------------------------------------------------------
-                # FALLBACK: Gemini
-                # -----------------------------------------------------------------
-                if not generated_response and self._llm_provider:
-                    try:
-                        gemini_start = datetime.utcnow()
-                        logger.info("using_gemini_as_fallback_for_llm_generation", session_id=actual_session_id)
-                        
-                        generated_response = await self._llm_provider.generate_with_retry(
-                            prompt=prompt_with_instructions,
-                            context=context,
-                            language=response_lang,
-                            history=history_text,
-                            max_retries=settings.GEMINI_MAX_RETRIES,
-                        )
-                        
-                        llm_latency_ms = (datetime.utcnow() - gemini_start).total_seconds() * 1000
-                        response_metadata["llm_latency_ms"] = llm_latency_ms
-                        response_metadata["llm_provider_used"] = "gemini"
-                        response_metadata["fallback_llm"] = "gemini"
-                        
-                        # Record LLM metrics
-                        llm_generation_duration_ms.labels(provider="gemini").observe(llm_latency_ms)
-                        
-                        if generated_response:
-                            prompt_toks = int(len(prompt_with_instructions.split()) * 1.5 + len(context.split()) * 1.5)
-                            comp_toks = int(len(generated_response.split()) * 1.5)
-                            record_llm_tokens(
-                                provider="gemini",
-                                model=self._llm_provider.get_model_name(),
-                                prompt_tokens=prompt_toks,
-                                completion_tokens=comp_toks
-                            )
-                            
-                    except Exception as gemini_e:
-                        logger.error(
-                            "gemini_fallback_generation_failed",
-                            error=str(gemini_e),
-                            session_id=actual_session_id,
-                        )
-                
-                # -----------------------------------------------------------------
-                # Both providers failed
-                # -----------------------------------------------------------------
-                if not generated_response:
-                    response_metadata["fallback_triggered"] = True
-                    
-                    fallback_message = self.TECHNICAL_ERROR_RESPONSE.get(language, self.TECHNICAL_ERROR_RESPONSE["fr"])
-                    
-                    await session_repo.touch_session(session.id)
-                    
-                    await conv_repo.create_conversation(
-                        session_id=session.id,
-                        user_message=sanitized_message,
-                        bot_response=fallback_message,
-                        channel=channel,
-                        confidence=confidence if confidence else 0.0,
-                        cache_hit=False,
-                        fallback_triggered=True,
-                        llm_model="none",
-                    )
-                    
-                    return {
-                        "message": fallback_message,
-                        "session_id": actual_session_id,
-                        "sources": sources,
-                        "confidence": confidence if confidence else 0.0,
+                        "confidence": e.details.get("score", 0.0),
                         "cache_hit": False,
                         "fallback_triggered": True,
                         "timestamp": datetime.utcnow().isoformat(),
                     }
-                
-                # ===============================================================
-                # STEP 8: Output Validation
-                # ===============================================================
-                is_valid, final_response, output_meta = self._output_validator.validate_response(
-                    response=generated_response,
-                    sources=sources,
-                    channel=channel,
-                    strict_mode=False,  # Attempt to fix issues rather than reject
-                )
-                
-                response_metadata["output_validation"] = output_meta
-                
-                if not is_valid:
-                    logger.warning(
-                        "output_validation_failed",
-                        session_id=actual_session_id,
-                        fixes=output_meta.get("fixes_applied", []),
-                    )
-                    response_metadata["fallback_triggered"] = True
-                
-                # ===============================================================
-                # STEP 9: Cache and Persist
-                # ===============================================================
-                
-                # Cache the response if it's a valid answer
-                is_fallback = response_metadata.get("fallback_triggered", False)
-                is_no_info = (
-                    final_response.startswith("I do not have") or 
-                    final_response.startswith("Je ne dispose pas") or
-                    "I do not have this specific information" in final_response
-                )
-                
-                if not is_fallback and not is_no_info:
-                    response_to_cache = {
-                        "message": final_response,
-                        "sources": sources,
-                        "confidence": confidence if confidence else 0.0,
-                    }
-                    await cache_service.set_rag_response(
-                        question=sanitized_message,
-                        response=response_to_cache,
-                        session_id=actual_session_id,
-                        ttl=settings.CACHE_RAG_TTL_SECONDS,
-                    )
-                
-                # Update session
-                await session_repo.touch_session(session.id)
-                
-                # Calculate total latency
-                total_latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
-                
-                # Determine which model was used
-                model_used = self._groq_provider.get_model_name()
-                if response_metadata.get("llm_provider_used") == "gemini":
-                    model_used = self._llm_provider.get_model_name()
-                
-                # Store conversation
-                await conv_repo.create_conversation(
-                    session_id=session.id,
-                    user_message=sanitized_message,
-                    bot_response=final_response,
-                    channel=channel,
-                    sources=sources,
-                    confidence=confidence if confidence else 0.0,
-                    latency_ms=int(total_latency_ms),
-                    cache_hit=False,
-                    llm_model=model_used,
-                    fallback_triggered=response_metadata.get("fallback_triggered", False),
-                )
-                
-                # ===============================================================
-                # STEP 10: Return Response
-                # ===============================================================
-                record_chat_message(channel=channel, language=language, cache_hit=False)
-                record_chat_latency(channel=channel, latency_ms=total_latency_ms)
-                if response_metadata.get("fallback_triggered", False):
-                    record_rag_fallback()
-                
+
+            # ===============================================================
+            # STEP 6.5: Relevance Filtering
+            # ===============================================================
+            if sources and not self._is_response_relevant(sources, sanitized_message, language):
                 logger.info(
-                    "message_processed",
+                    "irrelevant_sources_filtered",
                     session_id=actual_session_id,
+                    sources_count=len(sources),
+                    query=sanitized_message[:100],
+                )
+                response_metadata["fallback_triggered"] = True
+                response_metadata["irrelevant_sources"] = True
+
+                fallback_message = self._get_fallback_message(language)
+
+                await self._record_conversation(
+                    session_id=actual_session_uuid,
+                    user_message=sanitized_message,
+                    bot_response=fallback_message,
                     channel=channel,
                     confidence=confidence if confidence else 0.0,
-                    latency_ms=total_latency_ms,
                     cache_hit=False,
-                    llm_provider=response_metadata.get("llm_provider_used", "groq"),
+                    fallback_triggered=True,
                 )
-                
+
                 return {
-                    "message": final_response,
+                    "message": fallback_message,
                     "session_id": actual_session_id,
-                    "conversation_id": None,
+                    "sources": [],
+                    "confidence": confidence if confidence else 0.0,
+                    "cache_hit": False,
+                    "fallback_triggered": True,
+                    "irrelevant_sources": True,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+
+            # ===============================================================
+            # STEP 7: LLM Generation (Groq primary, Gemini fallback)
+            # ===============================================================
+            response_lang = language
+            prompt_with_instructions = sanitized_message
+
+            # If message is from WhatsApp voice audio note, instruct LLM to provide concise spoken phrasing
+            if metadata and metadata.get("is_voice"):
+                voice_instruction = (
+                    "\n\n[INSTRUCTION SPÉCIALE AUDIO]: L'utilisateur a posé sa question par message vocal WhatsApp. "
+                    "Génère une réponse courte (2 à 3 phrases claires maximum), directe, fluide et naturelle à l'oral "
+                    "pour la synthèse vocale, sans puces ni mise en forme markdown complexe."
+                )
+                prompt_with_instructions = f"{sanitized_message}{voice_instruction}"
+
+            generated_response = None
+            llm_start = datetime.utcnow()
+
+            # -----------------------------------------------------------------
+            # PRIMARY: Groq (with fast-bypass if in cooldown)
+            # -----------------------------------------------------------------
+            if self._groq_provider and await self._groq_provider.is_available():
+                try:
+                    generated_response = await self._groq_provider.generate_with_retry(
+                        prompt=prompt_with_instructions,
+                        context=context,
+                        language=response_lang,
+                        history=history_text,
+                        max_retries=settings.GROQ_MAX_RETRIES,
+                    )
+
+                    llm_latency_ms = (datetime.utcnow() - llm_start).total_seconds() * 1000
+                    response_metadata["llm_latency_ms"] = llm_latency_ms
+                    response_metadata["llm_provider_used"] = "groq"
+
+                    llm_generation_duration_ms.labels(provider="groq").observe(llm_latency_ms)
+
+                    if generated_response:
+                        prompt_toks = int(len(prompt_with_instructions.split()) * 1.5 + len(context.split()) * 1.5)
+                        comp_toks = int(len(generated_response.split()) * 1.5)
+                        record_llm_tokens(
+                            provider="groq",
+                            model=self._groq_provider.get_model_name(),
+                            prompt_tokens=prompt_toks,
+                            completion_tokens=comp_toks
+                        )
+
+                except LLMRateLimitException as rle:
+                    logger.warning(
+                        "groq_rate_limited_immediate_fallback_to_gemini",
+                        error=str(rle),
+                        session_id=actual_session_id,
+                        retry_after=getattr(rle, "retry_after", None)
+                    )
+                except (LLMException, LLMTimeoutException, LLMUnavailableException) as groq_e:
+                    logger.warning(
+                        "groq_generation_failed_falling_back_to_gemini",
+                        error=str(groq_e),
+                        session_id=actual_session_id,
+                    )
+            else:
+                logger.info(
+                    "groq_unavailable_or_rate_limited_bypassing_immediately_to_gemini",
+                    session_id=actual_session_id
+                )
+
+            # -----------------------------------------------------------------
+            # FALLBACK: Gemini
+            # -----------------------------------------------------------------
+            if not generated_response and self._llm_provider:
+                try:
+                    gemini_start = datetime.utcnow()
+                    logger.info("using_gemini_as_fallback_for_llm_generation", session_id=actual_session_id)
+
+                    generated_response = await self._llm_provider.generate_with_retry(
+                        prompt=prompt_with_instructions,
+                        context=context,
+                        language=response_lang,
+                        history=history_text,
+                        max_retries=settings.GEMINI_MAX_RETRIES,
+                    )
+
+                    llm_latency_ms = (datetime.utcnow() - gemini_start).total_seconds() * 1000
+                    response_metadata["llm_latency_ms"] = llm_latency_ms
+                    response_metadata["llm_provider_used"] = "gemini"
+                    response_metadata["fallback_llm"] = "gemini"
+
+                    llm_generation_duration_ms.labels(provider="gemini").observe(llm_latency_ms)
+
+                    if generated_response:
+                        prompt_toks = int(len(prompt_with_instructions.split()) * 1.5 + len(context.split()) * 1.5)
+                        comp_toks = int(len(generated_response.split()) * 1.5)
+                        record_llm_tokens(
+                            provider="gemini",
+                            model=self._llm_provider.get_model_name(),
+                            prompt_tokens=prompt_toks,
+                            completion_tokens=comp_toks
+                        )
+
+                except Exception as gemini_e:
+                    logger.error(
+                        "gemini_fallback_generation_failed",
+                        error=str(gemini_e),
+                        session_id=actual_session_id,
+                    )
+
+            # -----------------------------------------------------------------
+            # Both providers failed
+            # -----------------------------------------------------------------
+            if not generated_response:
+                response_metadata["fallback_triggered"] = True
+
+                fallback_message = self.TECHNICAL_ERROR_RESPONSE.get(language, self.TECHNICAL_ERROR_RESPONSE["fr"])
+
+                await self._record_conversation(
+                    session_id=actual_session_uuid,
+                    user_message=sanitized_message,
+                    bot_response=fallback_message,
+                    channel=channel,
+                    confidence=confidence if confidence else 0.0,
+                    cache_hit=False,
+                    fallback_triggered=True,
+                    llm_model="none",
+                )
+
+                return {
+                    "message": fallback_message,
+                    "session_id": actual_session_id,
                     "sources": sources,
                     "confidence": confidence if confidence else 0.0,
                     "cache_hit": False,
-                    "fallback_triggered": response_metadata.get("fallback_triggered", False),
-                    "latency_ms": int(total_latency_ms),
-                    "model_used": model_used,
-                    "llm_provider": response_metadata.get("llm_provider_used", "groq"),
+                    "fallback_triggered": True,
                     "timestamp": datetime.utcnow().isoformat(),
                 }
+
+            # ===============================================================
+            # STEP 8: Output Validation
+            # ===============================================================
+            is_valid, final_response, output_meta = self._output_validator.validate_response(
+                response=generated_response,
+                sources=sources,
+                channel=channel,
+                strict_mode=False,
+            )
+
+            response_metadata["output_validation"] = output_meta
+
+            if not is_valid:
+                logger.warning(
+                    "output_validation_failed",
+                    session_id=actual_session_id,
+                    fixes=output_meta.get("fixes_applied", []),
+                )
+                response_metadata["fallback_triggered"] = True
+
+            # ===============================================================
+            # STEP 9: Cache and Persist
+            # ===============================================================
+            is_fallback = response_metadata.get("fallback_triggered", False)
+            is_no_info = (
+                final_response.startswith("I do not have") or 
+                final_response.startswith("Je ne dispose pas") or
+                "I do not have this specific information" in final_response
+            )
+
+            if not is_fallback and not is_no_info:
+                response_to_cache = {
+                    "message": final_response,
+                    "sources": sources,
+                    "confidence": confidence if confidence else 0.0,
+                }
+                # 1. Session-level cache
+                await cache_service.set_rag_response(
+                    question=sanitized_message,
+                    response=response_to_cache,
+                    session_id=actual_session_id,
+                    ttl=settings.CACHE_RAG_TTL_SECONDS,
+                )
+                # 2. Global FAQ cache if query was self-contained (no dialogue dependency)
+                if bypass_transformer or not history_text:
+                    global_cache_key = f"global:{language}"
+                    await cache_service.set_rag_response(
+                        question=sanitized_message,
+                        response=response_to_cache,
+                        session_id=global_cache_key,
+                        ttl=settings.CACHE_RAG_TTL_SECONDS,
+                    )
+
+            # Calculate total latency
+            total_latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+
+            model_used = self._groq_provider.get_model_name()
+            if response_metadata.get("llm_provider_used") == "gemini":
+                model_used = self._llm_provider.get_model_name()
+
+            await self._record_conversation(
+                session_id=actual_session_uuid,
+                user_message=sanitized_message,
+                bot_response=final_response,
+                channel=channel,
+                sources=sources,
+                confidence=confidence if confidence else 0.0,
+                latency_ms=int(total_latency_ms),
+                cache_hit=False,
+                llm_model=model_used,
+                fallback_triggered=response_metadata.get("fallback_triggered", False),
+            )
+
+            # ===============================================================
+            # STEP 10: Return Response
+            # ===============================================================
+            record_chat_message(channel=channel, language=language, cache_hit=False)
+            record_chat_latency(channel=channel, latency_ms=total_latency_ms)
+            if response_metadata.get("fallback_triggered", False):
+                record_rag_fallback()
+
+            logger.info(
+                "message_processed",
+                session_id=actual_session_id,
+                channel=channel,
+                confidence=confidence if confidence else 0.0,
+                latency_ms=total_latency_ms,
+                cache_hit=False,
+                llm_provider=response_metadata.get("llm_provider_used", "groq"),
+            )
+
+            return {
+                "message": final_response,
+                "session_id": actual_session_id,
+                "conversation_id": None,
+                "sources": sources,
+                "confidence": confidence if confidence else 0.0,
+                "cache_hit": False,
+                "fallback_triggered": response_metadata.get("fallback_triggered", False),
+                "latency_ms": int(total_latency_ms),
+                "model_used": model_used,
+                "llm_provider": response_metadata.get("llm_provider_used", "groq"),
+                "timestamp": datetime.utcnow().isoformat(),
+            }
             
         except Exception as e:
             record_chat_error(error_type=type(e).__name__)

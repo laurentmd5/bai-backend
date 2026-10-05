@@ -12,19 +12,24 @@ from app.core.exceptions import LowConfidenceException, HostileContentException
 
 def test_fallback_responses_attributes_exist_and_valid():
     """Verify FALLBACK_RESPONSES, STOP_RESPONSE, HOSTILE_CONTENT_RESPONSE are defined on ChatService."""
-    assert hasattr(ChatService, "FALLBACK_RESPONSES")
-    assert "fr" in ChatService.FALLBACK_RESPONSES
-    assert "en" in ChatService.FALLBACK_RESPONSES
-    assert len(ChatService.FALLBACK_RESPONSES["fr"]) > 20
-    assert len(ChatService.FALLBACK_RESPONSES["en"]) > 20
+    service = ChatService(
+        session_repository=MagicMock(),
+        conversation_repository=MagicMock(),
+        rag_service=MagicMock(),
+    )
+    assert hasattr(service, "FALLBACK_RESPONSES")
+    assert "fr" in service.FALLBACK_RESPONSES
+    assert "en" in service.FALLBACK_RESPONSES
+    assert len(service.FALLBACK_RESPONSES["fr"]) > 20
+    assert len(service.FALLBACK_RESPONSES["en"]) > 20
 
-    assert hasattr(ChatService, "STOP_RESPONSE")
-    assert "fr" in ChatService.STOP_RESPONSE
-    assert "en" in ChatService.STOP_RESPONSE
+    assert hasattr(service, "STOP_RESPONSE")
+    assert "fr" in service.STOP_RESPONSE
+    assert "en" in service.STOP_RESPONSE
 
-    assert hasattr(ChatService, "HOSTILE_CONTENT_RESPONSE")
-    assert "fr" in ChatService.HOSTILE_CONTENT_RESPONSE
-    assert "en" in ChatService.HOSTILE_CONTENT_RESPONSE
+    assert hasattr(service, "HOSTILE_CONTENT_RESPONSE")
+    assert "fr" in service.HOSTILE_CONTENT_RESPONSE
+    assert "en" in service.HOSTILE_CONTENT_RESPONSE
 
 
 def test_get_fallback_message_returns_localized_response():

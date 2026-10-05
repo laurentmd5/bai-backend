@@ -383,8 +383,10 @@ class RAGService:
         Returns:
             Tuple of (context_string, sources, top_confidence)
         """
-        # Retrieve more chunks initially for re-ranking (e.g., 20)
-        initial_k = max(top_k * 2 if top_k else self._top_k * 2, 20)
+        # Retrieve initial candidate chunks dynamically scaled to reranking needs (e.g. 10-12 instead of 20)
+        target_k = top_k if top_k else self._top_k
+        rerank_pool_size = getattr(settings, "RAG_RERANK_TOP_K", 8)
+        initial_k = max(target_k * 2, rerank_pool_size + 2)
         chunks, initial_top_score = await self.retrieve(
             query=query,
             top_k=initial_k,

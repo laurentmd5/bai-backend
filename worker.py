@@ -17,6 +17,18 @@ from app.services.queue.rabbitmq_service import rabbitmq_service
 logger = get_logger("worker")
 
 
+# Singleton persistent HTTP client with connection pooling
+_http_client: Optional[httpx.AsyncClient] = None
+
+
+async def get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
+        _http_client = httpx.AsyncClient(timeout=90.0, limits=limits)
+    return _http_client
+
+
 async def init_services():
     """Initialize lightweight worker services (RabbitMQ queue only)."""
     setup_logging()
@@ -38,8 +50,16 @@ async def init_services():
 
 
 async def close_services():
-    """Close RabbitMQ connection."""
+    """Close RabbitMQ connection and HTTP client."""
+    global _http_client
     logger.info("shutting_down_worker")
+    if _http_client and not _http_client.is_closed:
+        try:
+            await _http_client.aclose()
+            logger.info("http_client_closed")
+        except Exception as e:
+            logger.warning("error_closing_http_client", error=str(e))
+
     try:
         await rabbitmq_service.close()
     except Exception as e:
@@ -68,18 +88,18 @@ async def process_webhook_task(payload: dict, raw_body: bytes, signature: str | 
     logger.info("worker_processing_webhook_task", has_payload=bool(payload))
 
     try:
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            response = await client.post(endpoint, json=body, headers=headers)
-            
-            if response.status_code == 200:
-                logger.info("webhook_task_delegated_successfully", endpoint=endpoint, status_code=response.status_code)
-            else:
-                logger.error(
-                    "webhook_task_delegation_error_response",
-                    status_code=response.status_code,
-                    response_preview=response.text[:200]
-                )
-                response.raise_for_status()
+        client = await get_http_client()
+        response = await client.post(endpoint, json=body, headers=headers)
+        
+        if response.status_code == 200:
+            logger.info("webhook_task_delegated_successfully", endpoint=endpoint, status_code=response.status_code)
+        else:
+            logger.error(
+                "webhook_task_delegation_error_response",
+                status_code=response.status_code,
+                response_preview=response.text[:200]
+            )
+            response.raise_for_status()
 
     except Exception as e:
         logger.error("webhook_task_delegation_failed", error=str(e), exc_info=True)
