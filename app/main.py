@@ -3,6 +3,7 @@ Main FastAPI application for Company Bot.
 Entry point for the entire backend service.
 """
 
+import os
 import asyncio
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
