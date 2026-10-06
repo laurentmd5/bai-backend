@@ -201,7 +201,7 @@ services:
     volumes:
       - uploads_data:/app/uploads
       - logs_data:/app/logs
-      - ./data:/app/data:ro
+      - ./data:/app/data
     env_file:
       - .env
     environment:
@@ -348,7 +348,7 @@ services:
     volumes:
       - uploads_data:/app/uploads
       - logs_data:/app/logs
-      - ./data:/app/data:ro
+      - ./data:/app/data
     env_file:
       - .env
     environment:

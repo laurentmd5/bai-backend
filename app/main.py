@@ -195,9 +195,14 @@ def create_app() -> FastAPI:
     app.mount("/admin/static", StaticFiles(directory="app/admin/static"), name="admin_static")
 
     # Mount products media static files
-    import os
-    os.makedirs("data/images/products", exist_ok=True)
-    app.mount("/static/products", StaticFiles(directory="data/images/products"), name="products_static")
+    products_dir = "data/images/products"
+    try:
+        os.makedirs(products_dir, exist_ok=True)
+    except Exception as e:
+        logger.warning("products_dir_makedirs_skipped", error=str(e), path=products_dir)
+
+    if os.path.exists(products_dir):
+        app.mount("/static/products", StaticFiles(directory=products_dir), name="products_static")
     
     # Include admin UI router
     app.include_router(admin_router, prefix="/admin", tags=["Admin UI"])
