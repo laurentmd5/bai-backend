@@ -1,4 +1,4 @@
-﻿"""
+"""
 Chat request models for Company Bot.
 Validates incoming chat messages and feedback.
 """
@@ -50,10 +50,10 @@ class ChatMessageRequest(BaseModel):
     )
     
     language: str = Field(
-        default="en",
+        default="fr",
         description="Preferred language for response",
-        examples=["en", "mandinka", "wolof"],
-        pattern="^(en|mandinka|wolof)$"
+        examples=["fr", "en", "wolof"],
+        pattern="^(fr|en|wolof|mandinka)$"
     )
     
     channel: str = Field(
