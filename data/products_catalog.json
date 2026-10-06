@@ -1,0 +1,75 @@
+[
+  {
+    "id": "hikvision-ip-4k-acusense",
+    "name": "Caméra IP Hikvision 4K AcuSense",
+    "brand": "Hikvision",
+    "category": "videosurveillance",
+    "description": "Caméra dôme/tube IP 4K avec technologie AcuSense pour la détection intelligente des personnes et véhicules, vision nocturne infrarouge et couleur.",
+    "keywords": [
+      "camera", "caméra", "cameras", "caméras", "hikvision", "surveillance",
+      "videosurveillance", "vidéosurveillance", "4k", "acusense", "cctv", "ip"
+    ],
+    "image_filename": "hikvision_ip_4k_acusense.jpg",
+    "caption": "📸 Caméra IP Hikvision 4K AcuSense — Ultra Haute Définition, vision nocturne & IA de détection."
+  },
+  {
+    "id": "hikvision-pack-aarangue",
+    "name": "Pack Aarangué Vidéosurveillance Clés en Main",
+    "brand": "Hikvision",
+    "category": "videosurveillance",
+    "description": "Pack complet de vidéosurveillance incluant 4 caméras haute résolution, enregistreur NVR/DVR, câblage, alimentation et configuration d'accès sur smartphone.",
+    "keywords": [
+      "pack", "aarangue", "aarangué", "kit", "pack camera", "pack caméra", "kit camera", "kit caméra", "4 cameras", "4 caméras", "cles en main", "clés en main"
+    ],
+    "image_filename": "pack_aarangue_hikvision.jpg",
+    "caption": "📸 Pack Aarangué NETSYSTEME — Solution tout-en-un 4 caméras avec enregistreur NVR et visionnage mobile."
+  },
+  {
+    "id": "unifi-6-pro",
+    "name": "Point d'accès Wi-Fi 6 UniFi 6 Pro",
+    "brand": "Ubiquiti",
+    "category": "reseau",
+    "description": "Borne Wi-Fi 6 haute performance jusqu'à 5.3 Gbps pour environnements denses (entreprises, hôtels, campus).",
+    "keywords": [
+      "borne", "wifi", "wi-fi", "unifi", "ubiquiti", "u6", "pro", "point d'acces", "point d'accès", "repeteur", "répéteur"
+    ],
+    "image_filename": "unifi_6_pro.jpg",
+    "caption": "📸 Point d'accès UniFi 6 Pro — Wi-Fi 6 ultra-rapide haute capacité pour entreprises."
+  },
+  {
+    "id": "ajax-alarme-hub",
+    "name": "Système d'Alarme Sans Fil AJAX Hub 2",
+    "brand": "Ajax",
+    "category": "alarme",
+    "description": "Centrale d'alarme anti-intrusion professionnelle sans fil avec détecteurs de mouvement, capteurs d'ouverture et levée de doute photo.",
+    "keywords": [
+      "alarme", "ajax", "anti-intrusion", "intrusion", "detecteur", "détecteur", "hub", "securite", "sécurité sans fil"
+    ],
+    "image_filename": "ajax_alarme_system.jpg",
+    "caption": "📸 Système d'Alarme AJAX — Alarme anti-intrusion sans fil haute sécurité avec alertes instantanées."
+  },
+  {
+    "id": "controle-acces-biometrique",
+    "name": "Pointeur & Contrôle d'Accès Biométrique / RFID",
+    "brand": "NETSYSTEME",
+    "category": "controle_acces",
+    "description": "Terminal de contrôle d'accès et pointage horaire par reconnaissance faciale, empreinte digitale et badge RFID.",
+    "keywords": [
+      "biometrie", "biométrie", "badge", "rfid", "controle d'acces", "contrôle d'accès", "pointeuse", "reconnaissance faciale", "interphone"
+    ],
+    "image_filename": "controle_acces_biometrique.jpg",
+    "caption": "📸 Terminal de Contrôle d'Accès & Pointage — Biométrie faciale, empreinte digitale et badge RFID."
+  },
+  {
+    "id": "extincteur-co2-incendie",
+    "name": "Système Incendie & Extincteur CO2",
+    "brand": "NETSYSTEME",
+    "category": "incendie",
+    "description": "Protection incendie pour salles serveurs et baies informatiques sans résidu nocif, et centrales de détection incendie avec DMA.",
+    "keywords": [
+      "incendie", "extincteur", "co2", "fumee", "fumée", "detection incendie", "détection incendie"
+    ],
+    "image_filename": "extincteur_co2_incendie.jpg",
+    "caption": "📸 Sécurité Incendie — Extincteurs CO2 spécial salles informatiques et détecteurs de fumée normalisés."
+  }
+]

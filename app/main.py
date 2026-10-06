@@ -193,6 +193,11 @@ def create_app() -> FastAPI:
     
     # Mount admin static files (CSS, JS)
     app.mount("/admin/static", StaticFiles(directory="app/admin/static"), name="admin_static")
+
+    # Mount products media static files
+    import os
+    os.makedirs("data/images/products", exist_ok=True)
+    app.mount("/static/products", StaticFiles(directory="data/images/products"), name="products_static")
     
     # Include admin UI router
     app.include_router(admin_router, prefix="/admin", tags=["Admin UI"])

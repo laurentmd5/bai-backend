@@ -30,6 +30,7 @@ from app.core.company_config import company
 from app.core.logging import get_logger
 from app.services.recruitment.recruiter_agent import recruiter_agent
 from app.services.commercial.sales_agent import sales_agent
+from app.services.catalog.product_service import product_catalog_service
 from app.core.metrics import (
     llm_generation_duration_ms,
     record_chat_message,
@@ -920,7 +921,22 @@ class ChatService:
 
                 total_latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
                 record_chat_message(channel=channel, language=language, cache_hit=True)
-                record_chat_latency(channel=channel, latency_ms=total_latency_ms)
+                if "media" not in cached_response:
+                    matching_products = product_catalog_service.find_matching_products(
+                        query=sanitized_message,
+                        max_results=2,
+                        require_visual_intent=False,
+                    )
+                    cached_response["media"] = [
+                        {
+                            "type": "image",
+                            "product_id": p.get("id"),
+                            "product_name": p.get("name"),
+                            "url": p.get("image_url"),
+                            "caption": p.get("caption") or p.get("name"),
+                        }
+                        for p in matching_products if p.get("image_url")
+                    ]
 
                 return cached_response
 
@@ -1261,6 +1277,23 @@ class ChatService:
                 llm_provider=response_metadata.get("llm_provider_used", "groq"),
             )
 
+            # Detect matching products for visual media (photos)
+            matching_products = product_catalog_service.find_matching_products(
+                query=sanitized_message,
+                max_results=2,
+                require_visual_intent=False,
+            )
+            media_items = []
+            for prod in matching_products:
+                if prod.get("image_url"):
+                    media_items.append({
+                        "type": "image",
+                        "product_id": prod.get("id"),
+                        "product_name": prod.get("name"),
+                        "url": prod.get("image_url"),
+                        "caption": prod.get("caption") or prod.get("name"),
+                    })
+
             return {
                 "message": final_response,
                 "session_id": actual_session_id,
@@ -1272,6 +1305,7 @@ class ChatService:
                 "latency_ms": int(total_latency_ms),
                 "model_used": model_used,
                 "llm_provider": response_metadata.get("llm_provider_used", "groq"),
+                "media": media_items,
                 "timestamp": datetime.utcnow().isoformat(),
             }
             

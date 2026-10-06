@@ -1,0 +1,405 @@
+{% extends "base.html" %}
+{% block title %}Produits & Catalogue Visuel — Administration{% endblock %}
+{% block page_title %}Catalogue Produits & Médias{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">/</span><span>Produits & Photos WhatsApp</span>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Catalogue des Produits & Matériels</div>
+      <div class="card-subtitle" id="products-count">Chargement des produits...</div>
+    </div>
+    <div class="search-bar">
+      <div class="search-input-wrap">
+        <i class="fas fa-search"></i>
+        <input type="text" id="search-input" placeholder="Rechercher caméra, marque, mot-clé..." autocomplete="off">
+      </div>
+      <select id="category-filter" class="form-control" style="width:auto;min-width:160px">
+        <option value="">Toutes les catégories</option>
+        <option value="videosurveillance">Vidéosurveillance</option>
+        <option value="alarme">Alarme & Intrusion</option>
+        <option value="reseau">Réseau & Wi-Fi</option>
+        <option value="controle_acces">Contrôle d'accès</option>
+        <option value="incendie">Sécurité Incendie</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="openProductModal()">
+        <i class="fas fa-plus"></i> Nouveau Produit
+      </button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 80px;">Visuel</th>
+          <th>Nom du Produit</th>
+          <th>Marque</th>
+          <th>Catégorie</th>
+          <th>Mots-clés Déclencheurs</th>
+          <th>Légende WhatsApp</th>
+          <th class="col-actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="products-tbody">
+        <tr>
+          <td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+            <i class="fas fa-spinner fa-spin"></i> Chargement du catalogue...
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal Ajout / Modification Produit -->
+<div class="modal-overlay hidden" id="product-modal">
+  <div class="modal" style="max-width: 650px;">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">
+        <i class="fas fa-box" style="color:var(--primary);margin-right:.5rem"></i> Ajouter un Produit
+      </span>
+      <button class="modal-close" onclick="closeProductModal()"><i class="fas fa-times"></i></button>
+    </div>
+
+    <form id="product-form" onsubmit="handleProductSubmit(event)">
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 1rem; max-height: 70vh; overflow-y: auto; padding-right: 0.5rem;">
+        
+        <input type="hidden" id="form-edit-id" value="">
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div>
+            <label class="form-label" for="form-name">Nom du Produit *</label>
+            <input type="text" id="form-name" class="form-control" placeholder="ex: Caméra IP 4K AcuSense" required>
+          </div>
+          <div>
+            <label class="form-label" for="form-brand">Marque *</label>
+            <input type="text" id="form-brand" class="form-control" placeholder="ex: Hikvision, Ajax, UniFi" required>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div>
+            <label class="form-label" for="form-category">Catégorie *</label>
+            <select id="form-category" class="form-control" required>
+              <option value="videosurveillance">Vidéosurveillance (CCTV)</option>
+              <option value="alarme">Alarme & Anti-intrusion</option>
+              <option value="reseau">Réseaux & Télécoms</option>
+              <option value="controle_acces">Contrôle d'accès & Biométrie</option>
+              <option value="incendie">Sécurité Incendie</option>
+              <option value="autre">Autre matériel</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" for="form-id">ID / Identifiant unique (Optionnel)</label>
+            <input type="text" id="form-id" class="form-control" placeholder="ex: hikvision-ip-4k">
+            <small style="color: var(--text-muted); font-size: 0.75rem;">Généré automatiquement si vide</small>
+          </div>
+        </div>
+
+        <div>
+          <label class="form-label" for="form-keywords">Mots-clés déclencheurs * (séparés par des virgules)</label>
+          <input type="text" id="form-keywords" class="form-control" placeholder="camera, hikvision, 4k, surveillance, acusense" required>
+          <small style="color: var(--text-muted); font-size: 0.75rem;">Mots qui déclenchent l'envoi de cette photo sur WhatsApp</small>
+        </div>
+
+        <div>
+          <label class="form-label" for="form-caption">Légende WhatsApp (Caption photo)</label>
+          <input type="text" id="form-caption" class="form-control" placeholder="📸 Caméra IP Hikvision 4K — Détection intelligente AcuSense & vision nocturne.">
+        </div>
+
+        <div>
+          <label class="form-label" for="form-description">Description technique</label>
+          <textarea id="form-description" class="form-control" rows="2" placeholder="Description des fonctionnalités et caractéristiques..." required></textarea>
+        </div>
+
+        <!-- Image upload -->
+        <div>
+          <label class="form-label" for="form-image">Photo du produit (JPG, PNG, WEBP — max 5 Mo)</label>
+          <input type="file" id="form-image" class="form-control" accept="image/jpeg,image/png,image/webp">
+          <div id="image-preview-wrap" style="margin-top: 0.5rem; display: none; align-items: center; gap: 1rem;">
+            <img id="image-preview" src="" alt="Aperçu" style="width: 70px; height: 70px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border);">
+            <span id="image-preview-name" style="font-size: 0.85rem; color: var(--text-muted);"></span>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeProductModal()">Annuler</button>
+        <button type="submit" class="btn btn-primary" id="btn-save-product">
+          <i class="fas fa-save"></i> Enregistrer
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal Confirmation Suppression -->
+<div class="modal-overlay hidden" id="delete-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title"><i class="fas fa-trash" style="color:var(--danger);margin-right:.5rem"></i> Supprimer le produit</span>
+      <button class="modal-close" onclick="closeDeleteModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <p>Êtes-vous sûr de vouloir supprimer définitivement le produit <strong id="delete-product-name"></strong> ?</p>
+      <p style="color: var(--danger); font-size: 0.85rem; margin-top: 0.5rem;">
+        <i class="fas fa-exclamation-triangle"></i> La photo associée sera également supprimée du serveur local.
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeDeleteModal()">Annuler</button>
+      <button class="btn btn-danger" id="btn-confirm-delete" onclick="confirmDeleteProduct()">
+        <i class="fas fa-trash"></i> Confirmer la suppression
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+let allProducts = [];
+let deleteTargetId = null;
+
+async function loadProducts() {
+  const search = document.getElementById("search-input").value.trim();
+  const category = document.getElementById("category-filter").value;
+  
+  let url = "/products?";
+  const params = new URLSearchParams();
+  if (search) params.append("search", search);
+  if (category) params.append("category", category);
+  url += params.toString();
+
+  try {
+    const res = await apiJSON(url);
+    if (res && Array.isArray(res)) {
+      allProducts = res;
+      renderTable(res);
+      document.getElementById("products-count").textContent = `${res.length} produit(s) dans le catalogue`;
+    }
+  } catch (err) {
+    console.error("Failed to load products", err);
+    showToast("Erreur lors du chargement des produits", "error");
+  }
+}
+
+function renderTable(products) {
+  const tbody = document.getElementById("products-tbody");
+  if (!products || products.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+          Aucun produit trouvé dans le catalogue.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = products.map(p => {
+    const imgThumb = p.image_url 
+      ? `<img src="${p.image_url}" alt="${p.name}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border);" onerror="this.onerror=null;this.src='/admin/static/images/placeholder.png';">`
+      : `<div style="width: 50px; height: 50px; display:flex; align-items:center; justify-content:center; background: var(--bg-card); border-radius: 6px; color: var(--text-muted);"><i class="fas fa-image"></i></div>`;
+    
+    const keywordsBadges = (p.keywords || []).slice(0, 4).map(kw => 
+      `<span class="badge" style="background: rgba(99,102,241,0.1); color: var(--primary); font-size: 0.75rem; margin: 2px;">${kw}</span>`
+    ).join("");
+
+    return `
+      <tr>
+        <td>${imgThumb}</td>
+        <td>
+          <div style="font-weight: 600;">${p.name}</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">${p.id}</div>
+        </td>
+        <td><span class="badge badge-secondary">${p.brand || '-'}</span></td>
+        <td><span class="badge badge-info">${p.category || '-'}</span></td>
+        <td>${keywordsBadges || '-'}</td>
+        <td style="max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.85rem;" title="${p.caption || ''}">
+          ${p.caption || '-'}
+        </td>
+        <td class="col-actions">
+          <button class="btn btn-ghost btn-sm" onclick="editProduct('${p.id}')" title="Modifier">
+            <i class="fas fa-edit"></i>
+          </button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="promptDeleteProduct('${p.id}', '${p.name.replace(/'/g, "\\'")}')" title="Supprimer">
+            <i class="fas fa-trash"></i>
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function openProductModal(product = null) {
+  const modal = document.getElementById("product-modal");
+  const modalTitle = document.getElementById("modal-title");
+  const form = document.getElementById("product-form");
+  form.reset();
+  
+  const previewWrap = document.getElementById("image-preview-wrap");
+  const previewImg = document.getElementById("image-preview");
+  const previewName = document.getElementById("image-preview-name");
+
+  if (product) {
+    modalTitle.innerHTML = `<i class="fas fa-edit" style="color:var(--primary);margin-right:.5rem"></i> Modifier le Produit`;
+    document.getElementById("form-edit-id").value = product.id;
+    document.getElementById("form-id").value = product.id;
+    document.getElementById("form-id").disabled = true;
+    document.getElementById("form-name").value = product.name || "";
+    document.getElementById("form-brand").value = product.brand || "";
+    document.getElementById("form-category").value = product.category || "videosurveillance";
+    document.getElementById("form-keywords").value = (product.keywords || []).join(", ");
+    document.getElementById("form-caption").value = product.caption || "";
+    document.getElementById("form-description").value = product.description || "";
+
+    if (product.image_url) {
+      previewWrap.style.display = "flex";
+      previewImg.src = product.image_url;
+      previewName.textContent = product.image_filename || "Image actuelle";
+    } else {
+      previewWrap.style.display = "none";
+    }
+  } else {
+    modalTitle.innerHTML = `<i class="fas fa-box" style="color:var(--primary);margin-right:.5rem"></i> Ajouter un Produit`;
+    document.getElementById("form-edit-id").value = "";
+    document.getElementById("form-id").value = "";
+    document.getElementById("form-id").disabled = false;
+    previewWrap.style.display = "none";
+  }
+
+  modal.classList.remove("hidden");
+}
+
+function closeProductModal() {
+  document.getElementById("product-modal").classList.add("hidden");
+}
+
+function editProduct(productId) {
+  const p = allProducts.find(item => item.id === productId);
+  if (p) openProductModal(p);
+}
+
+// Live image preview
+document.getElementById("form-image").addEventListener("change", function(e) {
+  const file = e.target.files[0];
+  const previewWrap = document.getElementById("image-preview-wrap");
+  const previewImg = document.getElementById("image-preview");
+  const previewName = document.getElementById("image-preview-name");
+
+  if (file) {
+    previewWrap.style.display = "flex";
+    previewName.textContent = file.name;
+    const reader = new FileReader();
+    reader.onload = (e) => { previewImg.src = e.target.result; };
+    reader.readAsDataURL(file);
+  }
+});
+
+async function handleProductSubmit(event) {
+  event.preventDefault();
+  const btn = document.getElementById("btn-save-product");
+  btn.disabled = true;
+  btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Enregistrement...`;
+
+  const editId = document.getElementById("form-edit-id").value;
+  const isEdit = Boolean(editId);
+
+  const formData = new FormData();
+  formData.append("name", document.getElementById("form-name").value);
+  formData.append("brand", document.getElementById("form-brand").value);
+  formData.append("category", document.getElementById("form-category").value);
+  formData.append("keywords", document.getElementById("form-keywords").value);
+  formData.append("caption", document.getElementById("form-caption").value);
+  formData.append("description", document.getElementById("form-description").value);
+
+  const idVal = document.getElementById("form-id").value.trim();
+  if (idVal && !isEdit) {
+    formData.append("product_id", idVal);
+  }
+
+  const imageFile = document.getElementById("form-image").files[0];
+  if (imageFile) {
+    formData.append("image", imageFile);
+  }
+
+  try {
+    let response;
+    if (isEdit) {
+      response = await apiCall(`/products/${editId}`, {
+        method: 'PUT',
+        body: formData,
+      });
+    } else {
+      response = await apiCall('/products', {
+        method: 'POST',
+        body: formData,
+      });
+    }
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.message || "Erreur lors de l'enregistrement");
+    }
+
+    showToast(isEdit ? "Produit mis à jour avec succès !" : "Produit créé et image enregistrée !", "success");
+    closeProductModal();
+    await loadProducts();
+  } catch (err) {
+    console.error("Save product error", err);
+    showToast(err.message || "Erreur lors de l'enregistrement", "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<i class="fas fa-save"></i> Enregistrer`;
+  }
+}
+
+function promptDeleteProduct(productId, productName) {
+  deleteTargetId = productId;
+  document.getElementById("delete-product-name").textContent = productName;
+  document.getElementById("delete-modal").classList.remove("hidden");
+}
+
+function closeDeleteModal() {
+  deleteTargetId = null;
+  document.getElementById("delete-modal").classList.add("hidden");
+}
+
+async function confirmDeleteProduct() {
+  if (!deleteTargetId) return;
+  const btn = document.getElementById("btn-confirm-delete");
+  btn.disabled = true;
+  btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Suppression...`;
+
+  try {
+    const response = await apiCall(`/products/${deleteTargetId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.message || "Erreur de suppression");
+    }
+    showToast("Produit et image supprimés avec succès", "success");
+    closeDeleteModal();
+    await loadProducts();
+  } catch (err) {
+    console.error("Delete error", err);
+    showToast(err.message || "Erreur de suppression", "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<i class="fas fa-trash"></i> Confirmer la suppression`;
+  }
+}
+
+// Search and filter listeners
+document.getElementById("search-input").addEventListener("input", debounce(loadProducts, 300));
+document.getElementById("category-filter").addEventListener("change", loadProducts);
+
+// Initial load
+document.addEventListener("DOMContentLoaded", loadProducts);
+</script>
+{% endblock %}

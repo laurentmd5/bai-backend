@@ -22,6 +22,7 @@ from app.api.v1.endpoints.admin import (
     health as admin_health,
     candidates as admin_candidates,
     leads as admin_leads,
+    products as admin_products,
 )
 
 # Main API router
@@ -45,4 +46,5 @@ api_router.include_router(admin_users.router, prefix="/admin", tags=["Admin User
 api_router.include_router(admin_audit.router, prefix="/admin", tags=["Admin Audit"])
 api_router.include_router(admin_candidates.router, prefix="/admin", tags=["Admin Candidates"])
 api_router.include_router(admin_leads.router, prefix="/admin", tags=["Admin Commercial Leads"])
+api_router.include_router(admin_products.router, prefix="/admin", tags=["Admin Product Catalog"])
 

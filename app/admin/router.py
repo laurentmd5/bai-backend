@@ -167,6 +167,19 @@ async def candidates_list_page(request: Request, admin: dict = Depends(get_curre
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Products & Media Catalog
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/products", response_class=HTMLResponse)
+async def products_list_page(request: Request, admin: dict = Depends(get_current_admin)):
+    """List, upload, and manage products and image media."""
+    return render_template("products/list.html", {
+        "request": request,
+        "admin": admin
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Audit logs
 # ─────────────────────────────────────────────────────────────────────────────
 

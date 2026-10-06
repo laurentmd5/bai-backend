@@ -509,11 +509,37 @@ class WhatsAppService:
             to_number=phone_number,
             text=response_text,
         )
+
+        # Send matching product images if available
+        media_list = response.get("media", [])
+        if media_list:
+            for item in media_list:
+                if item.get("type") == "image" and item.get("url"):
+                    try:
+                        await self.send_image_message(
+                            to_number=phone_number,
+                            image_url=item["url"],
+                            caption=item.get("caption"),
+                        )
+                        logger.info(
+                            "whatsapp_product_image_sent",
+                            phone=phone_number[-4:],
+                            product_id=item.get("product_id"),
+                            image_url=item.get("url"),
+                        )
+                    except Exception as img_err:
+                        logger.error(
+                            "whatsapp_product_image_send_failed",
+                            phone=phone_number[-4:],
+                            product_id=item.get("product_id"),
+                            error=str(img_err),
+                        )
         
         logger.info(
             "whatsapp_message_processed",
             phone=phone_number[-4:],
             response_length=len(response_text),
+            media_count=len(media_list),
         )
 
         # Mark permanently as processed (24h) upon success

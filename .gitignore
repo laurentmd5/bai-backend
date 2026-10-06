@@ -219,7 +219,12 @@ nbdist/
 
 # Docker volumes
 docker-volumes/
-data/
+data/*
+!data/products_catalog.json
+!data/knowledge/
+!data/images/
+!data/images/products/
+!data/images/products/.gitkeep
 *.tar.gz
 
 # Docker compose override (local)

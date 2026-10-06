@@ -78,6 +78,11 @@ class Settings(BaseSettings):
         default=None,
         description="Company public website URL"
     )
+
+    PUBLIC_BASE_URL: str = Field(
+        default="https://bai.sse.sn",
+        description="Public base URL of backend for serving public assets like product images"
+    )
     
     APP_VERSION: str = Field(
         default="4.0.0",
