@@ -131,8 +131,13 @@ class Settings(BaseSettings):
     # =========================================================================
     CORS_ORIGINS: List[str] = Field(
         default_factory=lambda: [
+            "https://netsys-info.com",
+            "https://www.netsys-info.com",
+            "https://netsysteme.sn",
+            "https://bai.sse.sn",
             "http://localhost:5173",
             "http://localhost:3000",
+            "http://localhost:8000",
         ],
         description="Allowed CORS origins"
     )

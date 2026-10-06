@@ -293,7 +293,7 @@ services:
       WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
       
       # CORS
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://netsysteme.sn,http://localhost,http://localhost:8000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://netsys-info.com,https://www.netsys-info.com,https://netsysteme.sn,https://bai.sse.sn,http://localhost,http://localhost:8000}
       
       # Rate Limiting
       RATE_LIMIT_CHAT_PER_MINUTE: ${RATE_LIMIT_CHAT_PER_MINUTE:-30}
